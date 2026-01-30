@@ -39,7 +39,7 @@ const (
 	opcodeUnequipment        = 0x59e7
 	opcodeSetFinisher        = 0x7921
 	opcodeCombatAction       = 0x7926
-	opcodeEffectDelayed      = 0x9094
+	opcodeEffectDelayed      = 0x9095
 	opcodeConditionUpdate    = 0xa028
 )
 
