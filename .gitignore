@@ -2,3 +2,5 @@ log*.txt
 *.exe
 node_modules
 dist
+cmd/dilmeterapi/static
+bin
