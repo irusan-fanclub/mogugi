@@ -5,7 +5,7 @@ import * as bounds from 'binary-search-bounds';
 import * as protocols from '@/protocols';
 import { DamageCollectorManager } from '@/actionCollector';
 
-// TODO: take cc, apply cc 구분하기
+// TODO: Distinguish between take cc and apply cc
 
 export class ActorManager {
     constructor(private _damageCollector: DamageCollectorManager) {
@@ -26,7 +26,7 @@ export class ActorManager {
 
         switch (event.EventId) {
             case protocols.eventIdEntityAppear:
-                // TODO: entityAppear에서 master id, hp 가져오기, damage, cc 처리할 때 master id가 있으면 그쪽으로 보내야함
+                // TODO: Get master id, hp from entityAppear, when processing damage/cc, should send to master id if it exists
                 entity.onEntityAppear(event as protocols.eventEntityAppear);
                 break;
 
@@ -42,8 +42,8 @@ export class ActorManager {
 
                     const targetEntity = this.entityMap[event_.TargetId];
                     if (!targetEntity) {
-                        // 유저 정보가 오기전에 대미지가 먼저오는 경우
-                        // @TODO: 추후에 local storage를 사용해 캐싱하는 식으로 변경
+                        // Case where damage arrives before user info
+                        // @TODO: Change to use local storage for caching later
                         this.onEntityAppear({
                             Id: event_.TargetId,
                             EventId: 1,
@@ -130,7 +130,7 @@ export class ActorManager {
                 this.entityMap[Id] = group.entityMap[Id] = entity;
             }
 
-            // entity appear를 받은 뒤에 api가 켜진 경우
+            // Case where API is turned on after receiving entity appear
             for (const v of this.damages) {
                 if (v.Id == Id) {
                     entity.onApplyDamage(v);
@@ -149,7 +149,7 @@ export class ActorManager {
     }
 
     public clear() {
-        // object instance를 새로 만들면 귀찮아짐
+        // Creating new object instances would be troublesome
         this.damages.length = 0;
 
         for (const k in this.entityMap) {
@@ -166,7 +166,7 @@ export class ActorManager {
     }
 
     private static groupTargetKey(event: protocols.eventEntityAppear): string {
-        // pc 일 경우 group안에 entity가 여러개 생기지 않도록
+        // For PC, prevent multiple entities in a group
         if (this.pcRaceSet.has(event.RaceId)) {
             return event.Id;
         }
@@ -176,7 +176,7 @@ export class ActorManager {
 }
 
 interface IEventActor {
-    /** damage 쪽 수치들만 reset */
+    /** Reset only damage-related values */
     clear(): void;
 }
 
@@ -216,7 +216,7 @@ export abstract class BaseActor implements IEventActor, IUpdateCallback {
         return this._body;
     }
 
-    /** 받은 대미지 */
+    /** Damage received */
     public get totalTakeDamage() {
         this.vueUpdateTrack?.();
         return this._totalTakeDamage;
@@ -229,7 +229,7 @@ export abstract class BaseActor implements IEventActor, IUpdateCallback {
         return this._takeDamages;
     }
 
-    /** 준 대미지 */
+    /** Damage dealt */
     public get totalApplyDamage() {
         this.vueUpdateTrack?.();
         return this._totalApplyDamage;
@@ -382,7 +382,7 @@ export class EntityActor extends BaseActor {
         this._body.Lower = event.Lower;
 
         if (ActorManager.pcRaceSet.has(event.RaceId)) {
-            // pc일 경우 damage 초기와 안함
+            // Don't initialize damage for PC
             return;
         }
 
@@ -412,7 +412,7 @@ export class EntityActor extends BaseActor {
         const targetId = event.TargetId;
         const target = this.mgr.entityMap[targetId];
         if (!target || !(target instanceof EntityActor)) {
-            // 몹 정보가 없으면 무시
+            // Ignore if mob info doesn't exist
             return;
         }
 
@@ -426,7 +426,7 @@ export class EntityActor extends BaseActor {
         this._totalApplyDamage += event.Damage;
         this._applyDamages.push(damage);
 
-        // apply에서만 호출
+        // Only called in apply
         this.mgr.onEntityDamage(damage);
     }
 
@@ -502,7 +502,7 @@ export class EntityActor extends BaseActor {
     }
 }
 
-// TODO: GroupActor에 Group 조건 추가하는 식으로 바꾸는게 좋을듯
+// TODO: It would be better to change to adding Group conditions to GroupActor
 export class GroupActor extends BaseActor {
     public constructor(mgr: ActorManager, id: string, raceId: number, name: string) {
         const groupName = ActorManager.pcRaceSet.has(raceId)
@@ -525,7 +525,7 @@ export class GroupActor extends BaseActor {
         this._raceId = event.RaceId;
 
         if (ActorManager.pcRaceSet.has(event.RaceId)) {
-            // pc일 경우 damage 초기와 안함
+            // Don't initialize damage for PC
             return;
         }
 

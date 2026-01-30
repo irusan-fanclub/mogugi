@@ -30,7 +30,7 @@
                             <v-sheet
                                 v-for="[attackerId, damageByAttacker] in Object.entries(entity.dc.groupedTotalDamages).sort(([, av], [, bv]) => bv - av)"
                                 v-bind:key="attackerId" width="100%" class="mb-4">
-                                <!-- 이름 -->
+                                <!-- Name -->
                                 <v-sheet width="100%"
                                     @click.stop="showEntityDetailDamageList(entity.actor.id, attackerId)">
                                     {{ prettyEntityName(entityMap[attackerId]?.actor) || attackerId }} {{
@@ -38,7 +38,7 @@
                                         (100 * damageByAttacker / entity.dc.totalDamage).toFixed(1) }}%
                                 </v-sheet>
 
-                                <!-- 막대 -->
+                                <!-- Bar -->
                                 <v-sheet width="100%" height="16">
                                     <v-sheet @click.stop="showEntityDetailDamageList(entity.actor.id, attackerId)"
                                         :color="getMabiNameColor(prettyEntityName(entityMap[attackerId]?.actor) || attackerId)"
@@ -55,14 +55,14 @@
             <v-sheet
                 v-for="[attackerId, damageByAttacker] in Object.entries(v.dc.groupedTotalDamages).sort(([, av], [, bv]) => bv - av)"
                 v-bind:key="attackerId" width="100%" class="mb-4 pa-1">
-                <!-- 이름 -->
+                <!-- Name -->
                 <v-sheet width="100%" @click.stop="showEntityGroupDetailDamageList(v.actor.id, attackerId)">
                     {{ prettyEntityName(entityMap[attackerId]?.actor) || attackerId }} {{ damageByAttacker.toFixed(0) }}
                     {{
                         (100 * damageByAttacker / v.dc.totalDamage).toFixed(1) }}%
                 </v-sheet>
 
-                <!-- 막대 -->
+                <!-- Bar -->
                 <v-sheet width="100%" height="16">
                     <v-sheet @click.stop="showEntityGroupDetailDamageList(v.actor.id, attackerId)"
                         :color="getMabiNameColor(prettyEntityName(entityMap[attackerId]?.actor) || attackerId)"

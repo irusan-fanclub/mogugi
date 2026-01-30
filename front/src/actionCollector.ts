@@ -1,14 +1,14 @@
 import { CustomReactive, IUpdateCallback } from '@/util';
 import { EntityDamage } from '@/eventActor';
 
-// TODO: cc 추가
+// TODO: Add cc
 export class DamageCollectorManager {
     public get damages() {
         return this._damages;
     }
     private _damages = [] as EntityDamage[];
 
-    // 성능 보고 entity id별로 쪼갤지 확인
+    // Check performance to decide whether to split by entity id
     private _et = new DamageEventTarget("Damage", "DamageCollector");
 
     public onDamage(p: EntityDamage): void {
@@ -22,7 +22,7 @@ export class DamageCollectorManager {
             v.handleDamage(p);
         }
 
-        // et -> filtered et -> filtered et로 chaining하는게 나을듯
+        // It would be better to chain et -> filtered et -> filtered et
         this._et.addEventListener("Damage", v);
         this._et.addEventListener("Clear", v);
 
@@ -511,7 +511,7 @@ class DamageEventTarget extends EventTarget implements IDamageEventTarget {
 }
 
 export const needCountSkill: Record<number, boolean> = {
-    58009: true, // 연속 공격
-    58100: true, // 블래스트
-    58101: true, // 플레어
+    58009: true, // Continuous Attack
+    58100: true, // Blast
+    58101: true, // Flare
 }

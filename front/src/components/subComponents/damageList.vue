@@ -32,8 +32,8 @@
                         </p>
                         <p>
                             {{ skillNameMap[item.SkillId] }} {{ item.Damage.toFixed(0) }}
-                            {{ item.IsCritical ? '크리티컬' : '' }}
-                            {{ item.IsDelayed ? '추가 대미지' : '' }}
+                            {{ item.IsCritical ? 'Critical' : '' }}
+                            {{ item.IsDelayed ? 'Additional Damage' : '' }}
                         </p>
                     </v-sheet>
                 </v-sheet>

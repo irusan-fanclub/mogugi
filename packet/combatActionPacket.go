@@ -51,8 +51,8 @@ type CombatActionType uint8
 
 const (
 	CombatActionTypeNone     = 0x00
-	CombatActionTypeTakeHit  = 0x01 // 뚜둘겨 맞음
-	CombatActionTypeAttacker = 0x02 // 공격했음 or 디펜스 or 카운터어택
+	CombatActionTypeTakeHit  = 0x01 // Got hit
+	CombatActionTypeAttacker = 0x02 // Attacked or Defense or Counterattack
 	// CombatActionTypeUnknown = 0x04
 	CombatActionTypeSkillActive          = 0x10
 	CombatActionTypeSkillSuccess         = 0x20
@@ -103,7 +103,7 @@ func ParseCombatActionPackPacket(p *GamePacket) (*CombatActionPackPacket, error)
 
 	msg = msg[6:]
 
-	// 공격이 막혔을 때?
+	// When attack is blocked?
 	if (flag & 0x1) != 0 {
 		if msg[0].Type() != MessageElemTypeInt {
 			return nil, fmt.Errorf("ParseCombatActionPacket: blockedByShieldPosX has unexpected type %v", msg[0].Type())

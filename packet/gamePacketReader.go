@@ -63,7 +63,7 @@ func NewGameServerPacketReader(opt *GameServerPacketReaderOpt) (*GameServerPacke
 
 	filter := constants.PCAP_GAMESERVER_FILTER
 	if opt.ClientIp != "" {
-		// 어차피 클라이언트에서 서버로 전송하는 패킷은 암호화 되어있음
+		// Client to server packets are encrypted anyway
 		filter = " dst host " + opt.ClientIp
 	}
 
@@ -213,10 +213,10 @@ func (t *GameServerPacketReader) openFile(file string, filter string) (<-chan ga
 	t.fd = fd
 
 	/*
-		OpenOffline으로 함수를 호출 할 때 fileName을 utf8로 넘기는데,
-		libpcap에서는 multibyte용 fopen으로 파일을 연다 -> 한글 경로일 때 깨짐
+		When calling OpenOffline, fileName is passed as UTF-8,
+		but libpcap opens the file with multibyte fopen -> Korean paths get corrupted
 
-		libpcap에서 pcap_init(PCAP_CHAR_ENC_UTF_8) 호출하는게 나을 수 도
+		It might be better to call pcap_init(PCAP_CHAR_ENC_UTF_8) in libpcap
 	*/
 	handle, err := pcap.OpenOfflineFile(fd)
 	if err != nil {
@@ -271,7 +271,7 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 	layerParser := gopacket.NewDecodingLayerParser(layers.LayerTypeEthernet, &ethLayer, &ip4Layer, &tcpLayer, &payload)
 	packetLayers := []gopacket.LayerType(nil)
 
-	// 패킷 순서 섞이는 것 땜빵
+	// Quick fix for packet order shuffling
 	baseSeq := uint32(0)
 	nextSeq, prevDstPort := uint32(0), layers.TCPPort(0)
 	pendingTcpLayers := make([]pendingTcpLayer, 0, packetQueueSize)
@@ -303,7 +303,7 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 			}
 
 			if nextSeq != 0 && tcpLayer.Seq != nextSeq {
-				// connection이 바뀐 경우 (채널 이동등)
+				// When connection changed (channel move, etc.)
 				if prevDstPort != tcpLayer.DstPort {
 					for _, v := range pendingTcpLayers {
 						ch <- gamePacketPayload{
@@ -333,12 +333,12 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 					continue
 				}
 
-				// align 틀어짐
+				// Alignment mismatch
 				logger.Println("packet align error", i, nextSeq, tcpLayer.Seq)
 
 				if tcpLayer.Seq < nextSeq {
 					if tcpLayer.Seq+uint32(len(tcpLayer.Payload)) >= nextSeq {
-						// 겹치는 부분 버려서 해결이 되는 경우
+						// Case solved by discarding overlapping part
 						payload := tcpLayer.Payload[nextSeq-tcpLayer.Seq:]
 						if len(payload) > 0 {
 							ch <- gamePacketPayload{
@@ -354,7 +354,7 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 				}
 
 				if len(pendingTcpLayers) >= packetQueueSize {
-					// 꽉 찬 경우 보류 목록을 보내고 비워버림
+					// When full, send pending list and clear it
 					for _, v := range pendingTcpLayers {
 						ch <- gamePacketPayload{
 							relSeq: v.tcpLayer.Seq - baseSeq,
@@ -391,9 +391,9 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 
 			if len(pendingTcpLayers) > 0 {
 				/*
-					align이 틀어지는 경우
-					1. 재전송 - 재전송일 경우 겹치는 부분을 버려야 한다
-					2. out of order - 앞 패킷이 뒤에 오는 경우
+					Cases where alignment is mismatched:
+					1. Retransmission - overlapping parts must be discarded
+					2. Out of order - earlier packets arrive later
 				*/
 
 				for _, v := range pendingTcpLayers {
@@ -416,7 +416,7 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 							continue
 						}
 
-						// 겹치는 부분 버림
+						// Discard overlapping part
 						payload = payload[nextSeq-v.tcpLayer.Seq:]
 						if len(payload) > 0 {
 							ch <- gamePacketPayload{
@@ -431,7 +431,7 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 						continue
 					}
 
-					// 아직 못받은 패킷이 있다
+					// There are still packets not received
 					break
 				}
 			}
@@ -485,7 +485,7 @@ func gamePacketReader(buffer *bytes.Buffer, at time.Time) (*GamePacket, error) {
 	rawPacketBuffer := bytes.NewBuffer(nil)
 	b := buffer.Bytes()
 
-	// 헤더 읽기에 아직 부족
+	// Not enough data to read header yet
 	if len(b) < 6 {
 		return nil, io.EOF
 	}
@@ -507,7 +507,7 @@ func gamePacketReader(buffer *bytes.Buffer, at time.Time) (*GamePacket, error) {
 		return nil, io.EOF
 	}
 
-	// 패킷의 총 사이즈 (헤더 포함)
+	// Total packet size (including header)
 	length := le.Uint32(b[1:])
 	// maybe
 	flag := b[5]
@@ -527,7 +527,7 @@ func gamePacketReader(buffer *bytes.Buffer, at time.Time) (*GamePacket, error) {
 		flag == 2 // ? server only
 
 	if isShortPacket {
-		// 패킷이 아직 모자람
+		// Packet is still insufficient
 		if len(b) < int(length)-6 {
 			return nil, io.EOF
 		}

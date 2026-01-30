@@ -72,7 +72,7 @@ async function httpCallRaw(url: string, opt?: HttpCallOpt): Promise<ArrayBuffer>
     }
 }
 
-// 순환참조 제거용
+// For removing circular references
 async function setLoadingCount() {
     if (loadingCount) {
         return;

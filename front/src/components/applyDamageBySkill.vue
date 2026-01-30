@@ -25,8 +25,8 @@
                             <img width="32" height="32" :src='`/res/skillimage/${region}/${skillId}/${skillId}.png`' />
                         </v-sheet>
                         <v-sheet width="100%" class="mb-4">
-                            <!-- 스킬 이미지 -->
-                            <!-- 이름 -->
+                            <!-- Skill image -->
+                            <!-- Name -->
                             <v-sheet width="100%"
                                 @click.stop="showEntityDetailDamageList(v.actor.id, targetId, +skillId)">
                                 {{ skillNameMap[+skillId] || `unknownSkill:${skillId}` }}
@@ -38,7 +38,7 @@
                                 {{ (100 * damageBySkill / v.totalDamage).toFixed(1) }}%
                             </v-sheet>
 
-                            <!-- 막대 -->
+                            <!-- Bar -->
                             <v-sheet width="100%" height="16">
                                 <v-sheet @click.stop="showEntityDetailDamageList(v.actor.id, '', +skillId)"
                                     :color="getMabiNameColor(skillNameMap[+skillId] || `unknownSkill:${skillId}`)"
@@ -51,7 +51,7 @@
                     </v-sheet>
                 </v-expansion-panel-text>
             </v-expansion-panel>
-            <!-- 막대 -->
+            <!-- Bar -->
             <v-sheet width="100%" height="16">
                 <v-sheet :color="getMabiNameColor(prettyEntityName(v.actor)!)" height="100%"
                     :width="`${Math.round(100 * v.totalDamage / allApplyDamage).toFixed(0)}%`" class="rounded-xl">

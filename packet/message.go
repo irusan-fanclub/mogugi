@@ -137,7 +137,7 @@ func (t *Message) Bytes() []byte {
 func (t *Message) Len() uint64 {
 	r := uint64(0)
 
-	// body의 length만
+	// Only body length
 	// count := uint64(len(*t))
 	// countB := binary.AppendUvarint(nil, count)
 

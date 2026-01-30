@@ -13,14 +13,14 @@
                     <v-sheet
                         v-for="[targetId, damageToTarget] in Object.entries(v.dc.groupedTotalDamages).sort(([, av], [, bv]) => bv - av)"
                         v-bind:key="targetId" width="100%" class="mb-4">
-                        <!-- 이름 -->
+                        <!-- Name -->
                         <v-sheet width="100%" @click.stop="showEntityDetailDamageList(v.actor.id, targetId)">
                             {{ prettyEntityName(entityMap[targetId]?.actor) || targetId }} {{
                                 damageToTarget.toFixed(0) }} {{
                                 (100 * damageToTarget / v.dc.totalDamage).toFixed(1) }}%
                         </v-sheet>
 
-                        <!-- 막대 -->
+                        <!-- Bar -->
                         <v-sheet width="100%" height="16">
                             <v-sheet @click.stop="showEntityDetailDamageList(v.actor.id, targetId)"
                                 :color="getMabiNameColor(prettyEntityName(entityMap[targetId]?.actor) || targetId)"
@@ -32,7 +32,7 @@
                     </v-sheet>
                 </v-expansion-panel-text>
             </v-expansion-panel>
-            <!-- 막대 -->
+            <!-- Bar -->
             <v-sheet width="100%" height="16">
                 <v-sheet :color="getMabiNameColor(prettyEntityName(v.actor)!)" height="100%"
                     :width="`${Math.round(100 * v.dc.totalDamage / allApplyDamage).toFixed(0)}%`" class="rounded-xl">

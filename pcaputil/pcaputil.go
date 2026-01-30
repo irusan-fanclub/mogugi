@@ -14,7 +14,7 @@ import (
 var logger = log.New(os.Stdout, "pcaputil ", log.LstdFlags|log.Lshortfile)
 
 func FindNic() (string, error) {
-	// 게임 서버 패킷이 수신되는 네트워크 인터페이스를 찾는다.
+	// Find the network interface where game server packets are received.
 	packetWaitTime := time.Second * 5
 
 	nics, err := pcap.FindAllDevs()

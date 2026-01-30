@@ -14,7 +14,7 @@
                     <v-btn @click="loadFromFile" v-bind="props" :loading="isLoading" color="primary" size="small"
                         prepend-icon="mdi-upload" class="ml-1">Load</v-btn>
                 </template>
-                파일에서 데이터를 로드합니다
+                Load data from file
             </v-tooltip>
             <v-btn @click="download" :loading="isLoading" color="primary" size="small" prepend-icon="mdi-download"
                 class="ml-1">Download</v-btn>
@@ -23,7 +23,7 @@
                     <v-btn @click="loadFromServer" v-bind="props" :loading="isLoading" color="primary" size="small"
                         prepend-icon="mdi-refresh" class="ml-1">Reload</v-btn>
                 </template>
-                서버에서 데이터를 다시 로드합니다
+                Reload data from server
             </v-tooltip>
             <v-btn @click="clearData" :loading="isLoading" color="primary" size="small" prepend-icon="mdi-close"
                 class="ml-1 mr-4">Clear</v-btn></v-sheet>
@@ -127,7 +127,7 @@ export default defineComponent({
         const clearData = () => {
             appEvent.value.dispatchEvent(new CustomEvent('clear'));
 
-            // clear했을 때 서버도 같이 clear하는게 맞을지?
+            // Should the server also be cleared when clearing?
             actorManager.value.clear();
             dcManager.value.clear();
         }
@@ -163,7 +163,7 @@ export default defineComponent({
                 const file = input.files[0];
                 const r = new FileReader();
 
-                // 파일이 커지면 chunk로 읽는 것도 고려해야함
+                // Should consider reading in chunks if file gets large
                 r.readAsText(file);
 
 

@@ -411,9 +411,9 @@ func (t *eventPublisher) loop() {
 						}
 					}
 
-					// 한패킷에 공격자가 2명 이상 일 수 있을까?
+					// Can there be 2 or more attackers in one packet?
 					if v.Hit == nil {
-						// 공격자
+						// Attacker
 						attackerId = v.EntityId
 						attackSkillId = v.SkillId
 						break

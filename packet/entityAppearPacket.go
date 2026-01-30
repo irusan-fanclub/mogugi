@@ -27,7 +27,7 @@ type EntityInfo struct {
 	EquipItemMap          map[uint32]*EntityItem
 	CharacterConditionMap map[uint32]*EntityCharacterCondition
 	GuildName             string
-	OwnerId               uint64 // 펫, 마리오네트 등
+	OwnerId               uint64 // Pet, Marionette, etc.
 }
 
 type EntityItem struct {
@@ -64,7 +64,7 @@ func ParseEntityAppearPacket(msg Message) (*EntityInfo, error) {
 	}
 
 	if msg[1].Data().(uint8) != 5 {
-		// public 데이터만 읽음
+		// Only read public data
 		return nil, nil
 	}
 
@@ -318,12 +318,12 @@ func ParseEntityAppearPacket(msg Message) (*EntityInfo, error) {
 		v.EquipItemMap[d.PocketType] = d
 
 		if msg[2].Type() == MessageElemTypeString {
-			// 길드 로브
+			// Guild robe
 			msg = msg[1:]
 		}
 	}
 
-	// 스킬 관련
+	// Skill related
 	if len(msg) < 4 {
 		err := fmt.Errorf("entity appear data is too short %v", curPos())
 		logger.Println(err)
@@ -356,7 +356,7 @@ func ParseEntityAppearPacket(msg Message) (*EntityInfo, error) {
 
 	msg = msg[2:]
 
-	// 파티 관련
+	// Party related
 	if len(msg) < 2 {
 		err := fmt.Errorf("entity appear data is too short %v", curPos())
 		logger.Println(err)
@@ -365,7 +365,7 @@ func ParseEntityAppearPacket(msg Message) (*EntityInfo, error) {
 
 	msg = msg[2:]
 
-	// pvp 관련
+	// PVP related
 	if len(msg) < 16 {
 		err := fmt.Errorf("entity appear data is too short %v", curPos())
 		logger.Println(err)
@@ -374,7 +374,7 @@ func ParseEntityAppearPacket(msg Message) (*EntityInfo, error) {
 
 	msg = msg[16:]
 
-	// 컨디션 관련
+	// Condition related
 	if len(msg) < 3 {
 		err := fmt.Errorf("entity appear data is too short %v", curPos())
 		logger.Println(err)
@@ -400,10 +400,10 @@ func ParseEntityAppearPacket(msg Message) (*EntityInfo, error) {
 		/*
 			uint32 ccId
 			uint64 disableAt
-			string metadata 나중에 필요할 수 도 있음
+			string metadata - may be needed later
 			uint64 attackerId
 			string unknown1
-			string 해제시 메세지?
+			string message on release?
 		*/
 
 		if msg[0].Type() != MessageElemTypeInt {
@@ -447,7 +447,7 @@ func ParseEntityAppearPacket(msg Message) (*EntityInfo, error) {
 
 	msg = msg[1:]
 
-	// 길드 관련
+	// Guild related
 	if len(msg) < 19 {
 		err := fmt.Errorf("entity appear data is too short %v", curPos())
 		logger.Println(err)
@@ -463,7 +463,7 @@ func ParseEntityAppearPacket(msg Message) (*EntityInfo, error) {
 	v.GuildName = msg[1].Data().(string)
 	msg = msg[19:]
 
-	// 펫 관련
+	// Pet related
 	if len(msg) < 2 {
 		err := fmt.Errorf("entity appear data is too short %v", curPos())
 		logger.Println(err)
@@ -507,7 +507,7 @@ func ParseEntitiesAppearPacket(p *GamePacket) ([]*EntityInfo, error) {
 
 		t, b := msg[0].Data().(uint16), msg[2].Data().([]byte)
 		if t != 16 {
-			// 캐릭터가 아님
+			// Not a character
 			// logger.Println("invalid packet", i, t)
 			continue
 		}
@@ -542,7 +542,7 @@ func EntityItemReader(b []byte) (*EntityItem, error) {
 		return nil, err
 	}
 
-	r.PocketType = le.Uint32(b[0:]) // uint8일듯?
+	r.PocketType = le.Uint32(b[0:]) // Probably uint8?
 	r.ItemId = le.Uint32(b[4:])
 	r.Color1 = le.Uint32(b[8:])
 	r.Color2 = le.Uint32(b[12:])
