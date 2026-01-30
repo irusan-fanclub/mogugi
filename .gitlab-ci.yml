@@ -1,5 +1,5 @@
 default:
-  image: registry.gitlab.com/prilus/mabidilmeter/buildimage
+  image: registry.gitlab.com/mickey9910326/mabidilmeter/buildimage
 
 build:
   stage: build
