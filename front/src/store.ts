@@ -6,7 +6,7 @@ import { DamageCollectorManager } from '@/actionCollector';
 export const loadingCount = ref(0);
 export const isLoading = computed(() => loadingCount.value > 0);
 
-const defaultRegion = 'kr';
+const defaultRegion = 'tw';
 
 export const region = ref(defaultRegion);
 export const lang = ref(defaultRegion);
