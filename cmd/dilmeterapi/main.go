@@ -45,7 +45,7 @@ func main() {
 
 	switch mode {
 	case "list":
-		// nic list 출력
+		// Print NIC list
 		nics, err := pcap.FindAllDevs()
 		if err != nil {
 			messagebox(fmt.Sprintf("FindAllDevs failed: %v", err))
@@ -137,7 +137,7 @@ func run(ctx context.Context, nicName string, fileName string) {
 		logger.Printf("Client connected from %s", ws.RemoteAddr())
 		wsCtx, wsCtxCancel := context.WithCancel(ws.Request().Context())
 
-		// 생각보다 websocket이 send queue 비워지는게 느리다
+		// Websocket send queue drains slower than expected
 		ch := make(chan iEvent, 1000000)
 		defer wsCtxCancel()
 		defer close(ch)

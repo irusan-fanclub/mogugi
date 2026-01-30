@@ -425,7 +425,7 @@ func (t *eventPublisher) loop() {
 						continue
 					}
 
-					// 방어자
+					// Defender
 					targetId := v.EntityId
 					damage := v.Hit.Damage
 					isCritical := v.Hit.Options&0x1 != 0
@@ -447,7 +447,7 @@ func (t *eventPublisher) loop() {
 				continue
 
 			case opcodeEffectDelayed:
-				// effect delayed, 연공 블래스트 대미지가 이걸로 날라옴
+				// effect delayed, Chain Blade Blast damage is sent through this
 				targetId := p.Id
 
 				if len(p.Msg) < 2 ||
@@ -465,7 +465,7 @@ func (t *eventPublisher) loop() {
 				delay := p.Msg[0].Data().(uint32)
 				ttype := p.Msg[1].Data().(uint32)
 				if ttype != 317 {
-					// 연공 블래스트가 아님
+					// Not a Chain Blade Blast
 					continue
 				}
 
@@ -572,7 +572,7 @@ func (t *eventPublisher) loop() {
 }
 
 func (t *eventPublisher) publish(e iEvent) {
-	// blocking이 되면 안된다
+	// Must not block
 
 	t.Lock()
 	defer t.Unlock()
@@ -607,7 +607,7 @@ func (t *eventPublisher) addClient(ctx context.Context, ch chan<- iEvent) uint32
 	clientId := t.currentClientId
 	t.Unlock()
 
-	// bulk write 필요할듯
+	// Bulk write may be needed
 	events := []iEvent(nil)
 
 	t.Lock()

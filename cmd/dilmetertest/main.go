@@ -67,7 +67,7 @@ func main() {
 
 		case 0x520d:
 			// entity disappears
-			// @TODO: 처리 로직 필요
+			// @TODO: Processing logic needed
 			continue
 
 		case 0x520e:
@@ -109,7 +109,7 @@ func main() {
 
 		case 0x5335:
 			// entities disappear
-			// @TODO: 처리 로직 필요
+			// @TODO: Processing logic needed
 			continue
 
 		case 0x53fc:
@@ -130,17 +130,17 @@ func main() {
 
 		case 0x6e29:
 			// change stance res
-			// 내 전투/일상 상태 변경 완료
+			// My combat/normal mode change complete
 			continue
 
 		case 0x6e2a:
 			// change stance
-			// 전투/일상 상태 변경
+			// Combat/normal mode change
 			continue
 
 		case 0x7530:
 			// stat update private
-			// 내 상태 업데이트
+			// My status update
 			continue
 
 		case 0x7532:
@@ -148,12 +148,12 @@ func main() {
 			continue
 
 		case 0x7534:
-			// entity 관련일듯? byte만 잔뜩
+			// entity related? lots of bytes
 			continue
 
 		case 0x791a:
 			// combat target update
-			// 일상 상태로 변경시 리셋 날라옴
+			// Reset sent when changing to normal mode
 			continue
 
 		case 0x7920:
@@ -163,7 +163,7 @@ func main() {
 
 		case 0x7921:
 			// set finisher
-			// id 몬스터 -> msg[0] 막타
+			// id monster -> msg[0] finisher
 			continue
 
 		case 0x7922:
@@ -196,14 +196,14 @@ func main() {
 				// }
 
 				if v.Hit == nil {
-					// 공격자
+					// Attacker
 					attackerName = fmt.Sprintf("entityId:%x", v.EntityId)
 					if entity := entityMap[v.EntityId]; entity != nil {
 						attackerName = entity.Name
 					}
 					attackSkillId = v.SkillId
 				} else {
-					// 방어자
+					// Defender
 					targetName = fmt.Sprintf("entityId:%x", v.EntityId)
 					if entity := entityMap[v.EntityId]; entity != nil {
 						targetName = entity.Name
@@ -235,7 +235,7 @@ func main() {
 			continue
 
 		case 0xaf63:
-			// 지정 pc 관련 패킷
+			// Packet related to designated PC
 			continue
 
 		case 0x1d4c3:
