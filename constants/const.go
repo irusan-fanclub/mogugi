@@ -21,8 +21,10 @@ const _PORT_GEARUP = "2082"
 
 func init() {
 	// Filter for Mabi server or Gearup server
-	filterMabi := fmt.Sprintf("(tcp and src net %s and src port (%s))", _SERVER_MABI_TW, _PORT_MABI_TW)
-	filterGearup := fmt.Sprintf("(tcp and src net %s and src port (%s))", _SERVER_GEARUP, _PORT_GEARUP)
+	// Also filter out TLS packets (content type 0x14-0x17) by checking first byte of TCP payload
+	tlsFilter := "(tcp[((tcp[12:1] & 0xf0) >> 2):1] < 0x14 or tcp[((tcp[12:1] & 0xf0) >> 2):1] > 0x17)"
+	filterMabi := fmt.Sprintf("(tcp and src net %s and src port (%s) and %s)", _SERVER_MABI_TW, _PORT_MABI_TW, tlsFilter)
+	filterGearup := fmt.Sprintf("(tcp and src net %s and src port (%s) and %s)", _SERVER_GEARUP, _PORT_GEARUP, tlsFilter)
 
 	PCAP_GAMESERVER_FILTER = fmt.Sprintf("%s or %s", filterMabi, filterGearup)
 }

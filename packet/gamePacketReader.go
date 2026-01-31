@@ -492,21 +492,6 @@ func gamePacketReader(buffer *bytes.Buffer, at time.Time) (*GamePacket, error) {
 
 	sign := b[0]
 
-	// Skip TLS/SSL packets (0x14-0x17 are TLS content types)
-	if sign >= 0x14 && sign <= 0x17 && len(b) >= 5 {
-		// TLS record: type(1) + version(2) + length(2)
-		tlsLength := int(b[3])<<8 | int(b[4])
-		skipLen := 5 + tlsLength
-		if len(b) >= skipLen {
-			logger.Printf("Skipping TLS packet: type=0x%02X, version=%02X%02X, length=%d",
-				b[0], b[1], b[2], tlsLength)
-			buffer.Next(skipLen)
-			return nil, io.EOF
-		}
-		// Not enough data yet
-		return nil, io.EOF
-	}
-
 	// Total packet size (including header)
 	length := le.Uint32(b[1:])
 	// maybe
