@@ -63,7 +63,8 @@ func ParseEntityAppearPacket(msg Message) (*EntityInfo, error) {
 		return nil, err
 	}
 
-	if msg[1].Data().(uint8) != 5 {
+	dataType := msg[1].Data().(uint8)
+	if dataType != 5 {
 		// Only read public data
 		return nil, nil
 	}
@@ -479,6 +480,9 @@ func ParseEntityAppearPacket(msg Message) (*EntityInfo, error) {
 	v.OwnerId = msg[1].Data().(uint64)
 	msg = msg[2:]
 
+	// logger.Printf("Entity: Id=%d, Name=%s, RaceId=%d, GuildName=%s, OwnerId=%d\n",
+	// 	v.Id, v.Name, v.RaceId, v.GuildName, v.OwnerId)
+
 	return v, nil
 }
 
@@ -492,8 +496,9 @@ func ParseEntitiesAppearPacket(p *GamePacket) ([]*EntityInfo, error) {
 	count := int(msg[0].Data().(uint16))
 	msg = msg[1:]
 
-	for i := 1; i < count; i++ {
+	for i := 0; i < count; i++ {
 		if len(msg) < 3 {
+			logger.Printf("ParseEntitiesAppearPacket: not enough data at index %d, remaining=%d\n", i, len(msg))
 			break
 		}
 
