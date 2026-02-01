@@ -1,4 +1,4 @@
-package packet
+﻿package packet
 
 import (
 	"bytes"
@@ -29,6 +29,12 @@ type GameServerPacketReader struct {
 
 	logHandle *pcapgo.NgWriter
 	logFd     *os.File
+
+	// statistics
+	payloadCount    uint64    // 收到的 TCP payload 數量
+	parsedCount     uint64    // 成功解析的封包數量
+	parseErrorCount uint64    // 解析錯誤的次數
+	lastErrorTime   time.Time // 最後一次錯誤時間
 }
 
 type GameServerPacketReaderOpt struct {
@@ -45,8 +51,8 @@ type gamePacketPayload struct {
 }
 
 type pendingTcpLayer struct {
-	tcpLayer layers.TCP
-	ci       gopacket.CaptureInfo
+	tcp layers.TCP
+	ci  gopacket.CaptureInfo
 }
 
 const pcapQueueSize = 100
@@ -101,83 +107,83 @@ func NewGameServerPacketReader(opt *GameServerPacketReaderOpt) (*GameServerPacke
 }
 
 func (t *GameServerPacketReader) packetLoop(payloadCh <-chan gamePacketPayload) {
-
+	// After using PSH mechanism, received payload should be complete application layer data
+	// But still need to accumulate processing because it may contain multiple game packets
 	buffer := bytes.NewBuffer(nil)
-	lastRelSeq, lastAt := uint32(0), time.Now()
-	payloads := make([]gamePacketPayload, 0, 100)
-
-	skipPayload := func(n int) {
-		for n > 0 {
-			if n < len(payloads[0].data) {
-				lastRelSeq, lastAt = payloads[0].relSeq, payloads[0].at
-				payloads[0].data = payloads[0].data[n:]
-				return
-			}
-
-			n -= len(payloads[0].data)
-			lastRelSeq, lastAt = payloads[0].relSeq, payloads[0].at
-			payloads = payloads[1:]
-		}
-	}
-
-	nextPayload := func() {
-		buffer.Reset()
-
-		if len(payloads) < 1 {
-			return
-		}
-
-		payloads = payloads[1:]
-		if len(payloads) < 1 {
-			return
-		}
-
-		for _, v := range payloads {
-			buffer.Write(v.data)
-		}
-
-		lastRelSeq = payloads[0].relSeq
-	}
-
-	pushPayload := func(payloadData gamePacketPayload) {
-		if buffer.Len() < 1 {
-			buffer.Reset()
-		}
-
-		if len(payloads) < 1 {
-			lastRelSeq, lastAt = payloadData.relSeq, payloadData.at
-		}
-
-		payloads = append(payloads, payloadData)
-		buffer.Write(payloadData.data)
-	}
+	lastAt := time.Now()
+	parsedInCurrentPayload := 0
 
 	for {
 		select {
 		case <-t.ctx.Done():
+			logger.Printf("[Stats] Payloads: %d, Parsed: %d, Errors: %d",
+				t.payloadCount, t.parsedCount, t.parseErrorCount)
 			return
 
 		case payloadData := <-payloadCh:
-			pushPayload(payloadData)
-		}
+			t.payloadCount++
+			parsedInCurrentPayload = 0
 
-	readerLoop:
-		for {
-			msg, err := gamePacketReader(buffer, lastAt)
-			if err != nil {
-				if err == io.EOF {
-					break readerLoop
-				}
+			// Accumulate data to buffer (don't reset)
+			prevBufferLen := buffer.Len()
+			buffer.Write(payloadData.data)
+			lastAt = payloadData.at
 
-				logger.Printf("game packet parse error %v %v", lastRelSeq, err)
-				nextPayload()
-				continue
+			if prevBufferLen > 0 {
+				logger.Printf("[Buffer] Received %d bytes, buffer now %d bytes (accumulated from previous)",
+					len(payloadData.data), buffer.Len())
 			}
 
-			if msg != nil {
-				// logger.Println("game packet", msg.Op, msg.Id, len(msg.Msg), lastRelSeq, lastAt)
-				t.packetCh <- msg
-				skipPayload(len(msg.RawPacket))
+			// Try to parse game packets (may contain multiple game packets)
+			for buffer.Len() > 0 {
+				bufferLenBefore := buffer.Len()
+				msg, err := gamePacketReader(buffer, lastAt)
+				if err != nil {
+					if err == io.EOF {
+						// Data incomplete, wait for more data
+						if parsedInCurrentPayload == 0 && prevBufferLen == 0 {
+							logger.Printf("[Wait] Payload %d bytes incomplete, waiting for more (buffer: %d bytes)",
+								len(payloadData.data), buffer.Len())
+						}
+						break
+					}
+
+					t.parseErrorCount++
+					t.lastErrorTime = time.Now()
+
+					// 顯示錯誤的詳細資訊
+					bufferPreview := buffer.Bytes()
+					previewLen := 32
+					if len(bufferPreview) < previewLen {
+						previewLen = len(bufferPreview)
+					}
+
+					logger.Printf("[ParseError #%d] %v | Buffer: %d bytes | Preview: % X | Parsed: %d in current payload",
+						t.parseErrorCount, err, buffer.Len(), bufferPreview[:previewLen], parsedInCurrentPayload)
+
+					// Parse error, clear buffer and restart
+					buffer.Reset()
+					break
+				}
+
+				if msg != nil {
+					t.parsedCount++
+					parsedInCurrentPayload++
+					bufferConsumed := bufferLenBefore - buffer.Len()
+
+					if false {
+						logger.Printf("[Parsed #%d] Op=0x%04X Id=%d MsgLen=%d Consumed=%d Remaining=%d",
+							t.parsedCount, msg.Op, msg.Id, len(msg.Msg), bufferConsumed, buffer.Len())
+					}
+
+					t.packetCh <- msg
+				}
+			}
+
+			if parsedInCurrentPayload > 0 && buffer.Len() == 0 {
+				if false {
+					logger.Printf("[Complete] Parsed %d packets from payload, buffer cleared", parsedInCurrentPayload)
+				}
 			}
 		}
 	}
@@ -263,18 +269,26 @@ func (t *GameServerPacketReader) openLog() error {
 }
 
 func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
-	ethLayer := layers.Ethernet{}
-	ip4Layer := layers.IPv4{}
-	tcpLayer := layers.TCP{}
+	eth := layers.Ethernet{}
+	ip4 := layers.IPv4{}
+	tcp := layers.TCP{}
 	payload := gopacket.Payload{}
 
-	layerParser := gopacket.NewDecodingLayerParser(layers.LayerTypeEthernet, &ethLayer, &ip4Layer, &tcpLayer, &payload)
+	layerParser := gopacket.NewDecodingLayerParser(layers.LayerTypeEthernet, &eth, &ip4, &tcp, &payload)
 	packetLayers := []gopacket.LayerType(nil)
 
-	// Quick fix for packet order shuffling
+	// TCP fragment reassembly based on PSH flag
 	baseSeq := uint32(0)
-	nextSeq, prevDstPort := uint32(0), layers.TCPPort(0)
-	pendingTcpLayers := make([]pendingTcpLayer, 0, packetQueueSize)
+	firstPacket := true
+	prevDstPort := layers.TCPPort(0)
+
+	// Current accumulating fragment buffer
+	currentBuffer := bytes.NewBuffer(nil)
+	currentBaseSeq := uint32(0)
+	currentTimestamp := time.Time{}
+
+	// Store out-of-order fragments (key: seq)
+	outOfOrderFragments := make(map[uint32]pendingTcpLayer)
 
 	for i := 0; t.ctx.Err() == nil; i++ {
 		b, ci, err := t.handle.ReadPacketData()
@@ -284,7 +298,6 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 		}
 
 		if t.logHandle != nil {
-			// ignore error
 			_ = t.logHandle.WritePacket(ci, b)
 		}
 
@@ -293,167 +306,115 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 			continue
 		}
 
-		if i == 0 {
-			baseSeq = tcpLayer.Seq
-		}
-
-		for _, layer := range packetLayers {
-			if layer != layers.LayerTypeTCP || len(tcpLayer.Payload) < 1 {
-				continue
-			}
-
-			if nextSeq != 0 && tcpLayer.Seq != nextSeq {
-				// When connection changed (channel move, etc.)
-				if prevDstPort != tcpLayer.DstPort {
-					for _, v := range pendingTcpLayers {
-						ch <- gamePacketPayload{
-							relSeq: v.tcpLayer.Seq - baseSeq,
-							data:   v.tcpLayer.Payload,
-							at:     v.ci.Timestamp,
-						}
-					}
-
-					pendingTcpLayers = pendingTcpLayers[:0]
-					prevDstPort = tcpLayer.DstPort
-
-					baseSeq = tcpLayer.Seq
-					nextSeq = tcpLayer.Seq + uint32(len(tcpLayer.Payload))
-
-					if len(tcpLayer.Payload) == 4 {
-						// crypt key
-						continue
-					}
-
-					ch <- gamePacketPayload{
-						relSeq: tcpLayer.Seq - baseSeq,
-						data:   tcpLayer.Payload,
-						at:     ci.Timestamp,
-					}
-
-					continue
-				}
-
-				// Alignment mismatch
-				logger.Println("packet align error", i, nextSeq, tcpLayer.Seq)
-
-				if tcpLayer.Seq < nextSeq {
-					if tcpLayer.Seq+uint32(len(tcpLayer.Payload)) >= nextSeq {
-						// Case solved by discarding overlapping part
-						payload := tcpLayer.Payload[nextSeq-tcpLayer.Seq:]
-						if len(payload) > 0 {
-							ch <- gamePacketPayload{
-								relSeq: nextSeq - baseSeq,
-								data:   payload,
-								at:     ci.Timestamp,
-							}
-						}
-
-						nextSeq = tcpLayer.Seq + uint32(len(tcpLayer.Payload))
-						continue
-					}
-				}
-
-				if len(pendingTcpLayers) >= packetQueueSize {
-					// When full, send pending list and clear it
-					for _, v := range pendingTcpLayers {
-						ch <- gamePacketPayload{
-							relSeq: v.tcpLayer.Seq - baseSeq,
-							data:   v.tcpLayer.Payload,
-							at:     v.ci.Timestamp,
-						}
-					}
-
-					pendingTcpLayers = pendingTcpLayers[:0]
-
-					ch <- gamePacketPayload{
-						relSeq: tcpLayer.Seq - baseSeq,
-						data:   tcpLayer.Payload,
-						at:     ci.Timestamp,
-					}
-					nextSeq = tcpLayer.Seq + uint32(len(tcpLayer.Payload))
-					continue
-				}
-
-				pendingTcpLayers = append(pendingTcpLayers, pendingTcpLayer{
-					tcpLayer: tcpLayer,
-					ci:       ci,
-				})
-				continue
-			}
-
-			ch <- gamePacketPayload{
-				relSeq: tcpLayer.Seq - baseSeq,
-				data:   tcpLayer.Payload,
-				at:     ci.Timestamp,
-			}
-			nextSeq = tcpLayer.Seq + uint32(len(tcpLayer.Payload))
-			prevDstPort = tcpLayer.DstPort
-
-			if len(pendingTcpLayers) > 0 {
-				/*
-					Cases where alignment is mismatched:
-					1. Retransmission - overlapping parts must be discarded
-					2. Out of order - earlier packets arrive later
-				*/
-
-				for _, v := range pendingTcpLayers {
-					if v.tcpLayer.Seq == nextSeq {
-						ch <- gamePacketPayload{
-							relSeq: v.tcpLayer.Seq - baseSeq,
-							data:   v.tcpLayer.Payload,
-							at:     v.ci.Timestamp,
-						}
-						nextSeq = v.tcpLayer.Seq + uint32(len(v.tcpLayer.Payload))
-						pendingTcpLayers = pendingTcpLayers[1:]
-						continue
-					}
-
-					if v.tcpLayer.Seq < nextSeq {
-						payload := v.tcpLayer.Payload
-
-						if v.tcpLayer.Seq+uint32(len(v.tcpLayer.Payload)) < nextSeq {
-							pendingTcpLayers = pendingTcpLayers[1:]
-							continue
-						}
-
-						// Discard overlapping part
-						payload = payload[nextSeq-v.tcpLayer.Seq:]
-						if len(payload) > 0 {
-							ch <- gamePacketPayload{
-								relSeq: nextSeq - baseSeq,
-								data:   payload,
-								at:     v.ci.Timestamp,
-							}
-						}
-
-						nextSeq = v.tcpLayer.Seq + uint32(len(v.tcpLayer.Payload))
-						pendingTcpLayers = pendingTcpLayers[1:]
-						continue
-					}
-
-					// There are still packets not received
-					break
-				}
-			}
-
+		if len(tcp.Payload) < 1 {
 			continue
 		}
 
-		if i&((1<<10)-1) == 0 {
-			time.Sleep(5 * time.Millisecond)
+		// if true {
+		if false {
+			logger.Printf("[TCP] #%d: %s:%s -> %s:%s | Seq: %10d | Nxt: %10d | Ack: %10d | Payload: %5d bytes | ACK: %5v | PSH: %5v",
+				i,
+				ip4.SrcIP.String(), tcp.SrcPort,
+				ip4.DstIP.String(), tcp.DstPort,
+				tcp.Seq, tcp.Seq+uint32(len(tcp.Payload)),
+				tcp.Ack, len(tcp.Payload), tcp.ACK, tcp.PSH)
+		}
+
+		// Initialize sequence number
+		if firstPacket {
+			baseSeq = tcp.Seq
+			currentBaseSeq = tcp.Seq
+			currentTimestamp = ci.Timestamp
+			prevDstPort = tcp.DstPort
+			firstPacket = false
+		}
+
+		// Detect connection changes (channel switches, etc.)
+		if prevDstPort != tcp.DstPort {
+			// Send accumulated data
+			if currentBuffer.Len() > 0 {
+				data := make([]byte, currentBuffer.Len())
+				copy(data, currentBuffer.Bytes())
+				ch <- gamePacketPayload{
+					relSeq: currentBaseSeq - baseSeq,
+					data:   data,
+					at:     currentTimestamp,
+				}
+				currentBuffer.Reset()
+			}
+
+			// Clear out-of-order cache
+			outOfOrderFragments = make(map[uint32]pendingTcpLayer)
+
+			// Reset state
+			baseSeq = tcp.Seq
+			currentBaseSeq = tcp.Seq
+			currentTimestamp = ci.Timestamp
+			prevDstPort = tcp.DstPort
+		}
+
+		// Skip encryption key packet (4 bytes)
+		if len(tcp.Payload) == 4 {
+			continue
+		}
+
+		if tcp.PSH {
+			currentBuffer.Write(tcp.Payload)
+
+			// Send accumulated buffer
+			data := make([]byte, currentBuffer.Len())
+			copy(data, currentBuffer.Bytes())
+			// logger.Printf("[PSH] seq=%d, buffered %d bytes",
+			// 	tcp.Seq, currentBuffer.Len())
+			ch <- gamePacketPayload{
+				relSeq: currentBaseSeq - baseSeq,
+				data:   data,
+				at:     currentTimestamp,
+			}
+			currentBuffer.Reset()
+		} else {
+			// Sequence matches: append to buffer
+			if currentBuffer.Len() == 0 {
+				currentBaseSeq = tcp.Seq
+				currentTimestamp = ci.Timestamp
+			}
+			currentBuffer.Write(tcp.Payload)
+		}
+		continue
+
+	}
+
+	// Process remaining buffered data after loop ends
+	if currentBuffer.Len() > 0 {
+		data := make([]byte, currentBuffer.Len())
+		copy(data, currentBuffer.Bytes())
+		ch <- gamePacketPayload{
+			relSeq: currentBaseSeq - baseSeq,
+			data:   data,
+			at:     currentTimestamp,
 		}
 	}
 
-	for _, v := range pendingTcpLayers {
+	// Process remaining out-of-order fragments
+	for _, fragment := range outOfOrderFragments {
+		data := make([]byte, len(fragment.tcp.Payload))
+		copy(data, fragment.tcp.Payload)
 		ch <- gamePacketPayload{
-			relSeq: v.tcpLayer.Seq - baseSeq,
-			data:   v.tcpLayer.Payload,
-			at:     v.ci.Timestamp,
+			relSeq: fragment.tcp.Seq - baseSeq,
+			data:   data,
+			at:     fragment.ci.Timestamp,
 		}
 	}
 }
 
 func (t *GameServerPacketReader) Close() {
+	logger.Printf("[Close Stats] Payloads: %d, Parsed: %d, Errors: %d",
+		t.payloadCount, t.parsedCount, t.parseErrorCount)
+
+	if t.parseErrorCount > 0 {
+		logger.Printf("[Close Stats] Last error at: %v", t.lastErrorTime)
+	}
+
 	if t.handle != nil {
 		t.handle.Close()
 		t.handle = nil
@@ -477,6 +438,10 @@ func (t *GameServerPacketReader) Close() {
 
 func (t *GameServerPacketReader) PacketCh() <-chan *GamePacket {
 	return t.packetCh
+}
+
+func (t *GameServerPacketReader) GetStats() (payloads, parsed, errors uint64) {
+	return t.payloadCount, t.parsedCount, t.parseErrorCount
 }
 
 func gamePacketReader(buffer *bytes.Buffer, at time.Time) (*GamePacket, error) {

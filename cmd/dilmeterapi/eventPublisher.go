@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"context"
@@ -19,6 +19,7 @@ type eventPublisher struct {
 	r           *packet.GameServerPacketReader
 	clientMap   map[uint32]*eventClient
 	entityCache entityCache
+	eventCh     chan iEvent
 
 	// mutable
 	currentClientId uint32
@@ -51,13 +52,35 @@ func newEventPublisher(ctx context.Context, r *packet.GameServerPacketReader) *e
 		r:           r,
 		clientMap:   make(map[uint32]*eventClient),
 		entityCache: make(entityCache),
+		eventCh:     make(chan iEvent, 1000),
 
 		currentClientId: 1,
 	}
 
 	go v.loop()
+	go v.publishLoop()
 
 	return v
+}
+
+func (t *eventPublisher) sendEvent(e iEvent) {
+	select {
+	case t.eventCh <- e:
+		// sent
+	default:
+		// buffer full, drop event
+	}
+}
+
+func (t *eventPublisher) publishLoop() {
+	for {
+		select {
+		case <-t.ctx.Done():
+			return
+		case e := <-t.eventCh:
+			t.publish(e)
+		}
+	}
 }
 
 func (t *eventPublisher) loop() {
@@ -100,7 +123,7 @@ func (t *eventPublisher) loop() {
 
 				e := toEventEntityAppear(p.At.Unix(), entity)
 
-				t.publish(e)
+				t.sendEvent(e)
 
 				for _, v := range entity.CharacterConditionMap {
 					if !t.entityCache.addOrUpdateCondition(entity.Id, v) {
@@ -123,7 +146,7 @@ func (t *eventPublisher) loop() {
 						AttackerId: attackerId,
 					}
 
-					t.publish(e)
+					t.sendEvent(e)
 				}
 
 				for _, v := range entity.EquipItemMap {
@@ -147,7 +170,7 @@ func (t *eventPublisher) loop() {
 						Color7:     fmt.Sprintf("#%06x", v.Color7),
 					}
 
-					t.publish(e)
+					t.sendEvent(e)
 				}
 
 				for _, pocketType := range t.entityCache.allEquipItemPockets(entity.Id) {
@@ -166,7 +189,7 @@ func (t *eventPublisher) loop() {
 						PocketType: pocketType,
 					}
 
-					t.publish(e)
+					t.sendEvent(e)
 				}
 
 				continue
@@ -190,7 +213,7 @@ func (t *eventPublisher) loop() {
 						Id:      strconv.FormatUint(id, 10),
 					},
 				}
-				t.publish(e)
+				t.sendEvent(e)
 
 				continue
 
@@ -221,7 +244,7 @@ func (t *eventPublisher) loop() {
 					Lower:  lower,
 				}
 
-				t.publish(e)
+				t.sendEvent(e)
 
 				continue
 
@@ -244,7 +267,7 @@ func (t *eventPublisher) loop() {
 
 					e := toEventEntityAppear(p.At.Unix(), entity)
 
-					t.publish(e)
+					t.sendEvent(e)
 				}
 				continue
 
@@ -287,7 +310,7 @@ func (t *eventPublisher) loop() {
 							Id:      strconv.FormatUint(id, 10),
 						},
 					}
-					t.publish(e)
+					t.sendEvent(e)
 
 					msg = msg[2:]
 
@@ -330,7 +353,7 @@ func (t *eventPublisher) loop() {
 					Color7:     fmt.Sprintf("#%06x", info.Color7),
 				}
 
-				t.publish(e)
+				t.sendEvent(e)
 
 				continue
 
@@ -356,7 +379,7 @@ func (t *eventPublisher) loop() {
 					PocketType: pocketType,
 				}
 
-				t.publish(e)
+				t.sendEvent(e)
 
 				continue
 
@@ -381,7 +404,7 @@ func (t *eventPublisher) loop() {
 					},
 					AttackerId: attackerIdStr,
 				}
-				t.publish(e)
+				t.sendEvent(e)
 
 				continue
 
@@ -441,7 +464,7 @@ func (t *eventPublisher) loop() {
 						Damage:     damage,
 						IsCritical: isCritical,
 					}
-					t.publish(e)
+					t.sendEvent(e)
 				}
 
 				continue
@@ -519,7 +542,7 @@ func (t *eventPublisher) loop() {
 					Damage:    float32(damage),
 					IsDelayed: true,
 				}
-				t.publish(e)
+				t.sendEvent(e)
 
 				continue
 
@@ -544,7 +567,7 @@ func (t *eventPublisher) loop() {
 						},
 						CCId: cond.CCId,
 					}
-					t.publish(e)
+					t.sendEvent(e)
 					continue
 				}
 
@@ -563,7 +586,7 @@ func (t *eventPublisher) loop() {
 					DisableAt:  cond.DisableAt,
 					AttackerId: attackerId,
 				}
-				t.publish(e)
+				t.sendEvent(e)
 
 				continue
 			}
