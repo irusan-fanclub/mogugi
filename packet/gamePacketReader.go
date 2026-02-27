@@ -138,10 +138,10 @@ func (t *GameServerPacketReader) packetLoop(payloadCh <-chan gamePacketPayload) 
 				if err != nil {
 					if err == io.EOF {
 						// Data incomplete, wait for more data
-						if parsedInCurrentPayload == 0 && prevBufferLen == 0 {
-							logger.Printf("[Wait] Payload %d bytes incomplete, waiting for more (buffer: %d bytes)",
-								len(payloadData.data), buffer.Len())
-						}
+						// if parsedInCurrentPayload == 0 && prevBufferLen == 0 {
+						// 	logger.Printf("[Wait] Payload %d bytes incomplete, waiting for more (buffer: %d bytes)",
+						// 		len(payloadData.data), buffer.Len())
+						// }
 						break
 					}
 
