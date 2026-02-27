@@ -122,7 +122,7 @@ func (t *GameServerPacketReader) packetLoop(payloadCh <-chan gamePacketPayload) 
 			parsedInCurrentPayload = 0
 
 			// Accumulate data to buffer (don't reset)
-			prevBufferLen := buffer.Len()
+			// prevBufferLen := buffer.Len()
 			buffer.Write(payloadData.data)
 			lastAt = payloadData.at
 

@@ -14,6 +14,7 @@ import (
 	"unsafe"
 
 	"github.com/gopacket/gopacket/pcap"
+	"gitlab.com/prilus/mabidilmeter/constants"
 	"gitlab.com/prilus/mabidilmeter/packet"
 	"golang.org/x/sys/windows"
 )
@@ -48,7 +49,7 @@ type mibTCPTableOwnerPID struct {
 
 func FindNic() (string, error) {
 	// Find the network interface where Client.exe has TCP connections
-	// by scanning Client.exe TCP connections and testing each network interface
+	// by scanning Client.exe TCP connections and testing each connection
 
 	rows, err := getTCPRows()
 	if err != nil {
@@ -59,8 +60,8 @@ func FindNic() (string, error) {
 	ifaceMap := getInterfaceMap()
 	nicMap := getInterfaceNicMap()
 
-	// Collect unique network interfaces where Client.exe has connections
-	nicsToTest := make(map[string]bool)
+	// Collect all Client.exe connections (don't deduplicate by NIC)
+	var clientConnections []connectionWithNic
 
 	for _, row := range rows {
 		// Skip non-ESTABLISHED connections
@@ -77,39 +78,79 @@ func FindNic() (string, error) {
 		localIP := ipv4FromDWORD(row.LocalAddr)
 		remoteIP := ipv4FromDWORD(row.RemoteAddr)
 		remotePort := portFromDWORD(row.RemotePort)
+		localPort := portFromDWORD(row.LocalPort)
 
-		logger.Printf("Found Client.exe connection: %s -> %s:%d (PID: %d)",
-			localIP.String(), remoteIP.String(), remotePort, row.OwningPID)
+		logger.Printf("Found Client.exe connection: %s:%d -> %s:%d (PID: %d)",
+			localIP.String(), localPort, remoteIP.String(), remotePort, row.OwningPID)
 
 		// Get friendly interface name from local IP
 		if friendlyName, ok := ifaceMap[localIP.String()]; ok {
 			logger.Printf("  Interface: %s", friendlyName)
-			nicsToTest[friendlyName] = true
-		}
-	}
-
-	// Test each network interface in order
-	if len(nicsToTest) > 0 {
-		logger.Printf("Testing %d network interface(s) with Client.exe connections...", len(nicsToTest))
-
-		for friendlyName := range nicsToTest {
+			
 			nicName, ok := nicMap[friendlyName]
 			if !ok {
 				logger.Printf("Warning: Could not map friendly name '%s' to NIC name", friendlyName)
 				continue
 			}
 
-			logger.Printf("Testing NIC: %s (%s)", nicName, friendlyName)
-			if found := testNicForPackets(nicName); found {
-				logger.Printf("Success: Found game packets on %s", nicName)
-				return nicName, nil
-			}
+			clientConnections = append(clientConnections, connectionWithNic{
+				nicName:     nicName,
+				friendlyName: friendlyName,
+				connInfo: connectionInfo{
+					ServerIP:   remoteIP.String(),
+					ServerPort: fmt.Sprintf("%d", remotePort),
+					LocalPort:  fmt.Sprintf("%d", localPort),
+				},
+			})
 		}
 	}
 
-	// Fallback: try all NICs if none of the Client.exe NICs worked
-	logger.Println("No game packets found on Client.exe network interfaces, falling back to all NICs...")
-	return findNicByPackets()
+	// Test each connection in order
+	if len(clientConnections) > 0 {
+		logger.Printf("Testing %d Client.exe connection(s)...", len(clientConnections))
+
+		for i, conn := range clientConnections {
+			logger.Printf("[%d/%d] Testing connection on NIC: %s (%s)", 
+				i+1, len(clientConnections), conn.nicName, conn.friendlyName)
+
+			// Update filter with actual connection details
+			updateFilterWithConnection(conn.connInfo)
+			logger.Printf("  Updated filter - ServerIP: %s, SrcPort: %s, DstPort: %s",
+				conn.connInfo.ServerIP, conn.connInfo.ServerPort, conn.connInfo.LocalPort)
+
+			if found := testNicForPackets(conn.nicName); found {
+				logger.Printf("  Success: Found game packets on this connection")
+				return conn.nicName, nil
+			}
+		}
+		
+		// No game packets found on any Client.exe connection
+		return "", errors.New("no game packets found on any Client.exe connection")
+	}
+
+	// No Client.exe connections found
+	return "", errors.New("no Client.exe network connections found")
+}
+
+type connectionWithNic struct {
+	nicName      string
+	friendlyName string
+	connInfo     connectionInfo
+}
+
+type connectionInfo struct {
+	ServerIP   string
+	ServerPort string
+	LocalPort  string
+}
+
+func updateFilterWithConnection(connInfo connectionInfo) {
+	constants.ServerIP = connInfo.ServerIP
+	constants.ServerSrcPort = connInfo.ServerPort
+	constants.ServerDstPort = connInfo.LocalPort
+	constants.RebuildFilter()
+	logger.Printf("Filter updated with connection: %s:%s -> 0.0.0.0:%s",
+		connInfo.ServerIP, connInfo.ServerPort, connInfo.LocalPort)
 }
 
 func testNicForPackets(nicName string) bool {
