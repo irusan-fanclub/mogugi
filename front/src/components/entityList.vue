@@ -12,13 +12,7 @@
                         v.body.Upper.toFixed(2) }} l: {{ v.body.Lower.toFixed(2) }}
                 </v-sheet>
                 <v-sheet width="100%" class="mb-2">
-                    <template v-for="cond in Object.values(v.conditionMap).sort((a, b) => a.CCId - b.CCId)"
-                        v-bind:key="cond.CCId">
-                        <img width="16" height="16" @mouseover="e => setCondTooltip(e.target! as HTMLElement, cond)"
-                            @mouseleave="e => setCondTooltip(e.target! as HTMLElement, undefined)"
-                            @click="e => setCondTooltip(e.target! as HTMLElement, cond)"
-                            :src='`/res/characterconditionimage/${region}/${cond.CCId}/${cond.CCId}.png`' />
-                    </template>
+                    <condition-image-list :conditions="Object.values(v.conditionMap).sort((a, b) => a.CCId - b.CCId)" />
                 </v-sheet>
 
                 <v-sheet width="100%"
@@ -33,19 +27,19 @@
             </v-expansion-panel-text>
         </v-expansion-panel>
     </v-expansion-panels>
-
-    <v-tooltip v-if="condTooltip" v-model="condTooltipValue" :activator="condTooltipParent">
-        {{ condNameMap[condTooltip.CCId] }}
-    </v-tooltip>
 </template>
 
 <script lang="ts">
-import { defineComponent, inject, ref, computed, onMounted } from "vue";
+import { defineComponent, inject, computed, onMounted } from "vue";
 
-import { getMabiNameColor } from '@/util';
-import { EntityCondition } from '@/eventActor';
+import { getMabiNameColor } from '@/lib/util';
+
+import ConditionImageList from './subComponents/conditionImageList.vue';
 
 export default defineComponent({
+    components: {
+        ConditionImageList,
+    },
     setup() {
         const isLoading = inject('isLoading');
         const region = inject('region');
@@ -56,16 +50,6 @@ export default defineComponent({
 
         const pcEntities = computed(() =>
             Object.values(actorManager.value.entityMap).filter(v => v.isPC).sort((a, b) => a.name.localeCompare(b.name)));
-
-        const condTooltipParent = ref<HTMLElement>();
-        const condTooltipValue = ref(false);
-        const condTooltip = ref<EntityCondition>();
-
-        const setCondTooltip = (el: HTMLElement, cond?: EntityCondition) => {
-            condTooltip.value = cond;
-            condTooltipParent.value = el;
-            condTooltipValue.value = !!cond;
-        }
 
         onMounted(() => {
             console.log(pcEntities);
@@ -79,11 +63,6 @@ export default defineComponent({
             raceNameMap,
             condNameMap,
             itemNameMap,
-
-            condTooltip,
-            condTooltipParent,
-            condTooltipValue,
-            setCondTooltip,
 
             getMabiNameColor,
         }

@@ -17,4 +17,7 @@ declare module '@vue/runtime-core' {
     function inject(key: 'appEvent'): Ref<EventTarget>;
     function inject(key: 'actorManager'): Ref<ActorManager>;
     function inject(key: 'dcManager'): Ref<DamageCollectorManager>;
+    function inject(key: 'timeRangeMin'): Ref<number | null>;
+    function inject(key: 'timeRangeMax'): Ref<number | null>;
+    function inject(key: 'hasTimeRange'): ComputedRef<boolean>;
 }

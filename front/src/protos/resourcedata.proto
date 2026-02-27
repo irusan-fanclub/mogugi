@@ -103,7 +103,7 @@ message EquipColData {
     repeated uint32 Glove = 3;
     repeated uint32 Shoes = 4;
     repeated uint32 Robe = 5;
-    repeated uint32 Acc = 6; // Puppet, Halo
+    repeated uint32 Acc = 6; // 퍼핏, 헤일로
     repeated uint32 FaceDeco = 7;
     repeated uint32 Tail = 8;
     repeated uint32 Chair = 9;
@@ -306,7 +306,7 @@ message PetInfo {
     uint32 Id = 1;
     uint32 LimitTime = 2;
     
-    // Based on 1 year old
+    // 1살 기준
     PetStat MinLevelStat = 3;
     PetStat MaxLevelStat = 4;
     

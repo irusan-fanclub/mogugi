@@ -9,6 +9,7 @@ export const eventIdFinish = 6;
 export const eventIdEntityEquipItem = 7;
 export const eventIdEntityUnequipItem = 8;
 export const eventIdEntityUpdateBody = 9;
+export const eventIdMessageBox = 10;
 
 export type eventBase = {
     EventId: eventId;
@@ -78,4 +79,9 @@ export type eventEntityUpdateBody = eventBase & {
     Weight: number;
     Upper: number;
     Lower: number;
+}
+
+export type eventMessageBox = eventBase & {
+    EventId: 10;
+    Message: string;
 }

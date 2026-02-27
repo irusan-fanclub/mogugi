@@ -1,11 +1,11 @@
-import { CustomReactive, IUpdateCallback } from '@/util';
+import { CustomReactive, IUpdateCallback } from '@/lib/util';
 import { shallowReactive } from 'vue';
 import * as bounds from 'binary-search-bounds';
 
 import * as protocols from '@/protocols';
 import { DamageCollectorManager } from '@/actionCollector';
 
-// TODO: Distinguish between take cc and apply cc
+// TODO: take cc, apply cc 구분하기
 
 export class ActorManager {
     constructor(private _damageCollector: DamageCollectorManager) {
@@ -26,7 +26,7 @@ export class ActorManager {
 
         switch (event.EventId) {
             case protocols.eventIdEntityAppear:
-                // TODO: Get master id, hp from entityAppear, when processing damage/cc, should send to master id if it exists
+                // TODO: entityAppear에서 master id, hp 가져오기, damage, cc 처리할 때 master id가 있으면 그쪽으로 보내야함
                 entity.onEntityAppear(event as protocols.eventEntityAppear);
                 break;
 
@@ -40,10 +40,10 @@ export class ActorManager {
                         entity.group.onApplyDamage(event_);
                     }
 
-                    const targetEntity = this.entityMap[event_.TargetId];
+                    let targetEntity = this.entityMap[event_.TargetId];
                     if (!targetEntity) {
-                        // Case where damage arrives before user info
-                        // @TODO: Change to use local storage for caching later
+                        // 유저 정보가 오기전에 대미지가 먼저오는 경우
+                        // @TODO: 추후에 local storage를 사용해 캐싱하는 식으로 변경
                         this.onEntityAppear({
                             Id: event_.TargetId,
                             EventId: 1,
@@ -56,7 +56,9 @@ export class ActorManager {
                             Lower: 1,
                             GuildName: "",
                             OwnerId: "",
-                        })
+                        });
+
+                        targetEntity = this.entityMap[event_.TargetId];
                     }
 
                     targetEntity.onTakeDamage(event_);
@@ -130,7 +132,7 @@ export class ActorManager {
                 this.entityMap[Id] = group.entityMap[Id] = entity;
             }
 
-            // Case where API is turned on after receiving entity appear
+            // entity appear를 받은 뒤에 api가 켜진 경우
             for (const v of this.damages) {
                 if (v.Id == Id) {
                     entity.onApplyDamage(v);
@@ -148,8 +150,17 @@ export class ActorManager {
         this._damageCollector.onDamage(event);
     }
 
+    public forceUpdateAll(): void {
+        for (const k in this.entityMap) {
+            this.entityMap[k].forceUpdate();
+        }
+        for (const k in this.groupMap) {
+            this.groupMap[k].forceUpdate();
+        }
+    }
+
     public clear() {
-        // Creating new object instances would be troublesome
+        // object instance를 새로 만들면 귀찮아짐
         this.damages.length = 0;
 
         for (const k in this.entityMap) {
@@ -166,7 +177,7 @@ export class ActorManager {
     }
 
     private static groupTargetKey(event: protocols.eventEntityAppear): string {
-        // For PC, prevent multiple entities in a group
+        // pc 일 경우 group안에 entity가 여러개 생기지 않도록
         if (this.pcRaceSet.has(event.RaceId)) {
             return event.Id;
         }
@@ -176,7 +187,7 @@ export class ActorManager {
 }
 
 interface IEventActor {
-    /** Reset only damage-related values */
+    /** damage 쪽 수치들만 reset */
     clear(): void;
 }
 
@@ -216,7 +227,7 @@ export abstract class BaseActor implements IEventActor, IUpdateCallback {
         return this._body;
     }
 
-    /** Damage received */
+    /** 받은 대미지 */
     public get totalTakeDamage() {
         this.vueUpdateTrack?.();
         return this._totalTakeDamage;
@@ -229,7 +240,7 @@ export abstract class BaseActor implements IEventActor, IUpdateCallback {
         return this._takeDamages;
     }
 
-    /** Damage dealt */
+    /** 준 대미지 */
     public get totalApplyDamage() {
         this.vueUpdateTrack?.();
         return this._totalApplyDamage;
@@ -324,6 +335,14 @@ export abstract class BaseActor implements IEventActor, IUpdateCallback {
 
         this.vueUpdateTimeout = setTimeout(() => this.vueUpdate(), BaseActor.vueUpdateTick);
     }
+
+    public forceUpdate(): void {
+        if (this.vueUpdateTimeout) {
+            clearTimeout(this.vueUpdateTimeout);
+            this.vueUpdateTimeout = 0;
+        }
+        this.vueUpdateTrigger?.();
+    }
 }
 
 export class EntityActor extends BaseActor {
@@ -382,7 +401,7 @@ export class EntityActor extends BaseActor {
         this._body.Lower = event.Lower;
 
         if (ActorManager.pcRaceSet.has(event.RaceId)) {
-            // Don't initialize damage for PC
+            // pc일 경우 damage 초기와 안함
             return;
         }
 
@@ -400,6 +419,7 @@ export class EntityActor extends BaseActor {
 
             Conditions: attacker?.getConditionState(event.At) ?? [],
             TargetConditions: this.getConditionState(event.At),
+            PetId: '',
         }
 
         this._totalTakeDamage += event.Damage;
@@ -409,10 +429,13 @@ export class EntityActor extends BaseActor {
     public override onApplyDamage(event: protocols.eventDamage): void {
         this.vueUpdateRequest();
 
+        const attackerId = event.Id;
+        const attacker = this.mgr.entityMap[attackerId];
+        
         const targetId = event.TargetId;
         const target = this.mgr.entityMap[targetId];
         if (!target || !(target instanceof EntityActor)) {
-            // Ignore if mob info doesn't exist
+            // 몹 정보가 없으면 무시
             return;
         }
 
@@ -421,12 +444,19 @@ export class EntityActor extends BaseActor {
 
             Conditions: this.getConditionState(event.At),
             TargetConditions: target.getConditionState(event.At),
+            PetId: '',
+        }
+
+        // apply의 경우 pet 대신 pc가 공격한 것 처럼 처리
+        if (attacker?.ownerId) {
+            damage.PetId = attackerId;
+            damage.Id = attacker.ownerId;
         }
 
         this._totalApplyDamage += event.Damage;
         this._applyDamages.push(damage);
 
-        // Only called in apply
+        // apply에서만 호출
         this.mgr.onEntityDamage(damage);
     }
 
@@ -502,7 +532,7 @@ export class EntityActor extends BaseActor {
     }
 }
 
-// TODO: It would be better to change to adding Group conditions to GroupActor
+// TODO: GroupActor에 Group 조건 추가하는 식으로 바꾸는게 좋을듯
 export class GroupActor extends BaseActor {
     public constructor(mgr: ActorManager, id: string, raceId: number, name: string) {
         const groupName = ActorManager.pcRaceSet.has(raceId)
@@ -525,7 +555,7 @@ export class GroupActor extends BaseActor {
         this._raceId = event.RaceId;
 
         if (ActorManager.pcRaceSet.has(event.RaceId)) {
-            // Don't initialize damage for PC
+            // pc일 경우 damage 초기와 안함
             return;
         }
 
@@ -555,6 +585,7 @@ export class GroupActor extends BaseActor {
 
             Conditions: attacker?.getConditionState(event.At) ?? [],
             TargetConditions: target.getConditionState(event.At),
+            PetId: '',
         }
 
         this._totalTakeDamage += event.Damage;
@@ -576,6 +607,7 @@ export type EntityDamage = {
     IsDelayed: boolean;
     Conditions: EntityCondition[];
     TargetConditions: EntityCondition[];
+    PetId: string; // 펫 공격일 경우
 };
 
 export type EntityCondition = {

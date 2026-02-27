@@ -1,92 +1,103 @@
 <template>
-    <v-sheet>
-        <div ref="chartDom" style="width: 100svw; height: 300px;"></div>
+    <v-sheet class="d-flex align-center ma-2" style="gap: 8px;">
+        <v-select v-model="targetId" :items="targetIdList"
+            :item-title="vv => `${vv[0] ? prettyEntityName(entityMap[vv[0]]?.actor) : 'all'} ${vv[1]?.toFixed(0)}`"
+            :item-value="vv => vv[0]" variant="outlined" density="compact" hide-details style="flex: 1;">
+        </v-select>
+        <v-btn @click="showCumulativeChart" color="primary" size="small" prepend-icon="mdi-chart-bar">
+            Cumulative</v-btn>
+        <v-btn @click="showDpsChart" color="primary" size="small" prepend-icon="mdi-chart-bar">
+            DPS</v-btn>
     </v-sheet>
-    <v-select v-model="targetId" :items="targetIdList"
-        :item-title="vv => `${vv[0] ? prettyEntityName(entityMap[vv[0]]?.actor) : 'all'} ${vv[1]?.toFixed(0)}`"
-        :item-value="vv => vv[0]" class="ma-2" variant="outlined" density="compact" hide-details>
-    </v-select>
 
     <v-expansion-panels multiple v-for="v in pcEntities" v-bind:key="v.actor.id">
         <template v-if="v.totalDamage > 0">
             <v-expansion-panel>
                 <v-expansion-panel-title>
-                    <v-sheet>
-                        {{ prettyEntityName(v.actor) }} {{ v.totalDamage.toFixed(0) }} {{ (100 * v.totalDamage /
+                    <v-sheet class="d-flex align-center" style="gap: 8px;">
+                        <span>{{ prettyEntityName(v.actor) }} {{ v.totalDamage.toFixed(0) }} {{ (100 * v.totalDamage /
                             allApplyDamage).toFixed(1) }}% dps {{ v.damages.length < 2 ? 0 : Math.round(v.totalDamage /
-                            (v.damages[v.damages.length - 1].At - v.damages[0].At)) }} </v-sheet>
-
+                            (v.damages[v.damages.length - 1].At - v.damages[0].At)) }}</span>
+                        <v-tooltip text="Cumulative"><template v-slot:activator="{ props: tp }">
+                            <v-btn v-bind="tp" @click.stop="showAttackerCumulativeChart(v)" size="x-small" icon="mdi-chart-bar" variant="text" />
+                        </template></v-tooltip>
+                        <v-tooltip text="DPS"><template v-slot:activator="{ props: tp }">
+                            <v-btn v-bind="tp" @click.stop="showAttackerDpsChart(v)" size="x-small" icon="mdi-chart-bar" variant="text" />
+                        </template></v-tooltip>
+                    </v-sheet>
                 </v-expansion-panel-title>
                 <v-expansion-panel-text class="pa-3">
                     <v-sheet
                         v-for="[skillId, damageBySkill] in Object.entries(v.groupedTotalDamages).sort(([, av], [_, bv]) => bv - av)"
-                        v-bind:key="skillId" class="d-flex">
-                        <v-sheet width="32" class="mr-2">
-                            <img width="32" height="32" :src='`/res/skillimage/${region}/${skillId}/${skillId}.png`' />
-                        </v-sheet>
-                        <v-sheet width="100%" class="mb-4">
-                            <!-- Skill image -->
-                            <!-- Name -->
-                            <v-sheet width="100%"
-                                @click.stop="showEntityDetailDamageList(v.actor.id, targetId, +skillId)">
-                                {{ skillNameMap[+skillId] || `unknownSkill:${skillId}` }}
-                                damage: {{ damageBySkill.toFixed(0) }}
-                                count: {{ v.groupedCount[+skillId] }}
-                                avgDamage: {{ (v.groupedCount[+skillId] ? damageBySkill / v.groupedCount[+skillId] : 0).toFixed(0) }}
-                                minDamage: {{ v.groupedMinDamages[+skillId]?.toFixed(0) || '0' }}
-                                maxDamage: {{ v.groupedMaxDamages[+skillId]?.toFixed(0) || '0' }}
-                                {{ (100 * damageBySkill / v.totalDamage).toFixed(1) }}%
-                            </v-sheet>
-
-                            <!-- Bar -->
-                            <v-sheet width="100%" height="16">
-                                <v-sheet @click.stop="showEntityDetailDamageList(v.actor.id, '', +skillId)"
-                                    :color="getMabiNameColor(skillNameMap[+skillId] || `unknownSkill:${skillId}`)"
-                                    height="100%"
-                                    :width="`${Math.round(100 * damageBySkill / v.totalDamage).toFixed(0)}%`"
-                                    class="rounded-xl">
-                                </v-sheet>
-                            </v-sheet>
-                        </v-sheet>
+                        v-bind:key="skillId" class="mb-2"
+                        style="position: relative; overflow: hidden; border-radius: 4px; cursor: pointer; background: rgba(255,255,255,0.12);"
+                        @click.stop="showEntityDetailDamageList(v.actor.id, targetId, +skillId)">
+                        <!-- bar fill -->
+                        <div :style="{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${Math.round(100 * damageBySkill / v.totalDamage)}%`, background: getMabiNameColor(skillNameMap[+skillId] || `unknownSkill:${skillId}`), opacity: 0.4 }" />
+                        <!-- row 1: icon, name, damage, %, buttons -->
+                        <div class="d-flex align-center pa-1" style="position: relative; gap: 4px;">
+                            <img width="28" height="28" :src="`/res/skillimage/${region}/${skillId}/${skillId}.png`" style="border-radius: 2px;" />
+                            <span class="font-weight-medium">{{ skillNameMap[+skillId] || `unknownSkill:${skillId}` }}</span>
+                            <v-spacer />
+                            <span>{{ damageBySkill.toFixed(0) }}</span>
+                            <span style="min-width: 48px; text-align: right;">{{ (100 * damageBySkill / v.totalDamage).toFixed(1) }}%</span>
+                            <v-tooltip text="Distribution"><template v-slot:activator="{ props: tp }">
+                                <v-btn v-bind="tp" @click.stop="showSkillDistribution(v, +skillId)" size="x-small" icon="mdi-chart-bar" variant="text" density="compact" />
+                            </template></v-tooltip>
+                            <v-tooltip text="Cumulative"><template v-slot:activator="{ props: tp }">
+                                <v-btn v-bind="tp" @click.stop="showSkillCumulativeChart(v, +skillId)" size="x-small" icon="mdi-chart-bar" variant="text" density="compact" />
+                            </template></v-tooltip>
+                            <v-tooltip text="DPS"><template v-slot:activator="{ props: tp }">
+                                <v-btn v-bind="tp" @click.stop="showSkillDpsChart(v, +skillId)" size="x-small" icon="mdi-chart-bar" variant="text" density="compact" />
+                            </template></v-tooltip>
+                            <v-tooltip text="Count"><template v-slot:activator="{ props: tp }">
+                                <v-btn v-bind="tp" @click.stop="showSkillCountChart(v, +skillId)" size="x-small" icon="mdi-chart-bar" variant="text" density="compact" />
+                            </template></v-tooltip>
+                        </div>
+                        <!-- row 2: detailed stats -->
+                        <div class="d-flex pa-1 pl-9" style="position: relative; gap: 8px; font-size: 0.8em; opacity: 0.8;">
+                            <span>count: {{ v.groupedCount[+skillId] }}</span>
+                            <span>crit: {{ v.groupedCriticalCount[+skillId] }}</span>
+                            <span>avg: {{ (v.groupedCount[+skillId] ? damageBySkill / v.groupedCount[+skillId] : 0).toFixed(0) }}</span>
+                            <span>min: {{ v.groupedMinDamages[+skillId]?.toFixed(0) || '0' }}</span>
+                            <span>max: {{ v.groupedMaxDamages[+skillId]?.toFixed(0) || '0' }}</span>
+                        </div>
                     </v-sheet>
                 </v-expansion-panel-text>
             </v-expansion-panel>
-            <!-- Bar -->
-            <v-sheet width="100%" height="16">
-                <v-sheet :color="getMabiNameColor(prettyEntityName(v.actor)!)" height="100%"
-                    :width="`${Math.round(100 * v.totalDamage / allApplyDamage).toFixed(0)}%`" class="rounded-xl">
-                </v-sheet>
+            <v-sheet width="100%" class="mb-2"
+                style="position: relative; overflow: hidden; border-radius: 4px; cursor: pointer; background: rgba(255,255,255,0.12);"
+                @click.stop="showEntityAllDamageList(v.actor.id)">
+                <div :style="{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${Math.round(100 * v.totalDamage / allApplyDamage)}%`, background: getMabiNameColor(prettyEntityName(v.actor)!), opacity: 0.4 }" />
+                <div class="d-flex align-center pa-1" style="position: relative; gap: 4px;">
+                    <span class="font-weight-medium">{{ prettyEntityName(v.actor) }}</span>
+                    <v-spacer />
+                    <span>{{ v.totalDamage.toFixed(0) }}</span>
+                    <span style="min-width: 48px; text-align: right;">{{ (100 * v.totalDamage / allApplyDamage).toFixed(1) }}%</span>
+                </div>
             </v-sheet>
         </template>
 
     </v-expansion-panels>
 
-    <v-dialog v-model="detailDialog" min-width="60vw" height="90svh">
-        <v-card>
-            <v-card-text class="pa-0">
-                <damage-list :attacker-name="detailDialogData?.attackerName || ''"
-                :target-name="detailDialogData?.skillName || ''" :damages="detailDialogData?.damages || []" />
-            </v-card-text>
-            <v-card-actions>
-                <v-btn color="primary" block @click="detailDialog = false">Close</v-btn>
-            </v-card-actions>
-        </v-card>
-    </v-dialog>
+
 </template>
 
 <script lang="ts">
-import { defineComponent, inject, ref, computed, onUnmounted, watch, onMounted } from "vue";
-import highcharts, { Options, SeriesAreaOptions } from 'highcharts';
+import { defineComponent, inject, ref, computed, onUnmounted, onMounted, type Ref } from "vue";
 
-import { getMabiNameColor } from '@/util';
-import { EntityDamage, ActorManager, BaseActor, GroupActor, EntityActor } from '@/eventActor';
+import { getMabiNameColor, prettyEntityName } from '@/lib/util';
+import type { EntityDamage, EntityActor } from '@/eventActor';
 import { DamageCollectorBase, DualGroupedDamageCollector, GroupedDamageCollector } from '@/actionCollector';
+import { useDialogStack } from '@/lib/useDialogStack';
+import { filterByTimeRange, computeGroupedStats } from '@/lib/timeRangeFilter';
 
+import DamageChart from '@/components/subComponents/damageChart.vue';
+import DamageDistribution from '@/components/subComponents/damageDistribution.vue';
 import DamageList from '@/components/subComponents/damageList.vue';
 
 export default defineComponent({
     components: {
-        DamageList,
     },
     setup() {
         const isLoading = inject('isLoading');
@@ -96,12 +107,10 @@ export default defineComponent({
         const appEvent = inject('appEvent');
         const actorManager = inject('actorManager');
         const dcManager = inject('dcManager');
+        const timeRangeMin = inject('timeRangeMin');
+        const timeRangeMax = inject('timeRangeMax');
 
         const damageCollectorMap: Record<string, DamageCollectorBase> = {};
-        const chartDom = ref<HTMLElement>(undefined!);
-        let chart: Highcharts.Chart = undefined!;
-
-        const chartData = computed(() => getChartSeriesData(pcEntities.value.filter(v => v.totalDamage > 10000)));
 
         onUnmounted(() => {
             appEvent.value.removeEventListener('clear', clearTarget);
@@ -136,6 +145,8 @@ export default defineComponent({
         }
         const targetDC = ref(getTargetDC());
 
+        const dialogStack = useDialogStack();
+
         const showEntityDetailDamageList = (attackerId: string, targetId: string, skillId: number) => {
             const entity = entityMap.value[attackerId];
             if (!entity) {
@@ -146,12 +157,27 @@ export default defineComponent({
                 entity.dc.dualGroupedDamages[targetId][skillId] :
                 entity.dc.grouped2Damages[skillId];
 
-            detailDialog.value = true;
-            detailDialogData.value = {
-                attackerName: prettyEntityName(entity.actor)!,
-                skillName: skillNameMap.value[skillId] || `unknownSkill:${skillId}`,
+            const attackerName = prettyName(entity.actor)!;
+            const targetName = skillNameMap.value[skillId] || `unknownSkill:${skillId}`;
+            dialogStack.open(DamageList, {
+                attackerName,
+                targetName,
                 damages: damages,
-            };
+            }, `${attackerName} → ${targetName}`);
+        }
+
+        const showEntityAllDamageList = (attackerId: string) => {
+            const entity = entityMapWithTargetData.value[attackerId];
+            if (!entity) {
+                return;
+            }
+
+            const attackerName = prettyName(entity.actor)!;
+            dialogStack.open(DamageList, {
+                attackerName,
+                targetName: 'All',
+                damages: entity.damages,
+            }, `${attackerName} → All`);
         }
 
         const entityMap = computed(() => {
@@ -171,27 +197,49 @@ export default defineComponent({
 
         const entityMapWithTargetData = computed(() => {
             const m: Record<string, EntityExtended> = {};
+            const minAt = timeRangeMin.value;
+            const maxAt = timeRangeMax.value;
+            const hasFilter = minAt !== null && maxAt !== null;
 
             for (const k in entityMap.value) {
                 const v = entityMap.value[k];
 
-                const totalDamage = targetId.value ? v.dc.groupedTotalDamages[targetId.value] || 0 : v.dc.totalDamage;
-                const damages = targetId.value ? v.dc.groupedDamages[targetId.value] || [] : v.dc.damages;
-                const groupedTotalDamages = targetId.value ? v.dc.dualGroupedTotalDamages[targetId.value] : v.dc.grouped2TotalDamages;
-                const groupedDamages = targetId.value ? v.dc.dualGroupedDamages[targetId.value] : v.dc.grouped2Damages;
-                const groupedMinDamages = targetId.value ? v.dc.dualGroupedMinDamages[targetId.value] : v.dc.grouped2MinDamages;
-                const groupedMaxDamages = targetId.value ? v.dc.dualGroupedMaxDamages[targetId.value] : v.dc.grouped2MaxDamages;
-                const groupedCount = targetId.value ? v.dc.dualGroupedCount[targetId.value] : v.dc.grouped2Count;
+                const baseDamages = targetId.value ? v.dc.groupedDamages[targetId.value] || [] : v.dc.damages;
+                const damages = filterByTimeRange(baseDamages, minAt, maxAt);
 
-                m[k] = {
-                    ...v,
-                    totalDamage,
-                    damages,
-                    groupedTotalDamages,
-                    groupedDamages,
-                    groupedMinDamages,
-                    groupedMaxDamages,
-                    groupedCount,
+                if (hasFilter) {
+                    const stats = computeGroupedStats(damages, d => `${d.SkillId}`);
+                    m[k] = {
+                        ...v,
+                        totalDamage: stats.totalDamage,
+                        damages,
+                        groupedTotalDamages: stats.groupedTotalDamages,
+                        groupedDamages: stats.groupedDamages,
+                        groupedMinDamages: stats.groupedMinDamages,
+                        groupedMaxDamages: stats.groupedMaxDamages,
+                        groupedCount: stats.groupedCount,
+                        groupedCriticalCount: stats.groupedCriticalCount,
+                    };
+                } else {
+                    const totalDamage = targetId.value ? v.dc.groupedTotalDamages[targetId.value] || 0 : v.dc.totalDamage;
+                    const groupedTotalDamages = targetId.value ? v.dc.dualGroupedTotalDamages[targetId.value] : v.dc.grouped2TotalDamages;
+                    const groupedDamages = targetId.value ? v.dc.dualGroupedDamages[targetId.value] : v.dc.grouped2Damages;
+                    const groupedMinDamages = targetId.value ? v.dc.dualGroupedMinDamages[targetId.value] : v.dc.grouped2MinDamages;
+                    const groupedMaxDamages = targetId.value ? v.dc.dualGroupedMaxDamages[targetId.value] : v.dc.grouped2MaxDamages;
+                    const groupedCount = targetId.value ? v.dc.dualGroupedCount[targetId.value] : v.dc.grouped2Count;
+                    const groupedCriticalCount = targetId.value ? v.dc.dualGroupedCriticalCount[targetId.value] : v.dc.grouped2CriticalCount;
+
+                    m[k] = {
+                        ...v,
+                        totalDamage,
+                        damages,
+                        groupedTotalDamages,
+                        groupedDamages,
+                        groupedMinDamages,
+                        groupedMaxDamages,
+                        groupedCount,
+                        groupedCriticalCount,
+                    };
                 }
             }
 
@@ -203,6 +251,19 @@ export default defineComponent({
 
         const targetId = ref('');
         const targetIdList = computed(() => {
+            const minAt = timeRangeMin.value;
+            const maxAt = timeRangeMax.value;
+            const hasFilter = minAt !== null && maxAt !== null;
+
+            if (hasFilter) {
+                const filtered = filterByTimeRange(targetDC.value.damages, minAt, maxAt);
+                const stats = computeGroupedStats(filtered, d => d.TargetId);
+                const list = Object.entries(stats.groupedTotalDamages)
+                    .sort(([, av], [, bv]) => bv - av);
+                list.unshift(['', stats.totalDamage]);
+                return list;
+            }
+
             const list = Object.entries(targetDC.value.groupedTotalDamages)
                 .sort(([, av], [, bv]) => bv - av);
 
@@ -215,118 +276,111 @@ export default defineComponent({
             targetId.value = '';
         }
 
+        const getChartEntities = () =>
+            pcEntities.value.filter(v => v.totalDamage > 10000).map(v => ({ name: prettyName(v.actor)!, damages: v.damages }));
+
+        const getTargetTitle = () =>
+            targetId.value ? prettyName(entityMap.value[targetId.value]?.actor) || targetId.value : 'All';
+
+        const showCumulativeChart = () => {
+            dialogStack.open(DamageChart, {
+                entities: getChartEntities(),
+                mode: 'cumulative',
+            }, `Cumulative - ${getTargetTitle()}`);
+        }
+
+        const showDpsChart = () => {
+            dialogStack.open(DamageChart, {
+                entities: getChartEntities(),
+                mode: 'dps',
+            }, `DPS - ${getTargetTitle()}`);
+        }
+
+        const showAttackerCumulativeChart = (v: EntityExtended) => {
+            const name = prettyName(v.actor)!;
+            dialogStack.open(DamageChart, {
+                entities: [{ name, damages: v.damages }],
+                mode: 'cumulative',
+            }, `Cumulative - ${name}`);
+        }
+
+        const showAttackerDpsChart = (v: EntityExtended) => {
+            const name = prettyName(v.actor)!;
+            dialogStack.open(DamageChart, {
+                entities: [{ name, damages: v.damages }],
+                mode: 'dps',
+            }, `DPS - ${name}`);
+        }
+
+        const showSkillDistribution = (v: EntityExtended, skillId: number) => {
+            const attackerName = prettyName(v.actor)!;
+            const skillName = skillNameMap.value[skillId] || `unknownSkill:${skillId}`;
+            const damages = v.groupedDamages?.[skillId] || [];
+            dialogStack.open(DamageDistribution, { damages }, `${attackerName} - ${skillName} Distribution`);
+        }
+
+        const getSkillChartEntity = (v: EntityExtended, skillId: number) => {
+            const skillName = skillNameMap.value[skillId] || `unknownSkill:${skillId}`;
+            const damages = v.groupedDamages?.[skillId] || [];
+            return { name: skillName, damages, attackerName: prettyName(v.actor)! };
+        }
+
+        const showSkillCumulativeChart = (v: EntityExtended, skillId: number) => {
+            const e = getSkillChartEntity(v, skillId);
+            dialogStack.open(DamageChart, {
+                entities: [{ name: e.name, damages: e.damages }],
+                mode: 'cumulative',
+            }, `${e.attackerName} - ${e.name} Cumulative`);
+        }
+
+        const showSkillDpsChart = (v: EntityExtended, skillId: number) => {
+            const e = getSkillChartEntity(v, skillId);
+            dialogStack.open(DamageChart, {
+                entities: [{ name: e.name, damages: e.damages }],
+                mode: 'dps',
+            }, `${e.attackerName} - ${e.name} DPS`);
+        }
+
+        const showSkillCountChart = (v: EntityExtended, skillId: number) => {
+            const e = getSkillChartEntity(v, skillId);
+            dialogStack.open(DamageChart, {
+                entities: [{ name: e.name, damages: e.damages }],
+                mode: 'count',
+            }, `${e.attackerName} - ${e.name} Usage Count`);
+        }
+
         onMounted(() => {
             appEvent.value.addEventListener('clear', clearTarget);
-
-            let debounced1 = 0;
-            watch(entityMap, () => {
-                if (debounced1) {
-                    return;
-                }
-
-                setTimeout(() => {
-                    debounced1 = 0;
-                    if (chart) {
-                        chart.destroy();
-                    }
-                    chart = highcharts.chart(chartDom.value, { ...chartOpt, series: chartData.value });
-                }, 100);
-            });
-
-            let debounced2: number = 0;
-            watch(chartData, () => {
-                if (debounced2) {
-                    return;
-                }
-
-                debounced2 = setTimeout(() => {
-                    debounced2 = 0;
-                    chart?.update({ series: chartData.value });
-                }, 100);
-            });
         })
 
         const allApplyDamage = computed(() =>
             pcEntities.value.reduce((acc, v) => acc + v.totalDamage, 0));
 
-        const detailDialog = ref(false);
-        const detailDialogData = ref<{ attackerName: string; skillName: string; damages: EntityDamage[] }>();
-
-        const prettyEntityName = (entity?: BaseActor) => {
-            if (!entity) {
-                return undefined;
-            }
-
-            if (ActorManager.pcRaceSet.has(entity.raceId)) {
-                return entity.name;
-            }
-
-            const raceName = raceNameMap.value[entity.raceId] || `unknownRace:${entity.raceId}`;
-            if (entity instanceof GroupActor) {
-                return raceName;
-            }
-
-            // for monster
-            if (entity.name[0] >= '0' && entity.name[0] <= '9') {
-                return `${raceName} (${entity.name.slice(-4)})`;
-            }
-
-            // for pet
-            return entity.name;
-        }
-
-        const getChartSeriesData = (entity: EntityExtended[]): SeriesAreaOptions[] => {
-            const series = entity.map((v): SeriesAreaOptions & { data: [number, number][] } => ({
-                type: 'area',
-                name: prettyEntityName(v.actor)!,
-                data: v.damages.reduce((acc, v) => {
-                    const normalizedTime = (v.At - (v.At % 60)) * 1000;
-                    const last = acc[acc.length - 1];
-                    if (last && last[0] == normalizedTime) {
-                        last[1] += v.Damage;
-                        return acc;
-                    }
-
-                    return acc.concat([[normalizedTime, v.Damage + (last?.[1] || 0)]]);
-                }, [] as [number, number][]),
-                stacking: 'normal',
-                dataGrouping: {
-                    enabled: true,
-                    units: [['minute', [1]]],
-                },
-            }));
-
-            for (let i = 0; i < (series[0]?.data.length || 0); i++) {
-                const tickAt = Math.min(...series.map(v => v.data[i]?.[0] || Infinity));
-
-                for (const s of series) {
-                    if (s.data[i]?.[0] != tickAt) {
-                        s.data.splice(i, 0, [tickAt, s.data[i - 1]?.[1] || 0]);
-                    }
-                }
-            }
-
-            return series;
-        };
+        const prettyName = (entity?: EntityActor) => prettyEntityName(entity, raceNameMap);
 
         return {
             isLoading,
             region,
 
-            chartDom,
             pcEntities,
             allApplyDamage,
             targetId,
             targetIdList,
-            detailDialog,
-            detailDialogData,
-
             skillNameMap,
             entityMap: entityMapWithTargetData,
 
+            showCumulativeChart,
+            showDpsChart,
+            showAttackerCumulativeChart,
+            showAttackerDpsChart,
+            showSkillDistribution,
+            showSkillCumulativeChart,
+            showSkillDpsChart,
+            showSkillCountChart,
             showEntityDetailDamageList,
+            showEntityAllDamageList,
             getMabiNameColor,
-            prettyEntityName,
+            prettyEntityName: prettyName,
         }
     }
 });
@@ -341,21 +395,8 @@ type EntityExtended = {
     groupedMinDamages: Record<string, number>,
     groupedMaxDamages: Record<string, number>,
     groupedCount: Record<string, number>,
+    groupedCriticalCount: Record<string, number>,
 };
 
-const chartOpt: Options = {
-    lang: {
-        locale: 'en',
-    },
-    title: { text: '' },
-    chart: {
-        zooming: { type: 'x' },
-    },
-    xAxis: { type: 'datetime' },
-    yAxis: { title: { text: '' } },
-    tooltip: {
-        valueDecimals: 0,
-    },
-};
 
 </script>

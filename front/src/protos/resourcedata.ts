@@ -351,7 +351,7 @@ export interface EquipColData {
     /**
      * @generated from protobuf field: repeated uint32 Acc = 6 [json_name = "Acc"];
      */
-    Acc: number[]; // Puppet, Halo
+    Acc: number[]; // 퍼핏, 헤일로
     /**
      * @generated from protobuf field: repeated uint32 FaceDeco = 7 [json_name = "FaceDeco"];
      */
@@ -1009,7 +1009,7 @@ export interface PetInfo {
      */
     LimitTime: number;
     /**
-     * Based on 1 year old
+     * 1살 기준
      *
      * @generated from protobuf field: prilus.PetStat MinLevelStat = 3 [json_name = "MinLevelStat"];
      */

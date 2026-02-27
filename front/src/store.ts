@@ -29,3 +29,17 @@ export const appEvent = ref(new EventTarget());
 
 export const dcManager = shallowRef(new DamageCollectorManager());
 export const actorManager = shallowRef(new ActorManager(dcManager.value as DamageCollectorManager));
+
+export const timeRangeMin = ref<number | null>(null);
+export const timeRangeMax = ref<number | null>(null);
+export const hasTimeRange = computed(() => timeRangeMin.value !== null && timeRangeMax.value !== null);
+
+export function setTimeRange(min: number, max: number) {
+    timeRangeMin.value = min;
+    timeRangeMax.value = max;
+}
+
+export function clearTimeRange() {
+    timeRangeMin.value = null;
+    timeRangeMax.value = null;
+}

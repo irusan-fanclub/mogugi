@@ -1,4 +1,4 @@
-import { resVerCall, resDataCall, init as initApi } from '@/apicall';
+import { resVerCall, resDataCall, init as initApi } from '@/lib/apicall';
 import { ResourceData, ResourceVersion } from '@/protos/resourcedata';
 
 type OnlyArray<T> = T extends Array<infer V> ? V[] : never;

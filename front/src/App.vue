@@ -1,10 +1,12 @@
 <template>
     <v-sheet width="100vw" class="d-flex flex-wrap pl-1 pr-1">
         <v-sheet width="100svw" class="d-flex">
-            <span style="text-wrap-mode: nowrap;">dilmatulgi, api
+            <span style="text-wrap-mode: nowrap;">dilmatulgi<template v-if="isStandalone">
+                <v-icon icon="mdi-check" color="success" />standalone
+            </template><template v-else>, api
                 <span v-if="socketConnected"><v-icon icon="mdi-check" color="success" />connected</span>
                 <span v-else><v-icon icon="mdi-close" color="error" />disconnected</span>
-            </span>
+            </template></span>
             <span>
 
             </span>
@@ -14,19 +16,35 @@
                     <v-btn @click="loadFromFile" v-bind="props" :loading="isLoading" color="primary" size="small"
                         prepend-icon="mdi-upload" class="ml-1">Load</v-btn>
                 </template>
-                Load data from file
+                파일에서 데이터를 로드합니다
             </v-tooltip>
-            <v-btn @click="download" :loading="isLoading" color="primary" size="small" prepend-icon="mdi-download"
-                class="ml-1">Download</v-btn>
+            <template v-if="!isStandalone">
+                <v-btn @click="download" :loading="isLoading" color="primary" size="small" prepend-icon="mdi-download"
+                    class="ml-1">Download</v-btn>
+                <v-tooltip>
+                    <template v-slot:activator="{ props }">
+                        <v-btn @click="loadFromServer" v-bind="props" :loading="isLoading" color="primary" size="small"
+                            prepend-icon="mdi-refresh" class="ml-1">Reload</v-btn>
+                    </template>
+                    서버에서 데이터를 다시 로드합니다
+                </v-tooltip>
+            </template>
+            <v-btn @click="clearData" :loading="isLoading" color="primary" size="small" prepend-icon="mdi-close"
+                class="ml-1">Clear</v-btn>
             <v-tooltip>
                 <template v-slot:activator="{ props }">
-                    <v-btn @click="loadFromServer" v-bind="props" :loading="isLoading" color="primary" size="small"
-                        prepend-icon="mdi-refresh" class="ml-1">Reload</v-btn>
+                    <v-btn @click="forceRefresh" v-bind="props" color="secondary" size="small"
+                        prepend-icon="mdi-refresh-circle" class="ml-1 mr-4">Force Refresh</v-btn>
                 </template>
-                Reload data from server
-            </v-tooltip>
-            <v-btn @click="clearData" :loading="isLoading" color="primary" size="small" prepend-icon="mdi-close"
-                class="ml-1 mr-4">Clear</v-btn></v-sheet>
+                모든 UI를 강제로 갱신합니다
+            </v-tooltip></v-sheet>
+    </v-sheet>
+
+    <v-sheet v-if="hasTimeRange" class="d-flex align-center pa-2" style="gap: 8px; background: rgba(255, 165, 0, 0.15);">
+        <v-icon icon="mdi-clock-outline" color="warning" size="small" />
+        <span style="font-size: 0.85em;">Time filter: {{ formatTime(timeRangeMin) }} ~ {{ formatTime(timeRangeMax) }}</span>
+        <v-spacer />
+        <v-btn @click="clearTimeRangeFilter" color="warning" size="x-small" prepend-icon="mdi-close" variant="text">Clear</v-btn>
     </v-sheet>
 
     <v-tabs v-model="tab">
@@ -53,18 +71,44 @@
             <entity-list />
         </v-tabs-window-item>
     </v-tabs-window>
+
+    <v-dialog v-model="msgBoxOpen" max-width="500" persistent>
+        <v-card>
+            <v-card-title class="d-flex align-center">
+                <v-icon icon="mdi-alert-circle" color="warning" class="mr-2" />
+                MessageBox
+            </v-card-title>
+            <v-card-text style="white-space: pre-wrap;">{{ msgBoxText }}</v-card-text>
+            <v-card-actions>
+                <v-spacer />
+                <v-btn color="primary" variant="flat" @click="msgBoxOpen = false">확인</v-btn>
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
+
+    <floating-window
+        v-for="d in dialogStack.dialogs"
+        :key="d.id"
+        :title="d.title"
+        @close="dialogStack.close(d.id)"
+    >
+        <component :is="d.component" v-bind="d.props" />
+    </floating-window>
 </template>
 
 <script lang="ts">
 import { defineComponent, onMounted, inject, ref } from "vue";
 
-import { SocketClient } from '@/socketClient';
-import { eventBase } from "./protocols";
+import { useDialogStack } from '@/lib/useDialogStack';
+import { SocketClient } from '@/lib/socketClient';
+import { eventBase, eventIdMessageBox, eventMessageBox } from "./protocols";
+import { clearTimeRange } from '@/store';
 
 import TakeDamageComponent from '@/components/takeDamage.vue';
 import ApplyDamageByEntityComponent from '@/components/applyDamageByEntity.vue';
 import ApplyDamageBySkillComponent from '@/components/applyDamageBySkill.vue';
 import EntityListComponent from "./components/entityList.vue";
+import FloatingWindowComponent from "./components/subComponents/floatingWindow.vue";
 
 export default defineComponent({
     name: "App",
@@ -73,6 +117,7 @@ export default defineComponent({
         ApplyDamageByEntity: ApplyDamageByEntityComponent,
         ApplyDamageBySkill: ApplyDamageBySkillComponent,
         EntityList: EntityListComponent,
+        FloatingWindow: FloatingWindowComponent,
     },
     setup() {
         const isLoading = inject('isLoading');
@@ -88,10 +133,29 @@ export default defineComponent({
         const actorManager = inject('actorManager');
         const dcManager = inject('dcManager');
 
+        const hasTimeRange = inject('hasTimeRange');
+        const timeRangeMin = inject('timeRangeMin');
+        const timeRangeMax = inject('timeRangeMax');
+
         const socketConnected = ref(false);
+        const msgBoxOpen = ref(false);
+        const msgBoxText = ref('');
+
+        const isStandalone = __IS_STANDALONE__;
+
         const socket = new SocketClient(`/ws`);
         socket.onConnect = isConnected => socketConnected.value = isConnected;
-        socket.onEvent = (event) => actorManager.value.onEvent(event);
+        socket.onEvent = (event) => {
+            if (event.EventId === eventIdMessageBox) {
+                const e = event as eventMessageBox;
+                msgBoxOpen.value = true;
+                msgBoxText.value += `${e.Message}\n`;
+
+                return;
+            }
+
+            actorManager.value.onEvent(event);
+        }
 
         const loadJsonData = (jsonStr: string) => {
             let lastPos = 0;
@@ -124,12 +188,24 @@ export default defineComponent({
             console.log(`loaded ${count} events`);
         }
 
+        const forceRefresh = () => {
+            actorManager.value.forceUpdateAll();
+        }
+
         const clearData = () => {
             appEvent.value.dispatchEvent(new CustomEvent('clear'));
 
-            // Should the server also be cleared when clearing?
+            // clear했을 때 서버도 같이 clear하는게 맞을지?
             actorManager.value.clear();
             dcManager.value.clear();
+            clearTimeRange();
+        }
+
+        const clearTimeRangeFilter = () => clearTimeRange();
+
+        const formatTime = (v: any) => {
+            if (v == null) return '';
+            return new Date(v * 1000).toLocaleTimeString();
         }
 
         const download = () => {
@@ -163,7 +239,7 @@ export default defineComponent({
                 const file = input.files[0];
                 const r = new FileReader();
 
-                // Should consider reading in chunks if file gets large
+                // 파일이 커지면 chunk로 읽는 것도 고려해야함
                 r.readAsText(file);
 
 
@@ -222,6 +298,7 @@ export default defineComponent({
             }
         }
 
+        const dialogStack = useDialogStack();
         const tab = ref('');
 
         onMounted(async () => {
@@ -257,20 +334,33 @@ export default defineComponent({
                 }
             }
 
-            socket.connect();
+            if (!isStandalone) {
+                socket.connect();
+            }
         });
 
         return {
             isLoading,
             region,
+            isStandalone,
 
             socketConnected,
+            msgBoxOpen,
+            msgBoxText,
+            forceRefresh,
             clearData,
             download,
             loadFromFile,
             loadFromServer,
 
             tab,
+            dialogStack,
+
+            hasTimeRange,
+            timeRangeMin,
+            timeRangeMax,
+            clearTimeRangeFilter,
+            formatTime,
         }
     }
 });

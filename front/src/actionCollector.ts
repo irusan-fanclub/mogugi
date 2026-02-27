@@ -1,14 +1,14 @@
-import { CustomReactive, IUpdateCallback } from '@/util';
+import { CustomReactive, IUpdateCallback } from '@/lib/util';
 import { EntityDamage } from '@/eventActor';
 
-// TODO: Add cc
+// TODO: cc 추가
 export class DamageCollectorManager {
     public get damages() {
         return this._damages;
     }
     private _damages = [] as EntityDamage[];
 
-    // Check performance to decide whether to split by entity id
+    // 성능 보고 entity id별로 쪼갤지 확인
     private _et = new DamageEventTarget("Damage", "DamageCollector");
 
     public onDamage(p: EntityDamage): void {
@@ -22,7 +22,7 @@ export class DamageCollectorManager {
             v.handleDamage(p);
         }
 
-        // It would be better to chain et -> filtered et -> filtered et
+        // et -> filtered et -> filtered et로 chaining하는게 나을듯
         this._et.addEventListener("Damage", v);
         this._et.addEventListener("Clear", v);
 
@@ -165,6 +165,12 @@ export class FilteredDamageCollector extends DamageCollectorBase {
         return this._count;
     }
 
+    private _criticalCount = 0;
+    public get criticalCount() {
+        this.vueUpdateTrack?.();
+        return this._criticalCount;
+    }
+
     protected override onDamage(p: EntityDamage): void {
         this._damages.push(p);
         this._totalDamage += p.Damage;
@@ -174,6 +180,9 @@ export class FilteredDamageCollector extends DamageCollectorBase {
         }
 
         this._count++;
+        if (p.IsCritical) {
+            this._criticalCount++;
+        }
 
         if (this._minDamage === 0 || p.Damage < this._minDamage) {
             this._minDamage = p.Damage;
@@ -190,6 +199,7 @@ export class FilteredDamageCollector extends DamageCollectorBase {
         this._minDamage = 0;
         this._maxDamage = 0;
         this._count = 0;
+        this._criticalCount = 0;
     }
 }
 
@@ -228,6 +238,12 @@ export class GroupedDamageCollector extends FilteredDamageCollector {
         return this._groupedCount;
     }
 
+    private _groupedCriticalCount: Record<string, number> = {};
+    public get groupedCriticalCount() {
+        this.vueUpdateTrack?.();
+        return this._groupedCriticalCount;
+    }
+
     protected override onDamage(p: EntityDamage): void {
         super.onDamage(p);
 
@@ -236,6 +252,7 @@ export class GroupedDamageCollector extends FilteredDamageCollector {
             this._groupedDamages[key] = [];
             this._groupedTotalDamages[key] = 0;
             this._groupedCount[key] = 0;
+            this._groupedCriticalCount[key] = 0;
         }
 
         this._groupedDamages[key].push(p);
@@ -243,6 +260,10 @@ export class GroupedDamageCollector extends FilteredDamageCollector {
 
         if (p.IsDelayed && !needCountSkill[p.SkillId]) {
             return;
+        }
+
+        if (p.IsCritical) {
+            this._groupedCriticalCount[key]++;
         }
 
         this._groupedCount[key]++;
@@ -277,6 +298,10 @@ export class GroupedDamageCollector extends FilteredDamageCollector {
 
         for (const k in this._groupedMaxDamages) {
             delete this._groupedMaxDamages[k];
+        }
+
+        for (const k in this._groupedCriticalCount) {
+            delete this._groupedCriticalCount[k];
         }
     }
 }
@@ -316,6 +341,12 @@ export class DualGroupedDamageCollector extends GroupedDamageCollector {
         return this._grouped2Count;
     }
 
+    private _grouped2CriticalCount: Record<string, number> = {};
+    public get grouped2CriticalCount() {
+        this.vueUpdateTrack?.();
+        return this._grouped2CriticalCount;
+    }
+
     private _dualGroupedDamages: Record<string, Record<string, EntityDamage[]>> = {};
     public get dualGroupedDamages() {
         this.vueUpdateTrack?.();
@@ -346,6 +377,12 @@ export class DualGroupedDamageCollector extends GroupedDamageCollector {
         return this._dualGroupedCount;
     }
 
+    private _dualGroupedCriticalCount: Record<string, Record<string, number>> = {};
+    public get dualGroupedCriticalCount() {
+        this.vueUpdateTrack?.();
+        return this._dualGroupedCriticalCount;
+    }
+
     protected override onDamage(p: EntityDamage) {
         super.onDamage(p);
 
@@ -356,6 +393,7 @@ export class DualGroupedDamageCollector extends GroupedDamageCollector {
             this._grouped2Damages[key2] = [];
             this._grouped2TotalDamages[key2] = 0;
             this._grouped2Count[key2] = 0;
+            this._grouped2CriticalCount[key2] = 0;
         }
 
         this._grouped2Damages[key2].push(p);
@@ -367,23 +405,29 @@ export class DualGroupedDamageCollector extends GroupedDamageCollector {
             this._dualGroupedMinDamages[key1] = {};
             this._dualGroupedMaxDamages[key1] = {};
             this._dualGroupedCount[key1] = {};
+            this._dualGroupedCriticalCount[key1] = {};
         }
 
         if (!this._dualGroupedDamages[key1][key2]) {
             this._dualGroupedDamages[key1][key2] = [];
             this._dualGroupedTotalDamages[key1][key2] = 0;
             this._dualGroupedCount[key1][key2] = 0;
+            this._dualGroupedCriticalCount[key1][key2] = 0;
         }
 
         this._dualGroupedDamages[key1][key2].push(p);
         this._dualGroupedTotalDamages[key1][key2] += p.Damage;
-        
+
         if (p.IsDelayed && !needCountSkill[p.SkillId]) {
             return;
         }
 
         this._grouped2Count[key2]++;
         this._dualGroupedCount[key1][key2]++;
+        if (p.IsCritical) {
+            this._grouped2CriticalCount[key2]++;
+            this._dualGroupedCriticalCount[key1][key2]++;
+        }
 
         if (!this._grouped2MinDamages[key2] || p.Damage < this._grouped2MinDamages[key2]) {
             this._grouped2MinDamages[key2] = p.Damage;
@@ -413,12 +457,44 @@ export class DualGroupedDamageCollector extends GroupedDamageCollector {
             delete this._grouped2TotalDamages[k];
         }
 
+        for (const k in this._grouped2MinDamages) {
+            delete this._grouped2MinDamages[k];
+        }
+
+        for (const k in this._grouped2MaxDamages) {
+            delete this._grouped2MaxDamages[k];
+        }
+
+        for (const k in this._grouped2Count) {
+            delete this._grouped2Count[k];
+        }
+
+        for (const k in this._dualGroupedCriticalCount) {
+            delete this._dualGroupedCriticalCount[k];
+        }
+
         for (const k in this._dualGroupedDamages) {
             delete this._dualGroupedDamages[k];
         }
 
         for (const k in this._dualGroupedTotalDamages) {
             delete this._dualGroupedTotalDamages[k];
+        }
+
+        for (const k in this._dualGroupedMinDamages) {
+            delete this._dualGroupedMinDamages[k];
+        }
+
+        for (const k in this._dualGroupedMaxDamages) {
+            delete this._dualGroupedMaxDamages[k];
+        }
+
+        for (const k in this._dualGroupedCount) {
+            delete this._dualGroupedCount[k];
+        }
+
+        for (const k in this._grouped2CriticalCount) {
+            delete this._grouped2CriticalCount[k];
         }
     }
 }
@@ -511,7 +587,7 @@ class DamageEventTarget extends EventTarget implements IDamageEventTarget {
 }
 
 export const needCountSkill: Record<number, boolean> = {
-    58009: true, // Continuous Attack
-    58100: true, // Blast
-    58101: true, // Flare
+    58009: true, // 연속 공격
+    58100: true, // 블래스트
+    58101: true, // 플레어
 }
