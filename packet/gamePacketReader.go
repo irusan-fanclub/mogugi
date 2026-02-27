@@ -29,6 +29,7 @@ type GameServerPacketReader struct {
 
 	logHandle *pcapgo.NgWriter
 	logFd     *os.File
+	linkType  layers.LinkType
 
 	// statistics
 	payloadCount    uint64    // 收到的 TCP payload 數量
@@ -41,7 +42,6 @@ type GameServerPacketReaderOpt struct {
 	Ctx      context.Context
 	FileName string
 	NicName  string
-	ClientIp string
 }
 
 type gamePacketPayload struct {
@@ -68,16 +68,13 @@ func NewGameServerPacketReader(opt *GameServerPacketReaderOpt) (*GameServerPacke
 	}
 
 	filter := constants.PCAP_GAMESERVER_FILTER
-	if opt.ClientIp != "" {
-		// Client to server packets are encrypted anyway
-		filter = " dst host " + opt.ClientIp
-	}
 
 	logger.Println("game packet filter...", filter)
 
 	v := &GameServerPacketReader{
 		ctx:      opt.Ctx,
 		packetCh: make(chan *GamePacket, packetQueueSize),
+		linkType: layers.LinkTypeNull, // default, will be updated when opening
 	}
 
 	if err := v.openLog(); err != nil {
@@ -129,10 +126,10 @@ func (t *GameServerPacketReader) packetLoop(payloadCh <-chan gamePacketPayload) 
 			buffer.Write(payloadData.data)
 			lastAt = payloadData.at
 
-			if prevBufferLen > 0 {
-				logger.Printf("[Buffer] Received %d bytes, buffer now %d bytes (accumulated from previous)",
-					len(payloadData.data), buffer.Len())
-			}
+			// if prevBufferLen > 0 {
+			// 	logger.Printf("[Buffer] Received %d bytes, buffer now %d bytes (accumulated from previous)",
+			// 		len(payloadData.data), buffer.Len())
+			// }
 
 			// Try to parse game packets (may contain multiple game packets)
 			for buffer.Len() > 0 {
@@ -196,6 +193,8 @@ func (t *GameServerPacketReader) openNic(nic string, filter string) (<-chan game
 		return nil, err
 	}
 	t.handle = handle
+	t.linkType = handle.LinkType()
+	logger.Printf("Interface %s LinkType: %v", nic, t.linkType)
 
 	if err := handle.SetBPFFilter(filter); err != nil { // optional
 		return nil, err
@@ -236,6 +235,8 @@ func (t *GameServerPacketReader) openFile(file string, filter string) (<-chan ga
 	}
 
 	t.handle = handle
+	t.linkType = handle.LinkType()
+	logger.Printf("File LinkType: %v", t.linkType)
 
 	ch := make(chan gamePacketPayload, pcapQueueSize)
 
@@ -257,13 +258,21 @@ func (t *GameServerPacketReader) openLog() error {
 
 	t.logFd = fd
 
-	handle, err := pcapgo.NewNgWriter(fd, layers.LinkTypeEthernet)
+	// Use actual link type from the network interface (or file)
+	// Default to LinkTypeNull for loopback, which is common for localhost
+	linkType := t.linkType
+	if linkType == 0 {
+		linkType = layers.LinkTypeNull
+	}
+
+	handle, err := pcapgo.NewNgWriter(fd, linkType)
 	if err != nil {
 		logger.Println(err)
 		return err
 	}
 
 	t.logHandle = handle
+	logger.Printf("pcapng writer initialized with LinkType: %v", linkType)
 
 	return nil
 }
@@ -274,7 +283,17 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 	tcp := layers.TCP{}
 	payload := gopacket.Payload{}
 
-	layerParser := gopacket.NewDecodingLayerParser(layers.LayerTypeEthernet, &eth, &ip4, &tcp, &payload)
+	// Determine parser based on LinkType
+	var layerParser *gopacket.DecodingLayerParser
+	switch t.linkType {
+	case layers.LinkTypeNull, layers.LinkTypeLoop:
+		// For loopback, start from IPv4
+		layerParser = gopacket.NewDecodingLayerParser(layers.LayerTypeIPv4, &ip4, &tcp, &payload)
+	default:
+		// For other types (Ethernet, etc.), include full layers
+		layerParser = gopacket.NewDecodingLayerParser(layers.LayerTypeEthernet, &eth, &ip4, &tcp, &payload)
+	}
+
 	packetLayers := []gopacket.LayerType(nil)
 
 	// TCP fragment reassembly based on PSH flag
@@ -301,7 +320,17 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 			_ = t.logHandle.WritePacket(ci, b)
 		}
 
-		if err := layerParser.DecodeLayers(b, &packetLayers); err != nil {
+		// For loopback, skip the 4-byte family field before IPv4 header
+		packetData := b
+		if t.linkType == layers.LinkTypeNull || t.linkType == layers.LinkTypeLoop {
+			if len(b) > 4 {
+				packetData = b[4:]
+			} else {
+				continue
+			}
+		}
+
+		if err := layerParser.DecodeLayers(packetData, &packetLayers); err != nil {
 			logger.Println(err)
 			continue
 		}
