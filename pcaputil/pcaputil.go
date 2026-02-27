@@ -86,7 +86,7 @@ func FindNic() (string, error) {
 		// Get friendly interface name from local IP
 		if friendlyName, ok := ifaceMap[localIP.String()]; ok {
 			logger.Printf("  Interface: %s", friendlyName)
-			
+
 			nicName, ok := nicMap[friendlyName]
 			if !ok {
 				logger.Printf("Warning: Could not map friendly name '%s' to NIC name", friendlyName)
@@ -94,7 +94,7 @@ func FindNic() (string, error) {
 			}
 
 			clientConnections = append(clientConnections, connectionWithNic{
-				nicName:     nicName,
+				nicName:      nicName,
 				friendlyName: friendlyName,
 				connInfo: connectionInfo{
 					ServerIP:   remoteIP.String(),
@@ -110,7 +110,7 @@ func FindNic() (string, error) {
 		logger.Printf("Testing %d Client.exe connection(s)...", len(clientConnections))
 
 		for i, conn := range clientConnections {
-			logger.Printf("[%d/%d] Testing connection on NIC: %s (%s)", 
+			logger.Printf("[%d/%d] Testing connection on NIC: %s (%s)",
 				i+1, len(clientConnections), conn.nicName, conn.friendlyName)
 
 			// Update filter with actual connection details
@@ -123,7 +123,7 @@ func FindNic() (string, error) {
 				return conn.nicName, nil
 			}
 		}
-		
+
 		// No game packets found on any Client.exe connection
 		return "", errors.New("no game packets found on any Client.exe connection")
 	}
