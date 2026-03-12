@@ -3,12 +3,16 @@
         <v-toolbar density="compact" color="primary" @pointerdown.stop="onDragStart"
             style="cursor: move; user-select: none;">
             <v-toolbar-title class="text-body-2">{{ title }}</v-toolbar-title>
+            <v-btn :icon="minimized ? 'mdi-window-maximize' : 'mdi-window-minimize'" size="small" variant="text"
+                @click="minimized = !minimized" @pointerdown.stop />
             <v-btn icon="mdi-close" size="small" variant="text" @click="$emit('close')" @pointerdown.stop />
         </v-toolbar>
-        <v-card-text class="pa-0 flex-grow-1 d-flex flex-column" style="overflow: hidden; min-height: 0;">
-            <slot />
-        </v-card-text>
-        <div class="floating-window__resize" @pointerdown.stop="onResizeStart" />
+        <template v-if="!minimized">
+            <v-card-text class="pa-0 flex-grow-1 d-flex flex-column" style="overflow: hidden; min-height: 0;">
+                <slot />
+            </v-card-text>
+            <div class="floating-window__resize" @pointerdown.stop="onResizeStart" />
+        </template>
     </v-card>
 </template>
 
@@ -31,6 +35,7 @@ export default defineComponent({
         const w = ref(props.initWidth);
         const h = ref(props.initHeight);
         const zIndex = ref(++topZIndex);
+        const minimized = ref(false);
 
         onMounted(() => {
             x.value = Math.max(0, (window.innerWidth - w.value) / 2);
@@ -41,8 +46,8 @@ export default defineComponent({
             position: 'fixed' as const,
             left: `${x.value}px`,
             top: `${y.value}px`,
-            width: `${w.value}px`,
-            height: `${h.value}px`,
+            width: minimized.value ? '300px' : `${w.value}px`,
+            height: minimized.value ? 'auto' : `${h.value}px`,
             zIndex: zIndex.value,
             display: 'flex',
             flexDirection: 'column' as const,
@@ -92,7 +97,7 @@ export default defineComponent({
             target.addEventListener('pointerup', onUp);
         };
 
-        return { el, windowStyle, bringToFront, onDragStart, onResizeStart };
+        return { el, windowStyle, bringToFront, onDragStart, onResizeStart, minimized };
     },
 });
 </script>

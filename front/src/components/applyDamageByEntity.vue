@@ -3,11 +3,17 @@
         <template v-if="v.totalDamage > 0">
             <v-expansion-panel>
                 <v-expansion-panel-title>
-                    <v-sheet>
-                        {{ prettyEntityName(v.actor) }} {{ v.totalDamage.toFixed(0) }} {{ (100 * v.totalDamage /
-                            allApplyDamage).toFixed(1) }}%
-                    </v-sheet>
-
+                    <div class="d-flex align-center" style="width: 100%; gap: 4px;">
+                        <span class="font-weight-medium">{{ prettyEntityName(v.actor) }}</span>
+                        <v-btn v-if="v.actor.conditionHistory.length > 0"
+                            icon="mdi-chart-timeline" size="x-small" variant="text"
+                            @click.stop="showConditionChart(v.actor)" />
+                        <v-spacer />
+                        <span style="min-width: 48px; text-align: center; font-size: 0.85em; opacity: 0.7;">{{ formatDuration(v.damages.length >= 2 ? v.damages[v.damages.length - 1].At - v.damages[0].At : 0) }}</span>
+                        <span style="min-width: 80px; text-align: center; color: #FFD54F;">{{ humanReadableNumber(v.totalDamage) }}</span>
+                        <span style="min-width: 80px; text-align: center; color: #42A5F5;">{{ humanReadableNumber(v.damages.length >= 2 && v.damages[v.damages.length - 1].At > v.damages[0].At ? v.totalDamage / (v.damages[v.damages.length - 1].At - v.damages[0].At) : 0) }}</span>
+                        <span style="min-width: 56px; text-align: center; color: #66BB6A;">{{ (100 * v.totalDamage / allApplyDamage).toFixed(1) }}%</span>
+                    </div>
                 </v-expansion-panel-title>
                 <v-expansion-panel-text class="pa-3">
                     <v-sheet
@@ -19,8 +25,9 @@
                         <div class="d-flex align-center pa-1" style="position: relative; gap: 4px;">
                             <span class="font-weight-medium">{{ prettyEntityName(entityMap[targetId]?.actor) || targetId }}</span>
                             <v-spacer />
-                            <span>{{ damageToTarget.toFixed(0) }}</span>
-                            <span style="min-width: 48px; text-align: right;">{{ (100 * damageToTarget / v.totalDamage).toFixed(1) }}%</span>
+                            <span style="min-width: 80px; text-align: center; color: #FFD54F;">{{ humanReadableNumber(damageToTarget) }}</span>
+                            <span style="min-width: 80px; text-align: center; color: #42A5F5;">{{ humanReadableNumber(arrayDps(damageToTarget, v.groupedDamages[targetId])) }}</span>
+                            <span style="min-width: 56px; text-align: center; color: #66BB6A;">{{ (100 * damageToTarget / v.totalDamage).toFixed(1) }}%</span>
                         </div>
                     </v-sheet>
                 </v-expansion-panel-text>
@@ -32,8 +39,9 @@
                 <div class="d-flex align-center pa-1" style="position: relative; gap: 4px;">
                     <span class="font-weight-medium">{{ prettyEntityName(v.actor) }}</span>
                     <v-spacer />
-                    <span>{{ v.totalDamage.toFixed(0) }}</span>
-                    <span style="min-width: 48px; text-align: right;">{{ (100 * v.totalDamage / allApplyDamage).toFixed(1) }}%</span>
+                    <span style="min-width: 80px; text-align: center; color: #FFD54F;">{{ humanReadableNumber(v.totalDamage) }}</span>
+                    <span style="min-width: 80px; text-align: center; color: #42A5F5;">{{ humanReadableNumber(arrayDps(v.totalDamage, v.damages)) }}</span>
+                    <span style="min-width: 56px; text-align: center; color: #66BB6A;">{{ (100 * v.totalDamage / allApplyDamage).toFixed(1) }}%</span>
                 </div>
             </v-sheet>
         </template>
@@ -46,12 +54,13 @@
 <script lang="ts">
 import { defineComponent, inject, computed, onUnmounted, type Ref } from "vue";
 
-import { getMabiNameColor, prettyEntityName } from '@/lib/util';
+import { getMabiNameColor, prettyEntityName, humanReadableNumber, formatDuration } from '@/lib/util';
 import type { EntityDamage, EntityActor } from '@/eventActor';
 import { GroupedDamageCollector } from '@/actionCollector';
 import { useDialogStack } from '@/lib/useDialogStack';
 import { filterByTimeRange, computeGroupedStats } from '@/lib/timeRangeFilter';
 
+import ConditionChart from '@/components/subComponents/conditionChart.vue';
 import DamageList from '@/components/subComponents/damageList.vue';
 
 export default defineComponent({
@@ -166,7 +175,20 @@ export default defineComponent({
         const allApplyDamage = computed(() =>
             pcEntities.value.reduce((acc, v) => acc + v.totalDamage, 0));
 
+        const arrayDps = (totalDamage: number, damages: EntityDamage[]) => {
+            if (damages.length < 2) return 0;
+            const duration = damages[damages.length - 1].At - damages[0].At;
+            return duration > 0 ? totalDamage / duration : 0;
+        };
+
         const prettyName = (entity?: EntityActor) => prettyEntityName(entity, raceNameMap);
+
+        const showConditionChart = (actor: EntityActor) => {
+            const name = prettyName(actor) || actor.id;
+            dialogStack.open(ConditionChart, {
+                conditionHistory: actor.conditionHistory,
+            }, `CC - ${name}`);
+        };
 
         return {
             isLoading,
@@ -180,7 +202,11 @@ export default defineComponent({
 
             showEntityDetailDamageList,
             showEntityAllDamageList,
+            showConditionChart,
+            arrayDps,
             getMabiNameColor,
+            humanReadableNumber,
+            formatDuration,
             prettyEntityName: prettyName,
         }
     }

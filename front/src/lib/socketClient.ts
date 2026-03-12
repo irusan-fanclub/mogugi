@@ -5,7 +5,7 @@ export class SocketClient {
 
     // true -> connected, false -> disconnected or connecting
     public onConnect?: (isConnected: boolean) => void;
-    public onEvent?: (entity: protocols.eventBase) => void;
+    public onEvent?: (events: protocols.eventBase[]) => void;
 
     constructor(private url: string) { }
 
@@ -31,9 +31,9 @@ export class SocketClient {
         };
 
         s.onmessage = e => {
-            const event = JSON.parse(e.data) as protocols.eventBase;
-            // console.log(event);
-            this.onEvent?.(event);
+            const events = JSON.parse(e.data) as protocols.eventBase[];
+            // console.log(events);
+            this.onEvent?.(events);
         };
 
         s.onerror = e => {

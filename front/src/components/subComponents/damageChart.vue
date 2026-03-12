@@ -1,7 +1,7 @@
 <template>
     <v-sheet class="d-flex flex-column" style="height: 100%;">
         <v-sheet class="d-flex align-center pa-2 flex-shrink-0" style="gap: 12px;">
-            <span>Total: {{ totalDamage?.toFixed(0) }}</span>
+            <span>Total: {{ humanReadableNumber(totalDamage || 0) }}</span>
             <span>Duration: {{ durationText }}</span>
             <v-spacer />
             <v-checkbox v-if="mode === 'dps'" v-model="dithering" label="Dithering" density="compact" hide-details />
@@ -17,6 +17,7 @@
 import { defineComponent, ref, PropType, onMounted, onUnmounted, watch } from 'vue';
 import highcharts, { Options, SeriesAreaOptions } from 'highcharts';
 import type { EntityDamage } from '@/eventActor';
+import { humanReadableNumber } from '@/lib/util';
 import { setTimeRange, clearTimeRange } from '@/store';
 
 type ChartEntity = { name: string, damages: EntityDamage[] };
@@ -220,7 +221,7 @@ export default defineComponent({
         const durationRemSec = Math.floor(durationSec % 60);
         const durationText = `${String(durationMin).padStart(2, '0')}:${String(durationRemSec).padStart(2, '0')}`;
 
-        return { chartDom, tickSize, tickOptions, dithering, totalDamage, durationText };
+        return { chartDom, tickSize, tickOptions, dithering, totalDamage, durationText, humanReadableNumber };
     },
 });
 

@@ -20,9 +20,9 @@
                                 <condition-image-list :conditions="item.TargetConditions" />
                             </p>
                             <p>
-                                {{ skillNameMap[item.SkillId] }} {{ item.Damage.toFixed(0) }}
-                                {{ item.IsCritical ? '크리티컬' : '' }}
-                                {{ item.IsDelayed ? '추가 대미지' : '' }}
+                                {{ skillNameMap[item.SkillId] }} {{ humanReadableNumber(item.Damage) }}
+                                {{ item.IsCritical ? 'Critical' : '' }}
+                                {{ item.IsDelayed ? 'Additional Damage' : '' }}
                             </p>
                         </v-sheet>
                     </v-sheet>
@@ -36,6 +36,7 @@
 import { defineComponent, PropType, inject } from 'vue';
 
 import type { EntityDamage } from '@/eventActor';
+import { humanReadableNumber } from '@/lib/util';
 
 import ConditionImageList from './conditionImageList.vue';
 
@@ -66,6 +67,7 @@ export default defineComponent({
             isLoading,
             region,
             skillNameMap,
+            humanReadableNumber,
         }
     }
 });

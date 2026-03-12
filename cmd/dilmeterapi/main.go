@@ -181,7 +181,7 @@ func run(ctx context.Context, nicName string, fileName string) {
 				return
 
 			case e := <-ch:
-				err := websocket.JSON.Send(ws, e)
+				err := websocket.JSON.Send(ws, []iEvent{e})
 				if err != nil {
 					logger.Printf("Can't send: %s", err.Error())
 					return

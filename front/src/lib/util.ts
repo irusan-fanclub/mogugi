@@ -3,6 +3,40 @@ import type { Ref } from 'vue';
 
 import { ActorManager, BaseActor, GroupActor } from '@/eventActor';
 
+export function humanReadableNumber(n: number): string {
+    if (typeof n == 'string') {
+        n = parseFloat(n);
+    }
+    else if (typeof n != 'number') {
+        return '0';
+    }
+
+    if (isNaN(n) || !isFinite(n))
+        return '0';
+
+    const abs = Math.abs(n);
+    const sign = n < 0 ? '-' : '';
+    if (abs >= 1_0000_0000_0000) {
+        // return sign + +((abs / 1_0000_0000_0000).toFixed(2)) + '조';
+        // return sign + +((abs / 1_0000_0000_0000).toFixed(2)) + '兆';
+    }
+    if (abs >= 1_0000_0000) {
+        // return sign + +((abs / 1_0000_0000).toFixed(2)) + '억';
+        return sign + +((abs / 1_0000_0000).toFixed(2)) + '億';
+    }
+    if (abs >= 1_0000) {
+        // return sign + +((abs / 1_0000).toFixed(2)) + '만';
+        return sign + +((abs / 1_0000).toFixed(2)) + '萬';
+    }
+    return sign + Math.round(abs).toString();
+}
+
+export function formatDuration(seconds: number): string {
+    const min = Math.floor(seconds / 60);
+    const sec = Math.floor(seconds % 60);
+    return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+}
+
 export function getMabiNameColor(name: string): string {
     if (!name?.length) {
         return '#808080';

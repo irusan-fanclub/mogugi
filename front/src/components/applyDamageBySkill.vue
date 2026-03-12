@@ -1,8 +1,8 @@
 <template>
-    <v-sheet class="d-flex align-center ma-2" style="gap: 8px;">
+    <v-sheet class="d-flex align-center ma-2 flex-wrap" style="gap: 8px;">
         <v-select v-model="targetId" :items="targetIdList"
-            :item-title="vv => `${vv[0] ? prettyEntityName(entityMap[vv[0]]?.actor) : 'all'} ${vv[1]?.toFixed(0)}`"
-            :item-value="vv => vv[0]" variant="outlined" density="compact" hide-details style="flex: 1;">
+            :item-title="vv => `${vv[0] ? prettyEntityName(entityMap[vv[0]]?.actor) : 'all'} ${humanReadableNumber(vv[1] || 0)}`"
+            :item-value="vv => vv[0]" variant="outlined" density="compact" hide-details style="flex: 1; min-width: 150px;">
         </v-select>
         <v-btn @click="showCumulativeChart" color="primary" size="small" prepend-icon="mdi-chart-bar">
             Cumulative</v-btn>
@@ -14,17 +14,22 @@
         <template v-if="v.totalDamage > 0">
             <v-expansion-panel>
                 <v-expansion-panel-title>
-                    <v-sheet class="d-flex align-center" style="gap: 8px;">
-                        <span>{{ prettyEntityName(v.actor) }} {{ v.totalDamage.toFixed(0) }} {{ (100 * v.totalDamage /
-                            allApplyDamage).toFixed(1) }}% dps {{ v.damages.length < 2 ? 0 : Math.round(v.totalDamage /
-                            (v.damages[v.damages.length - 1].At - v.damages[0].At)) }}</span>
+                    <div class="d-flex align-center" style="width: 100%; gap: 4px;">
+                        <span class="font-weight-medium">{{ prettyEntityName(v.actor) }}</span>
+                        <v-btn v-if="v.actor.conditionHistory.length > 0"
+                            @click.stop="showConditionChart(v.actor)" size="x-small" icon="mdi-chart-timeline" variant="text" />
                         <v-tooltip text="Cumulative"><template v-slot:activator="{ props: tp }">
                             <v-btn v-bind="tp" @click.stop="showAttackerCumulativeChart(v)" size="x-small" icon="mdi-chart-bar" variant="text" />
                         </template></v-tooltip>
                         <v-tooltip text="DPS"><template v-slot:activator="{ props: tp }">
                             <v-btn v-bind="tp" @click.stop="showAttackerDpsChart(v)" size="x-small" icon="mdi-chart-bar" variant="text" />
                         </template></v-tooltip>
-                    </v-sheet>
+                        <v-spacer />
+                        <span style="min-width: 48px; text-align: center; font-size: 0.85em; opacity: 0.7;">{{ formatDuration(v.damages.length >= 2 ? v.damages[v.damages.length - 1].At - v.damages[0].At : 0) }}</span>
+                        <span style="min-width: 80px; text-align: center; color: #FFD54F;">{{ humanReadableNumber(v.totalDamage) }}</span>
+                        <span style="min-width: 80px; text-align: center; color: #42A5F5;">{{ humanReadableNumber(v.damages.length >= 2 && v.damages[v.damages.length - 1].At > v.damages[0].At ? v.totalDamage / (v.damages[v.damages.length - 1].At - v.damages[0].At) : 0) }}</span>
+                        <span style="min-width: 56px; text-align: center; color: #66BB6A;">{{ (100 * v.totalDamage / allApplyDamage).toFixed(1) }}%</span>
+                    </div>
                 </v-expansion-panel-title>
                 <v-expansion-panel-text class="pa-3">
                     <v-sheet
@@ -34,13 +39,10 @@
                         @click.stop="showEntityDetailDamageList(v.actor.id, targetId, +skillId)">
                         <!-- bar fill -->
                         <div :style="{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${Math.round(100 * damageBySkill / v.totalDamage)}%`, background: getMabiNameColor(skillNameMap[+skillId] || `unknownSkill:${skillId}`), opacity: 0.4 }" />
-                        <!-- row 1: icon, name, damage, %, buttons -->
+                        <!-- row 1: icon, name, buttons, damage, % -->
                         <div class="d-flex align-center pa-1" style="position: relative; gap: 4px;">
                             <img width="28" height="28" :src="`/res/skillimage/${region}/${skillId}/${skillId}.png`" style="border-radius: 2px;" />
                             <span class="font-weight-medium">{{ skillNameMap[+skillId] || `unknownSkill:${skillId}` }}</span>
-                            <v-spacer />
-                            <span>{{ damageBySkill.toFixed(0) }}</span>
-                            <span style="min-width: 48px; text-align: right;">{{ (100 * damageBySkill / v.totalDamage).toFixed(1) }}%</span>
                             <v-tooltip text="Distribution"><template v-slot:activator="{ props: tp }">
                                 <v-btn v-bind="tp" @click.stop="showSkillDistribution(v, +skillId)" size="x-small" icon="mdi-chart-bar" variant="text" density="compact" />
                             </template></v-tooltip>
@@ -53,14 +55,18 @@
                             <v-tooltip text="Count"><template v-slot:activator="{ props: tp }">
                                 <v-btn v-bind="tp" @click.stop="showSkillCountChart(v, +skillId)" size="x-small" icon="mdi-chart-bar" variant="text" density="compact" />
                             </template></v-tooltip>
+                            <v-spacer />
+                            <span style="min-width: 80px; text-align: center; color: #FFD54F;">{{ humanReadableNumber(damageBySkill) }}</span>
+                            <span style="min-width: 80px; text-align: center; color: #42A5F5;">{{ humanReadableNumber(arrayDps(damageBySkill, v.groupedDamages[+skillId])) }}</span>
+                            <span style="min-width: 56px; text-align: center; color: #66BB6A;">{{ (100 * damageBySkill / v.totalDamage).toFixed(1) }}%</span>
                         </div>
                         <!-- row 2: detailed stats -->
                         <div class="d-flex pa-1 pl-9" style="position: relative; gap: 8px; font-size: 0.8em; opacity: 0.8;">
                             <span>count: {{ v.groupedCount[+skillId] }}</span>
                             <span>crit: {{ v.groupedCriticalCount[+skillId] }}</span>
-                            <span>avg: {{ (v.groupedCount[+skillId] ? damageBySkill / v.groupedCount[+skillId] : 0).toFixed(0) }}</span>
-                            <span>min: {{ v.groupedMinDamages[+skillId]?.toFixed(0) || '0' }}</span>
-                            <span>max: {{ v.groupedMaxDamages[+skillId]?.toFixed(0) || '0' }}</span>
+                            <span>avg: {{ humanReadableNumber(v.groupedCount[+skillId] ? damageBySkill / v.groupedCount[+skillId] : 0) }}</span>
+                            <span>min: {{ humanReadableNumber(v.groupedMinDamages[+skillId] || 0) }}</span>
+                            <span>max: {{ humanReadableNumber(v.groupedMaxDamages[+skillId] || 0) }}</span>
                         </div>
                     </v-sheet>
                 </v-expansion-panel-text>
@@ -72,8 +78,9 @@
                 <div class="d-flex align-center pa-1" style="position: relative; gap: 4px;">
                     <span class="font-weight-medium">{{ prettyEntityName(v.actor) }}</span>
                     <v-spacer />
-                    <span>{{ v.totalDamage.toFixed(0) }}</span>
-                    <span style="min-width: 48px; text-align: right;">{{ (100 * v.totalDamage / allApplyDamage).toFixed(1) }}%</span>
+                    <span style="min-width: 80px; text-align: center; color: #FFD54F;">{{ humanReadableNumber(v.totalDamage) }}</span>
+                    <span style="min-width: 80px; text-align: center; color: #42A5F5;">{{ humanReadableNumber(arrayDps(v.totalDamage, v.damages)) }}</span>
+                    <span style="min-width: 56px; text-align: center; color: #66BB6A;">{{ (100 * v.totalDamage / allApplyDamage).toFixed(1) }}%</span>
                 </div>
             </v-sheet>
         </template>
@@ -86,12 +93,13 @@
 <script lang="ts">
 import { defineComponent, inject, ref, computed, onUnmounted, onMounted, type Ref } from "vue";
 
-import { getMabiNameColor, prettyEntityName } from '@/lib/util';
+import { getMabiNameColor, prettyEntityName, humanReadableNumber, formatDuration } from '@/lib/util';
 import type { EntityDamage, EntityActor } from '@/eventActor';
 import { DamageCollectorBase, DualGroupedDamageCollector, GroupedDamageCollector } from '@/actionCollector';
 import { useDialogStack } from '@/lib/useDialogStack';
 import { filterByTimeRange, computeGroupedStats } from '@/lib/timeRangeFilter';
 
+import ConditionChart from '@/components/subComponents/conditionChart.vue';
 import DamageChart from '@/components/subComponents/damageChart.vue';
 import DamageDistribution from '@/components/subComponents/damageDistribution.vue';
 import DamageList from '@/components/subComponents/damageList.vue';
@@ -356,7 +364,29 @@ export default defineComponent({
         const allApplyDamage = computed(() =>
             pcEntities.value.reduce((acc, v) => acc + v.totalDamage, 0));
 
+        const arrayDps = (totalDamage: number, damages: EntityDamage[]) => {
+            if (!damages || damages.length < 2) return 0;
+            const duration = damages[damages.length - 1].At - damages[0].At;
+            return duration > 0 ? totalDamage / duration : 0;
+        };
+
         const prettyName = (entity?: EntityActor) => prettyEntityName(entity, raceNameMap);
+
+        const showConditionChart = (actor: EntityActor) => {
+            const name = prettyName(actor) || actor.id;
+            const props: Record<string, any> = {
+                conditionHistory: actor.conditionHistory,
+            };
+
+            // if a target is selected, bound the chart to the damage time range
+            const entity = entityMapWithTargetData.value[actor.id];
+            if (targetId.value && entity && entity.damages.length >= 2) {
+                props.startTime = entity.damages[0].At;
+                props.endTime = entity.damages[entity.damages.length - 1].At;
+            }
+
+            dialogStack.open(ConditionChart, props, `CC - ${name}`);
+        };
 
         return {
             isLoading,
@@ -379,7 +409,11 @@ export default defineComponent({
             showSkillCountChart,
             showEntityDetailDamageList,
             showEntityAllDamageList,
+            showConditionChart,
+            arrayDps,
             getMabiNameColor,
+            humanReadableNumber,
+            formatDuration,
             prettyEntityName: prettyName,
         }
     }

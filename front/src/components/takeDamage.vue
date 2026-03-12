@@ -1,24 +1,36 @@
 <template>
     <v-expansion-panels multiple
-        v-for="v in Object.values(filteredGroupMap).sort((a, b) => b.totalDamage - a.totalDamage)"
+        v-for="v in visibleGroups"
         v-bind:key="v.actor.id">
         <template v-if="v.totalDamage > 0">
             <v-expansion-panel>
                 <v-expansion-panel-title>
-                    <v-sheet>
-                        {{ prettyEntityName(v.actor) }} {{ v.totalDamage.toFixed(0) }}
-                    </v-sheet>
-
+                    <div class="d-flex align-center" style="width: 100%; gap: 4px;">
+                        <span class="font-weight-medium">{{ prettyEntityName(v.actor) }}</span>
+                        <v-btn v-if="!v.actor.isPC" icon="mdi-close" size="x-small" variant="text"
+                            @click.stop="hideGroup(v.actor)" />
+                        <v-spacer />
+                        <span style="min-width: 48px; text-align: center; font-size: 0.85em; opacity: 0.7;">{{ groupDuration(v.groupedDamages) }}</span>
+                        <span style="min-width: 80px; text-align: center; color: #FFD54F;">{{ humanReadableNumber(v.totalDamage) }}</span>
+                        <span style="min-width: 80px; text-align: center; color: #42A5F5;">{{ humanReadableNumber(groupDps(v.totalDamage, v.groupedDamages)) }}</span>
+                    </div>
                 </v-expansion-panel-title>
                 <v-expansion-panel-text class="pa-3">
                     <template v-for="entity, entityk in v.entity" v-bind:key="entityk">
                         <template v-if="entity.totalDamage > 0">
-                            <v-sheet>
-                                * {{ prettyEntityName(entity.actor) }} {{ entity.totalDamage.toFixed(0) }}
-                                {{ entity.actor.finisherId ? `Killed by
-                                ${prettyEntityName(entityMap[entity.actor.finisherId]?.actor) ||
-                                    entity.actor.finisherId}` : '' }}
+                            <v-sheet class="d-flex align-center mb-1" style="gap: 4px;">
+                                <span>{{ prettyEntityName(entity.actor) }}</span>
+                                <span v-if="entity.actor.finisherId" style="font-size: 0.85em; opacity: 0.7;">
+                                    Killed by {{ prettyEntityName(entityMap[entity.actor.finisherId]?.actor) || entity.actor.finisherId }}
+                                </span>
                                 <condition-image-list :conditions="Object.values(entity.actor.conditionMap)" />
+                                <v-btn v-if="entity.actor.conditionHistory.length > 0"
+                                    icon="mdi-chart-timeline" size="x-small" variant="text"
+                                    @click.stop="showConditionChart(entity.actor)" />
+                                <v-spacer />
+                                <span style="min-width: 80px; text-align: center; color: #FFD54F;">{{ humanReadableNumber(entity.totalDamage) }}</span>
+                                <span style="min-width: 80px; text-align: center; color: #42A5F5;">{{ humanReadableNumber(groupDps(entity.totalDamage, entity.groupedDamages)) }}</span>
+                                <span style="min-width: 56px; text-align: center; color: #66BB6A;">{{ (100 * entity.totalDamage / v.totalDamage).toFixed(1) }}%</span>
                             </v-sheet>
 
                             <v-sheet
@@ -30,8 +42,9 @@
                                 <div class="d-flex align-center pa-1" style="position: relative; gap: 4px;">
                                     <span class="font-weight-medium">{{ prettyEntityName(entityMap[attackerId]?.actor) || attackerId }}</span>
                                     <v-spacer />
-                                    <span>{{ damageByAttacker.toFixed(0) }}</span>
-                                    <span style="min-width: 48px; text-align: right;">{{ (100 * damageByAttacker / entity.totalDamage).toFixed(1) }}%</span>
+                                    <span style="min-width: 80px; text-align: center; color: #FFD54F;">{{ humanReadableNumber(damageByAttacker) }}</span>
+                                    <span style="min-width: 80px; text-align: center; color: #42A5F5;">{{ humanReadableNumber(arrayDps(damageByAttacker, entity.groupedDamages[attackerId])) }}</span>
+                                    <span style="min-width: 56px; text-align: center; color: #66BB6A;">{{ (100 * damageByAttacker / entity.totalDamage).toFixed(1) }}%</span>
                                 </div>
                             </v-sheet>
                         </template>
@@ -47,8 +60,9 @@
                 <div class="d-flex align-center pa-1" style="position: relative; gap: 4px;">
                     <span class="font-weight-medium">{{ prettyEntityName(entityMap[attackerId]?.actor) || attackerId }}</span>
                     <v-spacer />
-                    <span>{{ damageByAttacker.toFixed(0) }}</span>
-                    <span style="min-width: 48px; text-align: right;">{{ (100 * damageByAttacker / v.totalDamage).toFixed(1) }}%</span>
+                    <span style="min-width: 80px; text-align: center; color: #FFD54F;">{{ humanReadableNumber(damageByAttacker) }}</span>
+                    <span style="min-width: 80px; text-align: center; color: #42A5F5;">{{ humanReadableNumber(arrayDps(damageByAttacker, v.groupedDamages[attackerId])) }}</span>
+                    <span style="min-width: 56px; text-align: center; color: #66BB6A;">{{ (100 * damageByAttacker / v.totalDamage).toFixed(1) }}%</span>
                 </div>
             </v-sheet>
         </template>
@@ -61,14 +75,16 @@
 <script lang="ts">
 import { defineComponent, inject, computed, onUnmounted, type Ref } from "vue";
 
-import { getMabiNameColor, prettyEntityName } from '@/lib/util';
+import { getMabiNameColor, prettyEntityName, humanReadableNumber, formatDuration } from '@/lib/util';
 import type { EntityDamage, EntityActor } from '@/eventActor';
 import { GroupActor } from '@/eventActor';
 import { GroupedDamageCollector } from '@/actionCollector';
 import { useDialogStack } from '@/lib/useDialogStack';
 import { filterByTimeRange, computeGroupedStats } from '@/lib/timeRangeFilter';
+import { addHiddenRace } from '@/store';
 
 import ConditionImageList from "./subComponents/conditionImageList.vue";
+import ConditionChart from "./subComponents/conditionChart.vue";
 import DamageList from "./subComponents/damageList.vue";
 
 export default defineComponent({
@@ -85,6 +101,7 @@ export default defineComponent({
         const dcManager = inject('dcManager');
         const timeRangeMin = inject('timeRangeMin') as Ref<number | null>;
         const timeRangeMax = inject('timeRangeMax') as Ref<number | null>;
+        const hiddenRaceIds = inject('hiddenRaceIds') as Ref<Set<number>>;
 
         const damageCollectorMap: Record<string, GroupedDamageCollector> = {};
 
@@ -241,6 +258,77 @@ export default defineComponent({
 
         const prettyName = (entity?: EntityActor | GroupActor) => prettyEntityName(entity, raceNameMap);
 
+        const visibleGroups = computed(() =>
+            Object.values(filteredGroupMap.value)
+                .filter(v => !hiddenRaceIds.value.has(v.actor.raceId))
+                .sort((a, b) => b.totalDamage - a.totalDamage)
+        );
+
+        const groupDuration = (groupedDamages: Record<string, EntityDamage[]>) => {
+            let minAt = Infinity;
+            let maxAt = -Infinity;
+            for (const damages of Object.values(groupedDamages)) {
+                for (const d of damages) {
+                    if (d.At < minAt) minAt = d.At;
+                    if (d.At > maxAt) maxAt = d.At;
+                }
+            }
+            return formatDuration(maxAt > minAt ? maxAt - minAt : 0);
+        };
+
+        const arrayDps = (totalDamage: number, damages: EntityDamage[]) => {
+            if (!damages || damages.length < 2) return 0;
+            const duration = damages[damages.length - 1].At - damages[0].At;
+            return duration > 0 ? totalDamage / duration : 0;
+        };
+
+        const groupDps = (totalDamage: number, groupedDamages: Record<string, EntityDamage[]>) => {
+            let minAt = Infinity;
+            let maxAt = -Infinity;
+            for (const damages of Object.values(groupedDamages)) {
+                for (const d of damages) {
+                    if (d.At < minAt) minAt = d.At;
+                    if (d.At > maxAt) maxAt = d.At;
+                }
+            }
+            const duration = maxAt > minAt ? maxAt - minAt : 0;
+            return duration > 0 ? totalDamage / duration : 0;
+        };
+
+        const hideGroup = (actor: GroupActor) => {
+            const name = prettyName(actor) || actor.id;
+            if (confirm(`${name}을(를) 숨기시겠습니까?`)) {
+                addHiddenRace(actor.raceId);
+            }
+        };
+
+        const showConditionChart = (actor: EntityActor) => {
+            const name = prettyName(actor) || actor.id;
+
+            // find the entity in filteredGroupMap to get per-attacker damages
+            let attackers: { name: string, startTime: number, endTime: number }[] = [];
+            for (const gk in filteredGroupMap.value) {
+                const e = filteredGroupMap.value[gk].entity[actor.id];
+                if (e && e.groupedDamages) {
+                    attackers = Object.entries(e.groupedDamages)
+                        .filter(([, damages]) => damages.length >= 2)
+                        .map(([attackerId, damages]) => ({
+                            id: attackerId,
+                            name: prettyName(entityMap.value[attackerId]?.actor) || attackerId,
+                            startTime: damages[0].At,
+                            endTime: damages[damages.length - 1].At,
+                        }))
+                        .sort((a, b) => (b.endTime - b.startTime) - (a.endTime - a.startTime));
+                    break;
+                }
+            }
+
+            dialogStack.open(ConditionChart, {
+                conditionHistory: actor.conditionHistory,
+                attackers,
+            }, `CC - ${name}`);
+        };
+
         return {
             isLoading,
             region,
@@ -250,9 +338,17 @@ export default defineComponent({
             entityMap,
             filteredGroupMap,
 
+            visibleGroups,
+            hideGroup,
             showEntityDetailDamageList,
             showEntityGroupDetailDamageList,
+            showConditionChart,
             getMabiNameColor,
+            humanReadableNumber,
+            formatDuration,
+            groupDuration,
+            arrayDps,
+            groupDps,
             prettyEntityName: prettyName,
             getGroupDC,
             getSingleDC,

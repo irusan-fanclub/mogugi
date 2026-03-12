@@ -374,6 +374,10 @@ export class EntityActor extends BaseActor {
     }
 
     protected _conditionHistory: EntityConditionState[] = [];
+    public get conditionHistory() {
+        this.vueUpdateTrack?.();
+        return this._conditionHistory;
+    }
 
     private _finisherId = '';
     public get finisherId() {
@@ -618,7 +622,7 @@ export type EntityCondition = {
     AttackerId: string;
 }
 
-type EntityConditionState = {
+export type EntityConditionState = {
     At: number;
     List: EntityCondition[];
 }

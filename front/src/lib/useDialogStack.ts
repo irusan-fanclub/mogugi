@@ -1,8 +1,8 @@
-import { shallowReactive, markRaw, type Component } from 'vue'
+import { shallowReactive, ref, markRaw, type Component, type Ref } from 'vue'
 
 export interface DialogEntry {
     id: number
-    title: string
+    title: Ref<string>
     component: Component
     props: Record<string, any>
 }
@@ -14,7 +14,9 @@ export function useDialogStack() {
     return {
         dialogs,
         open(component: Component, props: Record<string, any> = {}, title: string = '') {
-            dialogs.push({ id: nextId++, title, component: markRaw(component), props })
+            const titleRef = ref(title)
+            props = { ...props, _dialogTitle: titleRef }
+            dialogs.push({ id: nextId++, title: titleRef, component: markRaw(component), props })
         },
         close(id: number) {
             const idx = dialogs.findIndex(d => d.id === id)

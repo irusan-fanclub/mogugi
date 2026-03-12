@@ -43,3 +43,62 @@ export function clearTimeRange() {
     timeRangeMin.value = null;
     timeRangeMax.value = null;
 }
+
+// config
+const CONFIG_STORAGE_KEY = 'config';
+
+export interface AppConfig {
+    hiddenCCIds: number[];
+    hiddenRaceIds: number[];
+}
+
+const defaultConfig: AppConfig = {
+    hiddenCCIds: [],
+    hiddenRaceIds: [],
+};
+
+function loadConfig(): AppConfig {
+    try {
+        const raw = localStorage.getItem(CONFIG_STORAGE_KEY);
+        if (raw) return { ...defaultConfig, ...JSON.parse(raw) };
+    } catch { /* ignore */ }
+    return { ...defaultConfig };
+}
+
+function saveConfig() {
+    const data: AppConfig = {
+        hiddenCCIds: [...hiddenCCIds.value],
+        hiddenRaceIds: [...hiddenRaceIds.value],
+    };
+    localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(data));
+}
+
+const _config = loadConfig();
+
+export const hiddenCCIds = ref<Set<number>>(new Set(_config.hiddenCCIds));
+
+export function addHiddenCC(ccId: number) {
+    hiddenCCIds.value = new Set(hiddenCCIds.value).add(ccId);
+    saveConfig();
+}
+
+export function removeHiddenCC(ccId: number) {
+    const next = new Set(hiddenCCIds.value);
+    next.delete(ccId);
+    hiddenCCIds.value = next;
+    saveConfig();
+}
+
+export const hiddenRaceIds = ref<Set<number>>(new Set(_config.hiddenRaceIds));
+
+export function addHiddenRace(raceId: number) {
+    hiddenRaceIds.value = new Set(hiddenRaceIds.value).add(raceId);
+    saveConfig();
+}
+
+export function removeHiddenRace(raceId: number) {
+    const next = new Set(hiddenRaceIds.value);
+    next.delete(raceId);
+    hiddenRaceIds.value = next;
+    saveConfig();
+}

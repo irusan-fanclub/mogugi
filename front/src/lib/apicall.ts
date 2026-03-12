@@ -3,7 +3,7 @@ import brotliPromise from 'brotli-dec-wasm';
 
 import { ResourceData, ResourceVersion } from '@/protos/resourcedata';
 
-export const resUrl = ref(`/res/`);
+export const resUrl = ref(__IS_STANDALONE__ ? 'https://mabires.pril.cc/' : '/res/');
 
 let loadingCount: Ref<number>;
 

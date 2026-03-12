@@ -34,9 +34,16 @@
             <v-tooltip>
                 <template v-slot:activator="{ props }">
                     <v-btn @click="forceRefresh" v-bind="props" color="secondary" size="small"
-                        prepend-icon="mdi-refresh-circle" class="ml-1 mr-4">Force Refresh</v-btn>
+                        prepend-icon="mdi-refresh-circle" class="ml-1">Force Refresh</v-btn>
                 </template>
                 모든 UI를 강제로 갱신합니다
+            </v-tooltip>
+            <v-tooltip>
+                <template v-slot:activator="{ props }">
+                    <v-btn @click="configOpen = true" v-bind="props" size="small" prepend-icon="mdi-cog"
+                        class="ml-1 mr-4">설정</v-btn>
+                </template>
+                설정
             </v-tooltip></v-sheet>
     </v-sheet>
 
@@ -72,6 +79,8 @@
         </v-tabs-window-item>
     </v-tabs-window>
 
+    <config-dialog v-model="configOpen" />
+
     <v-dialog v-model="msgBoxOpen" max-width="500" persistent>
         <v-card>
             <v-card-title class="d-flex align-center">
@@ -89,7 +98,7 @@
     <floating-window
         v-for="d in dialogStack.dialogs"
         :key="d.id"
-        :title="d.title"
+        :title="d.title.value"
         @close="dialogStack.close(d.id)"
     >
         <component :is="d.component" v-bind="d.props" />
@@ -108,6 +117,7 @@ import TakeDamageComponent from '@/components/takeDamage.vue';
 import ApplyDamageByEntityComponent from '@/components/applyDamageByEntity.vue';
 import ApplyDamageBySkillComponent from '@/components/applyDamageBySkill.vue';
 import EntityListComponent from "./components/entityList.vue";
+import ConfigDialogComponent from "./components/configDialog.vue";
 import FloatingWindowComponent from "./components/subComponents/floatingWindow.vue";
 
 export default defineComponent({
@@ -117,6 +127,7 @@ export default defineComponent({
         ApplyDamageByEntity: ApplyDamageByEntityComponent,
         ApplyDamageBySkill: ApplyDamageBySkillComponent,
         EntityList: EntityListComponent,
+        ConfigDialog: ConfigDialogComponent,
         FloatingWindow: FloatingWindowComponent,
     },
     setup() {
@@ -138,6 +149,7 @@ export default defineComponent({
         const timeRangeMax = inject('timeRangeMax');
 
         const socketConnected = ref(false);
+        const configOpen = ref(false);
         const msgBoxOpen = ref(false);
         const msgBoxText = ref('');
 
@@ -145,16 +157,18 @@ export default defineComponent({
 
         const socket = new SocketClient(`/ws`);
         socket.onConnect = isConnected => socketConnected.value = isConnected;
-        socket.onEvent = (event) => {
-            if (event.EventId === eventIdMessageBox) {
-                const e = event as eventMessageBox;
-                msgBoxOpen.value = true;
-                msgBoxText.value += `${e.Message}\n`;
+        socket.onEvent = (events) => {
+            for (const event of events) {
+                if (event.EventId === eventIdMessageBox) {
+                    const e = event as eventMessageBox;
+                    msgBoxOpen.value = true;
+                    msgBoxText.value += `${e.Message}\n`;
 
-                return;
+                    return;
+                }
+
+                actorManager.value.onEvent(event);
             }
-
-            actorManager.value.onEvent(event);
         }
 
         const loadJsonData = (jsonStr: string) => {
@@ -278,7 +292,7 @@ export default defineComponent({
                     throw new Error(`failed to fetch data ${res.status}`);
                 }
 
-                socket.onEvent = (e) => temporaryStore.push(e);
+                socket.onEvent = (e) => temporaryStore.push(...e);
                 const jsonData = await res.text();
 
                 clearData();
@@ -355,6 +369,8 @@ export default defineComponent({
 
             tab,
             dialogStack,
+
+            configOpen,
 
             hasTimeRange,
             timeRangeMin,

@@ -5,7 +5,7 @@ import vuetify from 'vite-plugin-vuetify';
 import checker from 'vite-plugin-checker';
 import wasm from 'vite-plugin-wasm';
 
-const targetPort = 8032;
+const targetPort = 8030;
 const targetUrl = `http://localhost:${targetPort}`;
 
 // https://vitejs.dev/config/
