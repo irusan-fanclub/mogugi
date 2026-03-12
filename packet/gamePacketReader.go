@@ -390,6 +390,9 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 		if tcp.PSH {
 			currentBuffer.Write(tcp.Payload)
 
+			// Update timestamp for PSH packet (marks message boundary)
+			currentTimestamp = ci.Timestamp
+
 			// Send accumulated buffer
 			data := make([]byte, currentBuffer.Len())
 			copy(data, currentBuffer.Bytes())
@@ -405,6 +408,10 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 			// Sequence matches: append to buffer
 			if currentBuffer.Len() == 0 {
 				currentBaseSeq = tcp.Seq
+				currentTimestamp = ci.Timestamp
+			} else {
+				// Update timestamp to the latest packet's timestamp
+				// This is important for LinkTypeNull/LinkTypeLoop where packets may arrive without PSH
 				currentTimestamp = ci.Timestamp
 			}
 			currentBuffer.Write(tcp.Payload)
