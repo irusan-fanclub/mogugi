@@ -4,3 +4,8 @@ node_modules
 dist
 cmd/dilmeterapi/static
 bin
+
+# runtime artifacts
+dilmeter_*.log
+packet_capture_*.pcapng
+packet_log_*.ndjson
