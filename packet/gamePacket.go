@@ -1,12 +1,17 @@
 package packet
 
 import (
+	"io"
 	"log"
 	"os"
 	"time"
 )
 
 var logger = log.New(os.Stdout, "packet ", log.LstdFlags|log.Lshortfile)
+
+func SetLogOutput(w io.Writer) {
+	logger.SetOutput(w)
+}
 
 type GamePacket struct {
 	At     time.Time

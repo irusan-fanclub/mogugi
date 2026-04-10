@@ -5,6 +5,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
@@ -31,7 +32,29 @@ var staticFiles embed.FS
 var logger = log.New(os.Stdout, "dilmeterapi ", log.LstdFlags|log.Lshortfile)
 var packetLogFilename = ""
 
+func setupLogFile() (logFilename string, cleanup func()) {
+	logFilename = fmt.Sprintf("dilmeter_%v.log", constants.SERVER_START_AT)
+	fd, err := os.OpenFile(logFilename, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+	if err != nil {
+		logger.Println("failed to open log file:", err)
+		return "", func() {}
+	}
+
+	w := io.MultiWriter(os.Stdout, fd)
+	logger.SetOutput(w)
+	packet.SetLogOutput(w)
+	pcaputil.SetLogOutput(w)
+	log.SetOutput(w) // 標準 logger（套件內部使用的）
+
+	logger.Printf("log file: %s", logFilename)
+
+	return logFilename, func() { fd.Close() }
+}
+
 func main() {
+	_, logCleanup := setupLogFile()
+	defer logCleanup()
+
 	// main ctx
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

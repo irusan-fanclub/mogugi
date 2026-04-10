@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -20,6 +21,10 @@ import (
 )
 
 var logger = log.New(os.Stdout, "pcaputil ", log.LstdFlags|log.Lshortfile)
+
+func SetLogOutput(w io.Writer) {
+	logger.SetOutput(w)
+}
 
 const (
 	afInet                 = 2

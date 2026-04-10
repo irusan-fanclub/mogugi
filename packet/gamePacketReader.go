@@ -50,9 +50,17 @@ type gamePacketPayload struct {
 	at     time.Time
 }
 
-type pendingTcpLayer struct {
-	tcp layers.TCP
-	ci  gopacket.CaptureInfo
+// tcpFragment 保存亂序到達的 TCP 片段
+type tcpFragment struct {
+	seq     uint32
+	payload []byte
+	psh     bool
+	ci      gopacket.CaptureInfo
+}
+
+// seqAfter 回傳 a 是否在 TCP 序號空間中位於 b 之後（支援環繞）
+func seqAfter(a, b uint32) bool {
+	return int32(a-b) > 0
 }
 
 const pcapQueueSize = 100
@@ -77,14 +85,10 @@ func NewGameServerPacketReader(opt *GameServerPacketReaderOpt) (*GameServerPacke
 		linkType: layers.LinkTypeNull, // default, will be updated when opening
 	}
 
-	if err := v.openLog(); err != nil {
-		logger.Println("openLog failed", err)
-		return nil, err
-	}
-
-	payloadCh := (<-chan gamePacketPayload)(nil)
+	var payloadCh chan gamePacketPayload
 	err := error(nil)
-	if opt.FileName != "" {
+	isFile := opt.FileName != ""
+	if isFile {
 		payloadCh, err = v.openFile(opt.FileName, filter)
 		if err != nil {
 			logger.Println("openFile failed", err)
@@ -98,9 +102,41 @@ func NewGameServerPacketReader(opt *GameServerPacketReaderOpt) (*GameServerPacke
 		}
 	}
 
+	// openLog 必須在 openNic/openFile 之後，確保 t.linkType 已取得正確值
+	if err := v.openLog(); err != nil {
+		logger.Println("openLog failed", err)
+		return nil, err
+	}
+
+	// 啟動 readPacketLoop：檔案模式延遲 20 秒，NIC 模式立即開始
+	if isFile {
+		time.AfterFunc(20*time.Second, func() {
+			logger.Println("start readPacketLoop", opt.FileName)
+			go v.readPacketLoop(payloadCh)
+		})
+	} else {
+		go v.readPacketLoop(payloadCh)
+	}
+
 	go v.packetLoop(payloadCh)
 
 	return v, nil
+}
+
+// trySkipToNextPacket 嘗試在 buffer 中向前掃描，找到下一個看似合法的封包起始位置。
+// 找到則回傳 true 並已前進 buffer；找不到則回傳 false（buffer 不變）。
+func trySkipToNextPacket(buffer *bytes.Buffer) bool {
+	b := buffer.Bytes()
+	for i := 1; i+5 < len(b); i++ {
+		length := le.Uint32(b[i+1 : i+5])
+		flag := b[i+5]
+		// 正常封包最小長度為 headerSize(6) + 0xd(13) = 19
+		if length >= 19 && length <= 0x1_0000 && flag <= 4 {
+			buffer.Next(i)
+			return true
+		}
+	}
+	return false
 }
 
 func (t *GameServerPacketReader) packetLoop(payloadCh <-chan gamePacketPayload) {
@@ -109,6 +145,7 @@ func (t *GameServerPacketReader) packetLoop(payloadCh <-chan gamePacketPayload) 
 	buffer := bytes.NewBuffer(nil)
 	lastAt := time.Now()
 	parsedInCurrentPayload := 0
+	sessionPacketsParsed := uint64(0) // 本次 session 累計成功解析數（用於區分握手階段）
 
 	for {
 		select {
@@ -122,14 +159,8 @@ func (t *GameServerPacketReader) packetLoop(payloadCh <-chan gamePacketPayload) 
 			parsedInCurrentPayload = 0
 
 			// Accumulate data to buffer (don't reset)
-			// prevBufferLen := buffer.Len()
 			buffer.Write(payloadData.data)
 			lastAt = payloadData.at
-
-			// if prevBufferLen > 0 {
-			// 	logger.Printf("[Buffer] Received %d bytes, buffer now %d bytes (accumulated from previous)",
-			// 		len(payloadData.data), buffer.Len())
-			// }
 
 			// Try to parse game packets (may contain multiple game packets)
 			for buffer.Len() > 0 {
@@ -138,34 +169,48 @@ func (t *GameServerPacketReader) packetLoop(payloadCh <-chan gamePacketPayload) 
 				if err != nil {
 					if err == io.EOF {
 						// Data incomplete, wait for more data
-						// if parsedInCurrentPayload == 0 && prevBufferLen == 0 {
-						// 	logger.Printf("[Wait] Payload %d bytes incomplete, waiting for more (buffer: %d bytes)",
-						// 		len(payloadData.data), buffer.Len())
-						// }
 						break
 					}
 
 					t.parseErrorCount++
 					t.lastErrorTime = time.Now()
 
-					// 顯示錯誤的詳細資訊
 					bufferPreview := buffer.Bytes()
 					previewLen := 32
 					if len(bufferPreview) < previewLen {
 						previewLen = len(bufferPreview)
 					}
 
-					logger.Printf("[ParseError #%d] %v | Buffer: %d bytes | Preview: % X | Parsed: %d in current payload",
-						t.parseErrorCount, err, buffer.Len(), bufferPreview[:previewLen], parsedInCurrentPayload)
-
-					// Parse error, clear buffer and restart
-					buffer.Reset()
+					if sessionPacketsParsed == 0 {
+						// 尚未成功解析過任何封包（握手階段），此 payload 可能是連線握手資料，直接丟棄
+						logger.Printf("[ParseError #%d] handshake/unknown data, discarding %d bytes | %v | Preview: % X",
+							t.parseErrorCount, buffer.Len(), err, bufferPreview[:previewLen])
+						buffer.Reset()
+					} else if parsedInCurrentPayload > 0 {
+						// 本 payload 已有成功解析的封包，嘗試向前掃描找下一個封包起始
+						skipped := bufferLenBefore - buffer.Len()
+						if trySkipToNextPacket(buffer) {
+							logger.Printf("[ParseError #%d] %v | skipped %d bytes to next packet | Remaining: %d bytes | Preview: % X",
+								t.parseErrorCount, err, skipped, buffer.Len(), bufferPreview[:previewLen])
+							// 繼續嘗試解析（不 break）
+							continue
+						}
+						logger.Printf("[ParseError #%d] %v | no valid packet found, discarding %d bytes | Preview: % X",
+							t.parseErrorCount, err, buffer.Len(), bufferPreview[:previewLen])
+						buffer.Reset()
+					} else {
+						// 本 payload 從頭就解析失敗，直接丟棄
+						logger.Printf("[ParseError #%d] %v | Buffer: %d bytes | Preview: % X | Parsed: %d in current payload",
+							t.parseErrorCount, err, buffer.Len(), bufferPreview[:previewLen], parsedInCurrentPayload)
+						buffer.Reset()
+					}
 					break
 				}
 
 				if msg != nil {
 					t.parsedCount++
 					parsedInCurrentPayload++
+					sessionPacketsParsed++
 					bufferConsumed := bufferLenBefore - buffer.Len()
 
 					if false {
@@ -176,17 +221,12 @@ func (t *GameServerPacketReader) packetLoop(payloadCh <-chan gamePacketPayload) 
 					t.packetCh <- msg
 				}
 			}
-
-			if parsedInCurrentPayload > 0 && buffer.Len() == 0 {
-				if false {
-					logger.Printf("[Complete] Parsed %d packets from payload, buffer cleared", parsedInCurrentPayload)
-				}
-			}
 		}
 	}
 }
 
-func (t *GameServerPacketReader) openNic(nic string, filter string) (<-chan gamePacketPayload, error) {
+// openNic 僅開啟 NIC 並設定 filter、取得 LinkType；不啟動 readPacketLoop goroutine
+func (t *GameServerPacketReader) openNic(nic string, filter string) (chan gamePacketPayload, error) {
 	handle, err := pcap.OpenLive(nic, pcapBufferSize, pcapPromisc, pcap.BlockForever)
 	if err != nil {
 		logger.Println(err)
@@ -201,14 +241,11 @@ func (t *GameServerPacketReader) openNic(nic string, filter string) (<-chan game
 	}
 
 	ch := make(chan gamePacketPayload, pcapQueueSize)
-	// ps := gopacket.NewPacketSource(handle, handle.LinkType())
-
-	go t.readPacketLoop(ch)
-
 	return ch, nil
 }
 
-func (t *GameServerPacketReader) openFile(file string, filter string) (<-chan gamePacketPayload, error) {
+// openFile 僅開啟檔案並設定 filter、取得 LinkType；不啟動 readPacketLoop goroutine
+func (t *GameServerPacketReader) openFile(file string, filter string) (chan gamePacketPayload, error) {
 	fd, err := os.OpenFile(file, os.O_RDONLY, 0644)
 	if err != nil {
 		logger.Println(err)
@@ -239,12 +276,6 @@ func (t *GameServerPacketReader) openFile(file string, filter string) (<-chan ga
 	logger.Printf("File LinkType: %v", t.linkType)
 
 	ch := make(chan gamePacketPayload, pcapQueueSize)
-
-	time.AfterFunc(20*time.Second, func() {
-		logger.Println("start readPacketLoop", file)
-		go t.readPacketLoop(ch)
-	})
-
 	return ch, nil
 }
 
@@ -296,19 +327,58 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 
 	packetLayers := []gopacket.LayerType(nil)
 
-	// TCP fragment reassembly based on PSH flag
+	// TCP 重組狀態
 	baseSeq := uint32(0)
+	expectedSeq := uint32(0)
 	firstPacket := true
 	prevDstPort := layers.TCPPort(0)
 
-	// Current accumulating fragment buffer
+	// 當前正在累積的片段 buffer
 	currentBuffer := bytes.NewBuffer(nil)
 	currentBaseSeq := uint32(0)
 	currentTimestamp := time.Time{}
 
-	// Store out-of-order fragments (key: seq)
-	outOfOrderFragments := make(map[uint32]pendingTcpLayer)
+	// 亂序片段暫存（key: TCP seq）
+	// 設為 4，讓少量真正亂序時有機會還原，同時避免 pcap 丟包時積壓太多
+	const maxOOOFragments = 4
+	outOfOrderFragments := make(map[uint32]*tcpFragment, maxOOOFragments)
 
+	// processSegment 將一個有序片段寫入 currentBuffer，PSH 時 flush 到 channel
+	processSegment := func(seq uint32, segPayload []byte, psh bool, timestamp time.Time) {
+		if currentBuffer.Len() == 0 {
+			currentBaseSeq = seq
+		}
+		currentTimestamp = timestamp
+		currentBuffer.Write(segPayload)
+
+		if psh {
+			data := make([]byte, currentBuffer.Len())
+			copy(data, currentBuffer.Bytes())
+			ch <- gamePacketPayload{
+				relSeq: currentBaseSeq - baseSeq,
+				data:   data,
+				at:     currentTimestamp,
+			}
+			currentBuffer.Reset()
+		}
+	}
+
+	// drainFragments 嘗試依序取出已到齊的亂序片段並處理
+	drainFragments := func() {
+		for {
+			frag, ok := outOfOrderFragments[expectedSeq]
+			if !ok {
+				break
+			}
+			delete(outOfOrderFragments, expectedSeq)
+			logger.Printf("[OOO] restored seq=%d (%d bytes, PSH=%v), remaining fragments: %d",
+				frag.seq, len(frag.payload), frag.psh, len(outOfOrderFragments))
+			processSegment(frag.seq, frag.payload, frag.psh, frag.ci.Timestamp)
+			expectedSeq += uint32(len(frag.payload))
+		}
+	}
+
+	lastDropped := 0
 	for i := 0; t.ctx.Err() == nil; i++ {
 		b, ci, err := t.handle.ReadPacketData()
 		if err != nil {
@@ -318,6 +388,18 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 
 		if t.logHandle != nil {
 			_ = t.logHandle.WritePacket(ci, b)
+		}
+
+		// 每 100 個封包檢查一次 pcap 統計，若有新增掉包則立即警告
+		if i%100 == 0 {
+			if stats, err := t.handle.Stats(); err == nil {
+				if stats.PacketsDropped > lastDropped {
+					logger.Printf("[pcap] received=%d dropped=%d ifdropped=%d (+%d new drops)",
+						stats.PacketsReceived, stats.PacketsDropped, stats.PacketsIfDropped,
+						stats.PacketsDropped-lastDropped)
+					lastDropped = stats.PacketsDropped
+				}
+			}
 		}
 
 		// For loopback, skip the 4-byte family field before IPv4 header
@@ -339,7 +421,6 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 			continue
 		}
 
-		// if true {
 		if false {
 			logger.Printf("[TCP] #%d: %s:%s -> %s:%s | Seq: %10d | Nxt: %10d | Ack: %10d | Payload: %5d bytes | ACK: %5v | PSH: %5v",
 				i,
@@ -349,18 +430,18 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 				tcp.Ack, len(tcp.Payload), tcp.ACK, tcp.PSH)
 		}
 
-		// Initialize sequence number
+		// 初始化序號
 		if firstPacket {
 			baseSeq = tcp.Seq
+			expectedSeq = tcp.Seq
 			currentBaseSeq = tcp.Seq
 			currentTimestamp = ci.Timestamp
 			prevDstPort = tcp.DstPort
 			firstPacket = false
 		}
 
-		// Detect connection changes (channel switches, etc.)
+		// 偵測連線切換（換頻道等）
 		if prevDstPort != tcp.DstPort {
-			// Send accumulated data
 			if currentBuffer.Len() > 0 {
 				data := make([]byte, currentBuffer.Len())
 				copy(data, currentBuffer.Bytes())
@@ -371,56 +452,87 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 				}
 				currentBuffer.Reset()
 			}
-
-			// Clear out-of-order cache
-			outOfOrderFragments = make(map[uint32]pendingTcpLayer)
-
-			// Reset state
+			outOfOrderFragments = make(map[uint32]*tcpFragment, maxOOOFragments)
 			baseSeq = tcp.Seq
+			expectedSeq = tcp.Seq
 			currentBaseSeq = tcp.Seq
 			currentTimestamp = ci.Timestamp
 			prevDstPort = tcp.DstPort
 		}
 
-		// Skip encryption key packet (4 bytes)
+		// 跳過加密 key 封包（4 bytes）
 		if len(tcp.Payload) == 4 {
+			if tcp.Seq == expectedSeq {
+				expectedSeq += 4
+				drainFragments()
+			}
 			continue
 		}
 
-		if tcp.PSH {
-			currentBuffer.Write(tcp.Payload)
+		// 亂序判斷
+		if tcp.Seq != expectedSeq {
+			if seqAfter(tcp.Seq, expectedSeq) {
+				// 超前到達
+				if len(outOfOrderFragments) < maxOOOFragments {
+					// 暫存，等待缺失的片段補齊（真正亂序）
+					p := make([]byte, len(tcp.Payload))
+					copy(p, tcp.Payload)
+					outOfOrderFragments[tcp.Seq] = &tcpFragment{
+						seq:     tcp.Seq,
+						payload: p,
+						psh:     tcp.PSH,
+						ci:      ci,
+					}
+					logger.Printf("[OOO] buffered seq=%d (expected=%d, gap=%d bytes, fragments=%d)",
+						tcp.Seq, expectedSeq, int32(tcp.Seq-expectedSeq), len(outOfOrderFragments))
+				} else {
+					// 暫存已滿：推測為 pcap 丟包，進行重新同步
+					// 找出目前已知的最小序號（最舊的 OOO 片段）
+					minSeq := tcp.Seq
+					for seq := range outOfOrderFragments {
+						if seqAfter(minSeq, seq) {
+							minSeq = seq
+						}
+					}
+					logger.Printf("[OOO] pcap drop detected: discarding %d accumulated bytes, resyncing expected=%d -> %d (skipping %d bytes)",
+						currentBuffer.Len(), expectedSeq, minSeq, int32(minSeq-expectedSeq))
+					currentBuffer.Reset()
+					expectedSeq = minSeq
+					drainFragments()
 
-			// Update timestamp for PSH packet (marks message boundary)
-			currentTimestamp = ci.Timestamp
-
-			// Send accumulated buffer
-			data := make([]byte, currentBuffer.Len())
-			copy(data, currentBuffer.Bytes())
-			// logger.Printf("[PSH] seq=%d, buffered %d bytes",
-			// 	tcp.Seq, currentBuffer.Len())
-			ch <- gamePacketPayload{
-				relSeq: currentBaseSeq - baseSeq,
-				data:   data,
-				at:     currentTimestamp,
+					// 處理本次 segment
+					if tcp.Seq == expectedSeq {
+						// 重新同步後剛好輪到本包，直接 fall through
+					} else if seqAfter(tcp.Seq, expectedSeq) {
+						// 仍然超前，繼續暫存
+						p := make([]byte, len(tcp.Payload))
+						copy(p, tcp.Payload)
+						outOfOrderFragments[tcp.Seq] = &tcpFragment{
+							seq:     tcp.Seq,
+							payload: p,
+							psh:     tcp.PSH,
+							ci:      ci,
+						}
+						continue
+					} else {
+						// 重新同步後已過期，忽略
+						continue
+					}
+				}
 			}
-			currentBuffer.Reset()
-		} else {
-			// Sequence matches: append to buffer
-			if currentBuffer.Len() == 0 {
-				currentBaseSeq = tcp.Seq
-				currentTimestamp = ci.Timestamp
-			} else {
-				// Update timestamp to the latest packet's timestamp
-				// This is important for LinkTypeNull/LinkTypeLoop where packets may arrive without PSH
-				currentTimestamp = ci.Timestamp
+			// seq < expectedSeq：重傳或重複，忽略
+			if tcp.Seq != expectedSeq {
+				continue
 			}
-			currentBuffer.Write(tcp.Payload)
 		}
-		continue
 
+		// 有序片段：處理並嘗試排空亂序暫存
+		processSegment(tcp.Seq, tcp.Payload, tcp.PSH, ci.Timestamp)
+		expectedSeq = tcp.Seq + uint32(len(tcp.Payload))
+		drainFragments()
 	}
 
-	// Process remaining buffered data after loop ends
+	// 迴圈結束後，送出剩餘累積資料
 	if currentBuffer.Len() > 0 {
 		data := make([]byte, currentBuffer.Len())
 		copy(data, currentBuffer.Bytes())
@@ -428,17 +540,6 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 			relSeq: currentBaseSeq - baseSeq,
 			data:   data,
 			at:     currentTimestamp,
-		}
-	}
-
-	// Process remaining out-of-order fragments
-	for _, fragment := range outOfOrderFragments {
-		data := make([]byte, len(fragment.tcp.Payload))
-		copy(data, fragment.tcp.Payload)
-		ch <- gamePacketPayload{
-			relSeq: fragment.tcp.Seq - baseSeq,
-			data:   data,
-			at:     fragment.ci.Timestamp,
 		}
 	}
 }
@@ -514,7 +615,7 @@ func gamePacketReader(buffer *bytes.Buffer, at time.Time) (*GamePacket, error) {
 
 	if isShortPacket {
 		// Packet is still insufficient
-		if len(b) < int(length)-6 {
+		if len(b) < int(length) {
 			return nil, io.EOF
 		}
 
