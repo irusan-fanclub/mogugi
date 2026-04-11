@@ -22,10 +22,8 @@ func init() {
 
 // RebuildFilter rebuilds the PCAP filter with current settings
 func RebuildFilter() {
-	// Filter for Mabi server or Gearup server
-	// Also filter out TLS packets (content type 0x14-0x17) by checking first byte of TCP payload
-	tlsFilter := "(tcp[((tcp[12:1] & 0xf0) >> 2):1] < 0x14 or tcp[((tcp[12:1] & 0xf0) >> 2):1] > 0x17)"
-	filter := fmt.Sprintf("(tcp and src net %s and src port (%s) and dst port (%s) and %s)", ServerIP, ServerSrcPort, ServerDstPort, tlsFilter)
+	// 只過濾遊戲伺服器的 TCP 流量，port 已限定在遊戲 port，不會有 TLS 混入
+	filter := fmt.Sprintf("tcp and src net %s and src port (%s) and dst port (%s)", ServerIP, ServerSrcPort, ServerDstPort)
 
 	PCAP_GAMESERVER_FILTER = filter
 }
