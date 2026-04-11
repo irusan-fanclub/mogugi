@@ -9,3 +9,6 @@ bin
 dilmeter_*.log
 packet_capture_*.pcapng
 packet_log_*.ndjson
+
+# tool local data
+.claude/
