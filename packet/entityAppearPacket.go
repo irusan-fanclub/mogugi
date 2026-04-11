@@ -270,6 +270,12 @@ func ParseEntityAppearPacket(msg Message) (*EntityInfo, error) {
 
 	v.StyleSubTitleId = msg[4].Data().(uint32)
 
+	if msg[9].Type() != MessageElemTypeInt {
+		err := fmt.Errorf("unk1Count has unexpected type %v", msg[9].Type())
+		logger.Println(err)
+		return nil, err
+	}
+
 	unk1Count := msg[9].Data().(uint32)
 	msg = msg[10:]
 
@@ -294,15 +300,20 @@ func ParseEntityAppearPacket(msg Message) (*EntityInfo, error) {
 	}
 
 	equipItemCount := int(msg[0].Data().(uint32))
+	msg = msg[1:]
+
 	if len(msg) < 2*equipItemCount {
 		err := fmt.Errorf("entity appear data is too short %v", curPos())
 		logger.Println(err)
 		return nil, err
 	}
 
-	msg = msg[1:]
-
 	for i := 0; i < equipItemCount; i, msg = i+1, msg[2:] {
+		if len(msg) < 2 {
+			err := fmt.Errorf("equipItem slot %d: not enough elements", i)
+			logger.Println(err)
+			return nil, err
+		}
 		if msg[1].Type() != MessageElemTypeBin {
 			err := fmt.Errorf("equipItemData has unexpected type %v", msg[1].Type())
 			logger.Println(err)
@@ -318,8 +329,8 @@ func ParseEntityAppearPacket(msg Message) (*EntityInfo, error) {
 
 		v.EquipItemMap[d.PocketType] = d
 
-		if msg[2].Type() == MessageElemTypeString {
-			// Guild robe
+		// Guild robe 會多一個 string 欄位（可選）
+		if len(msg) >= 3 && msg[2].Type() == MessageElemTypeString {
 			msg = msg[1:]
 		}
 	}

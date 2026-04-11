@@ -224,6 +224,10 @@ func (t *eventPublisher) loop() {
 				}
 
 				b := p.Msg[0].Data().([]byte)
+				if len(b) < 16 {
+					logger.Printf("CreatureBodyUpdate: body data too short, got %d bytes", len(b))
+					continue
+				}
 
 				height := math.Float32frombits(le.Uint32(b[0:]))
 				weight := math.Float32frombits(le.Uint32(b[4:]))

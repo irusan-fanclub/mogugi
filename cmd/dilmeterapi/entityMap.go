@@ -202,19 +202,20 @@ func (t entityCache) cleanup(at time.Time) {
 
 	for k, v := range t {
 		if v.disappearAt == 0 {
+			// 從未收到消失事件
 			if v.IsUser() {
 				if now-v.appearAt > noDisappearUserRemoveSec {
 					delete(t, k)
 				}
+			} else {
+				if now-v.appearAt > noDisappearMobRemoveSec {
+					delete(t, k)
+				}
 			}
-
-			if now-v.appearAt > noDisappearMobRemoveSec {
-				delete(t, k)
-			}
-
 			continue
 		}
 
+		// 已收到消失事件
 		if v.IsUser() {
 			if now-v.disappearAt > userRemoveSec {
 				delete(t, k)
