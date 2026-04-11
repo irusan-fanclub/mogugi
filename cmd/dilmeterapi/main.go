@@ -5,55 +5,43 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/fs"
-	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
 
 	"github.com/gopacket/gopacket/pcap"
-	"gitlab.com/prilus/mabidilmeter/constants"
-	"gitlab.com/prilus/mabidilmeter/packet"
-	"gitlab.com/prilus/mabidilmeter/pcaputil"
+	"gitlab.com/prilus/mabidilmeter/lib/constants"
+	"gitlab.com/prilus/mabidilmeter/lib/event"
+	"gitlab.com/prilus/mabidilmeter/lib/packet"
+	"gitlab.com/prilus/mabidilmeter/lib/pcaputil"
+	"gitlab.com/prilus/mabidilmeter/lib/util"
 	"golang.org/x/net/websocket"
 )
 
-const port = 8030
+const (
+	port    = 8030
+	_logDir = "logs"
+)
 
 //go:embed static
 var staticFiles embed.FS
 
-var logger = log.New(os.Stdout, "dilmeterapi ", log.LstdFlags|log.Lshortfile)
+var logger = util.NewLogger("dilmeterapi")
 var packetLogFilename = ""
 
-func setupLogFile() (logFilename string, cleanup func()) {
-	logFilename = fmt.Sprintf("dilmeter_%v.log", constants.SERVER_START_AT)
-	fd, err := os.OpenFile(logFilename, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
-	if err != nil {
-		logger.Println("failed to open log file:", err)
-		return "", func() {}
-	}
-
-	w := io.MultiWriter(os.Stdout, fd)
-	logger.SetOutput(w)
-	packet.SetLogOutput(w)
-	pcaputil.SetLogOutput(w)
-	log.SetOutput(w) // 標準 logger（套件內部使用的）
-
-	logger.Printf("log file: %s", logFilename)
-
-	return logFilename, func() { fd.Close() }
-}
-
 func main() {
-	_, logCleanup := setupLogFile()
-	defer logCleanup()
+	logFilePath := filepath.Join(_logDir, fmt.Sprintf("dilmeter_%v.log", constants.SERVER_START_AT))
+	if err := util.LogInit(logFilePath); err != nil {
+		logger.Println("LogInit failed:", err)
+	}
+	logger.Printf("log file: %s", logFilePath)
 
 	// main ctx
 	ctx, cancel := context.WithCancel(context.Background())
@@ -126,9 +114,8 @@ func main() {
 		run(ctx, nicName, fileName)
 	}
 
-	for {
-		time.Sleep(1 * time.Second)
-	}
+	// Keep the process alive; goroutines do the actual work.
+	<-ctx.Done()
 }
 
 func run(ctx context.Context, nicName string, fileName string) {
@@ -144,9 +131,9 @@ func run(ctx context.Context, nicName string, fileName string) {
 
 	pub := newEventPublisher(ctx, r)
 
-	// packet writer (for debug)
+	// Packet writer: persists every event to an ndjson file for offline replay.
 	go func() {
-		ch := make(chan iEvent, 10000)
+		ch := make(chan []event.IEvent, 10000)
 		defer close(ch)
 
 		pub.addClient(ctx, ch)
@@ -160,8 +147,9 @@ func run(ctx context.Context, nicName string, fileName string) {
 		logger.Printf("Client connected from %s", ws.RemoteAddr())
 		wsCtx, wsCtxCancel := context.WithCancel(ws.Request().Context())
 
-		// Websocket send queue drains slower than expected
-		ch := make(chan iEvent, 1000000)
+		// WebSocket send queue drains slower than expected under heavy load,
+		// so we keep a generous buffer here.
+		ch := make(chan []event.IEvent, 10000)
 		defer wsCtxCancel()
 		defer close(ch)
 
@@ -173,25 +161,21 @@ func run(ctx context.Context, nicName string, fileName string) {
 				case <-wsCtx.Done():
 					logger.Printf("Client disconnected from %s", ws.RemoteAddr())
 					return
-
 				default:
-					_ = 1
 				}
 
-				var event string
-				err := websocket.JSON.Receive(ws, &event)
+				var msg string
+				err := websocket.JSON.Receive(ws, &msg)
 				if err != nil {
 					logger.Printf("Receive failed: %s; closing connection...", err.Error())
 					if err = ws.Close(); err != nil {
 						logger.Println("Error closing connection:", err.Error())
 					}
-
 					wsCtxCancel()
 					break
-				} else {
-					// discard...
-					logger.Println("Received:", event)
 				}
+				// Incoming messages are currently ignored.
+				logger.Println("Received:", msg)
 			}
 		}
 
@@ -203,9 +187,8 @@ func run(ctx context.Context, nicName string, fileName string) {
 				logger.Printf("Client disconnected from %s", ws.RemoteAddr())
 				return
 
-			case e := <-ch:
-				err := websocket.JSON.Send(ws, []iEvent{e})
-				if err != nil {
+			case events := <-ch:
+				if err := websocket.JSON.Send(ws, events); err != nil {
 					logger.Printf("Can't send: %s", err.Error())
 					return
 				}
@@ -283,10 +266,16 @@ func startWebsocketServer(newClientCb func(*websocket.Conn)) {
 	<-time.After(1 * time.Second)
 }
 
-func startPacketWriter(ctx context.Context, ch <-chan iEvent) error {
-	packetLogFilename = fmt.Sprintf("packet_log_%v.ndjson", constants.SERVER_START_AT)
+func startPacketWriter(ctx context.Context, ch <-chan []event.IEvent) error {
+	if err := os.MkdirAll(_logDir, os.ModePerm); err != nil {
+		logger.Println("Failed to create log directory:", err)
+		return err
+	}
 
-	fd, err := os.OpenFile(packetLogFilename, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+	packetLogFilename = fmt.Sprintf("packet_log_%v.ndjson", constants.SERVER_START_AT)
+	packetLogFilePath := filepath.Join(_logDir, packetLogFilename)
+
+	fd, err := os.OpenFile(packetLogFilePath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 	if err != nil {
 		logger.Println("packetWriter open file failed:", err)
 		return err
@@ -301,27 +290,26 @@ func startPacketWriter(ctx context.Context, ch <-chan iEvent) error {
 		case <-ctx.Done():
 			return nil
 
-		case e := <-ch:
-			b, err := json.Marshal(e)
-			if err != nil {
-				// ?
-				continue
-			}
-
-			b = append(b, '\n')
-
-			_, err = fd.Write(b)
-			if err != nil {
-				logger.Println("packetWriter write failed:", err)
-				return err
+		case events := <-ch:
+			for _, e := range events {
+				// System-level events (negative IDs) are runtime-only and
+				// should not be persisted.
+				if e.GetEventId() < 0 {
+					continue
+				}
+				b, err := json.Marshal(e)
+				if err != nil {
+					continue
+				}
+				b = append(b, '\n')
+				if _, err := fd.Write(b); err != nil {
+					logger.Println("packetWriter write failed:", err)
+					return err
+				}
 			}
 
 		case <-flushTicker.C:
-			err := fd.Sync()
-			if err != nil {
-				// ignore
-				_ = 1
-			}
+			_ = fd.Sync()
 		}
 	}
 }

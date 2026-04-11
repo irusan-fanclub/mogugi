@@ -1,17 +1,12 @@
 package packet
 
 import (
-	"io"
-	"log"
-	"os"
 	"time"
+
+	"gitlab.com/prilus/mabidilmeter/lib/util"
 )
 
-var logger = log.New(os.Stdout, "packet ", log.LstdFlags|log.Lshortfile)
-
-func SetLogOutput(w io.Writer) {
-	logger.SetOutput(w)
-}
+var logger = util.NewLogger("packet")
 
 type GamePacket struct {
 	At     time.Time
@@ -19,12 +14,12 @@ type GamePacket struct {
 	Length uint32
 	Flag   uint8
 
-	// raw packet
+	// short packet body (when Flag is a short-packet flag)
 	IsShortPacket bool
 	ShortBody     []byte
 
-	// normal packet
-	Op  uint32
+	// normal packet fields
+	Op  OpCode
 	Id  uint64
 	Msg Message
 

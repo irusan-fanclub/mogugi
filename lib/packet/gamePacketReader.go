@@ -14,8 +14,8 @@ import (
 	"github.com/gopacket/gopacket/layers"
 	"github.com/gopacket/gopacket/pcap"
 	"github.com/gopacket/gopacket/pcapgo"
-	"gitlab.com/prilus/mabidilmeter/constants"
-	"gitlab.com/prilus/mabidilmeter/util"
+	"gitlab.com/prilus/mabidilmeter/lib/constants"
+	"gitlab.com/prilus/mabidilmeter/lib/util"
 )
 
 type GameServerPacketReader struct {
@@ -32,10 +32,10 @@ type GameServerPacketReader struct {
 	linkType  layers.LinkType
 
 	// statistics
-	payloadCount    uint64    // 收到的 TCP payload 數量
-	parsedCount     uint64    // 成功解析的封包數量
-	parseErrorCount uint64    // 解析錯誤的次數
-	lastErrorTime   time.Time // 最後一次錯誤時間
+	payloadCount    uint64    // number of received TCP payloads
+	parsedCount     uint64    // number of successfully parsed game packets
+	parseErrorCount uint64    // number of parse errors
+	lastErrorTime   time.Time // timestamp of the most recent error
 }
 
 type GameServerPacketReaderOpt struct {
@@ -50,7 +50,8 @@ type gamePacketPayload struct {
 	at     time.Time
 }
 
-// pendingTcpLayer 保存亂序到達的 TCP segment
+// pendingTcpLayer buffers a TCP segment that arrived out of order,
+// waiting for earlier sequence numbers to fill in the gap.
 type pendingTcpLayer struct {
 	tcpLayer layers.TCP
 	ci       gopacket.CaptureInfo
@@ -95,13 +96,16 @@ func NewGameServerPacketReader(opt *GameServerPacketReaderOpt) (*GameServerPacke
 		}
 	}
 
-	// openLog 必須在 openNic/openFile 之後，確保 t.linkType 已取得正確值
+	// openLog must run after openNic/openFile so t.linkType is the real
+	// link type (not the default) when the pcapng writer is initialised.
 	if err := v.openLog(); err != nil {
 		logger.Println("openLog failed", err)
 		return nil, err
 	}
 
-	// 啟動 readPacketLoop：檔案模式延遲 20 秒，NIC 模式立即開始
+	// Start readPacketLoop. File mode delays 20 seconds so a WebSocket
+	// client has time to connect before replay begins; NIC mode starts
+	// immediately.
 	if isFile {
 		time.AfterFunc(20*time.Second, func() {
 			logger.Println("start readPacketLoop", opt.FileName)
@@ -117,13 +121,16 @@ func NewGameServerPacketReader(opt *GameServerPacketReaderOpt) (*GameServerPacke
 }
 
 func (t *GameServerPacketReader) packetLoop(payloadCh <-chan gamePacketPayload) {
-	// 仿原始版本：保留 payloads slice，每個 TCP segment 是一個 payload
-	// 解析失敗時丟掉最前面那個 segment 重試
+	// Maintain a list of TCP-segment-sized payloads alongside a
+	// concatenated byte buffer. On parse failure we drop the frontmost
+	// payload (a full segment worth) and retry — this gives granular
+	// recovery without the cascading false positives of byte-level scans.
 	buffer := bytes.NewBuffer(nil)
 	lastRelSeq, lastAt := uint32(0), time.Now()
 	payloads := make([]gamePacketPayload, 0, packetQueueSize)
 
-	// skipPayload 在成功解析後將 payloads 前端推進 n bytes
+	// skipPayload advances the front of the payloads list by n bytes
+	// after a successful parse.
 	skipPayload := func(n int) {
 		for n > 0 && len(payloads) > 0 {
 			if n < len(payloads[0].data) {
@@ -137,7 +144,8 @@ func (t *GameServerPacketReader) packetLoop(payloadCh <-chan gamePacketPayload) 
 		}
 	}
 
-	// nextPayload 在解析失敗時丟掉最前面那個 payload 並重建 buffer
+	// nextPayload drops the frontmost payload (one TCP segment) and
+	// rebuilds the buffer from the remaining payloads. Called on parse error.
 	nextPayload := func() {
 		buffer.Reset()
 		if len(payloads) < 1 {
@@ -200,7 +208,9 @@ func (t *GameServerPacketReader) packetLoop(payloadCh <-chan gamePacketPayload) 
 	}
 }
 
-// openNic 僅開啟 NIC 並設定 filter、取得 LinkType；不啟動 readPacketLoop goroutine
+// openNic opens the NIC, sets the BPF filter and captures the link
+// type. It does NOT start readPacketLoop — the caller is expected to
+// spawn it after openLog has been called.
 func (t *GameServerPacketReader) openNic(nic string, filter string) (chan gamePacketPayload, error) {
 	handle, err := pcap.OpenLive(nic, pcapBufferSize, pcapPromisc, pcap.BlockForever)
 	if err != nil {
@@ -219,7 +229,8 @@ func (t *GameServerPacketReader) openNic(nic string, filter string) (chan gamePa
 	return ch, nil
 }
 
-// openFile 僅開啟檔案並設定 filter、取得 LinkType；不啟動 readPacketLoop goroutine
+// openFile opens a pcapng file, sets the BPF filter and captures the
+// link type. It does NOT start readPacketLoop.
 func (t *GameServerPacketReader) openFile(file string, filter string) (chan gamePacketPayload, error) {
 	fd, err := os.OpenFile(file, os.O_RDONLY, 0644)
 	if err != nil {
@@ -289,7 +300,8 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 	tcp := layers.TCP{}
 	payload := gopacket.Payload{}
 
-	// 根據 LinkType 決定解析器（支援 Ethernet 與 loopback）
+	// Pick the decoding parser based on the link type (supports Ethernet
+	// and loopback).
 	var layerParser *gopacket.DecodingLayerParser
 	switch t.linkType {
 	case layers.LinkTypeNull, layers.LinkTypeLoop:
@@ -299,7 +311,7 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 	}
 	packetLayers := []gopacket.LayerType(nil)
 
-	// 序號追蹤
+	// Sequence number tracking.
 	baseSeq := uint32(0)
 	nextSeq, prevDstPort := uint32(0), layers.TCPPort(0)
 	pendingTcpLayers := make([]pendingTcpLayer, 0, packetQueueSize)
@@ -316,7 +328,7 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 			_ = t.logHandle.WritePacket(ci, b)
 		}
 
-		// 每 100 個封包查一次 pcap 統計，看有沒有 kernel buffer 丟包
+		// Poll pcap stats every 100 packets to detect kernel-level drops.
 		if i%100 == 0 {
 			if stats, err := t.handle.Stats(); err == nil {
 				if stats.PacketsDropped > lastDropped {
@@ -328,7 +340,8 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 			}
 		}
 
-		// Loopback 情況下要跳過前 4 bytes 的 family 欄位
+		// Loopback captures have a 4-byte address-family prefix before
+		// the IPv4 header that the decoding parser cannot consume; skip it.
 		packetData := b
 		if t.linkType == layers.LinkTypeNull || t.linkType == layers.LinkTypeLoop {
 			if len(b) > 4 {
@@ -353,7 +366,7 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 			}
 
 			if nextSeq != 0 && tcp.Seq != nextSeq {
-				// 連線切換（換頻道等）
+				// Connection switch (channel change etc.).
 				if prevDstPort != tcp.DstPort {
 					for _, v := range pendingTcpLayers {
 						ch <- gamePacketPayload{
@@ -369,7 +382,7 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 					nextSeq = tcp.Seq + uint32(len(tcp.Payload))
 
 					if len(tcp.Payload) == 4 {
-						// 加密 key
+						// Encryption key packet on a new connection; skip.
 						continue
 					}
 
@@ -381,11 +394,13 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 					continue
 				}
 
-				// 序號錯位
+				// Sequence number is out of alignment.
 				logger.Println("packet align error", i, nextSeq, tcp.Seq)
 
 				if tcp.Seq < nextSeq {
-					// 重傳或重疊：若與之前資料重疊但又延伸了一些，截掉重疊部分使用新 bytes
+					// Retransmission or overlap: if the segment overlaps
+					// but extends past nextSeq, trim the overlapping prefix
+					// and send only the fresh bytes.
 					if tcp.Seq+uint32(len(tcp.Payload)) >= nextSeq {
 						payload := tcp.Payload[nextSeq-tcp.Seq:]
 						if len(payload) > 0 {
@@ -401,7 +416,8 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 				}
 
 				if len(pendingTcpLayers) >= packetQueueSize {
-					// pending 滿了：flush 全部並放棄等待
+					// Pending buffer is full: flush everything and give up
+					// waiting for the missing segment.
 					for _, v := range pendingTcpLayers {
 						ch <- gamePacketPayload{
 							relSeq: v.tcpLayer.Seq - baseSeq,
@@ -420,8 +436,10 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 					continue
 				}
 
-				// 亂序：暫存等待缺失的前段 segment
-				// 必須 copy payload，因為 tcpLayer 會在下一輪被 parser 重用
+				// Out of order: buffer this segment and wait for the
+				// missing earlier one. We must copy the payload because
+				// tcpLayer is reused by the decoding parser on the next
+				// iteration.
 				payloadCopy := make([]byte, len(tcp.Payload))
 				copy(payloadCopy, tcp.Payload)
 				tcpCopy := tcp
@@ -433,7 +451,7 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 				continue
 			}
 
-			// 有序片段：直接送出
+			// In-order segment: forward immediately.
 			ch <- gamePacketPayload{
 				relSeq: tcp.Seq - baseSeq,
 				data:   tcp.Payload,
@@ -442,7 +460,8 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 			nextSeq = tcp.Seq + uint32(len(tcp.Payload))
 			prevDstPort = tcp.DstPort
 
-			// 嘗試排空已在 pending 中的亂序片段
+			// Drain any buffered out-of-order segments that have now
+			// become contiguous with nextSeq.
 			if len(pendingTcpLayers) > 0 {
 				for len(pendingTcpLayers) > 0 {
 					v := pendingTcpLayers[0]
@@ -457,7 +476,7 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 						continue
 					}
 					if v.tcpLayer.Seq < nextSeq {
-						// 重傳/重疊
+						// Retransmission/overlap case.
 						if v.tcpLayer.Seq+uint32(len(v.tcpLayer.Payload)) < nextSeq {
 							pendingTcpLayers = pendingTcpLayers[1:]
 							continue
@@ -474,19 +493,19 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 						pendingTcpLayers = pendingTcpLayers[1:]
 						continue
 					}
-					// 還有更前面的 segment 未到
+					// An earlier segment is still missing; stop draining.
 					break
 				}
 			}
 		}
 
-		// Rate-limit 避免 CPU 100%
+		// Throttle the loop to avoid pegging the CPU at 100%.
 		if i&((1<<10)-1) == 0 {
 			time.Sleep(5 * time.Millisecond)
 		}
 	}
 
-	// 迴圈結束：flush pending
+	// Loop ended: flush any remaining pending segments.
 	for _, v := range pendingTcpLayers {
 		ch <- gamePacketPayload{
 			relSeq: v.tcpLayer.Seq - baseSeq,
@@ -533,14 +552,17 @@ func (t *GameServerPacketReader) GetStats() (payloads, parsed, errors uint64) {
 	return t.payloadCount, t.parsedCount, t.parseErrorCount
 }
 
-// parseGamePacket 從 data 嘗試解析一個 game packet。
-// 回傳:
-//   - packet: 解析成功的封包（失敗時為 nil）
-//   - consumed: 成功時為此封包佔用的 bytes 數；失敗/EOF 時永遠為 0
-//   - err: io.EOF 表示需要更多資料；其他錯誤表示 header/body 有問題
+// parseGamePacket attempts to parse a single game packet from data.
+// Returns:
+//   - packet:   the parsed packet on success (nil on error)
+//   - consumed: on success, the number of bytes this packet occupies;
+//               always 0 on error and on io.EOF
+//   - err:      io.EOF when more data is needed; any other error
+//               indicates a malformed header or body
 //
-// 設計原則：任何錯誤都不會 consume bytes，由呼叫者決定如何前進（通常是 offset++ 重試）。
-// 這樣可以避免在 header 是 false positive 時錯誤地信任 length 而跳到錯誤的位置。
+// Design invariant: errors never consume bytes. The caller decides how
+// to advance (typically by one byte and retrying). This avoids trusting
+// `length` when the header turned out to be a false positive.
 func parseGamePacket(data []byte, at time.Time) (*GamePacket, int, error) {
 	const headerSize = 6
 
@@ -565,7 +587,8 @@ func parseGamePacket(data []byte, at time.Time) (*GamePacket, int, error) {
 		if len(data) < int(length) {
 			return nil, 0, io.EOF
 		}
-		// 太短則視為無效，由呼叫者前進 1 byte 重試
+		// Too small to be a real packet. Return an error and let the
+		// caller advance by 1 byte to retry.
 		if int(length) < headerSize {
 			return nil, 0, fmt.Errorf("short packet length %v too small", length)
 		}
@@ -586,7 +609,7 @@ func parseGamePacket(data []byte, at time.Time) (*GamePacket, int, error) {
 		}, int(length), nil
 	}
 
-	// 正常封包最小長度（header 6 + op 4 + id 8 + varint 1 = 19）
+	// Minimum normal-packet length: header (6) + op (4) + id (8) + varint (1) = 19.
 	if int(length) < headerSize+0xd {
 		return nil, 0, ErrTooShortPacket
 	}
@@ -612,8 +635,9 @@ func parseGamePacket(data []byte, at time.Time) (*GamePacket, int, error) {
 
 	msg, err := NewMessage(bytes.NewReader(body))
 	if err != nil {
-		// 注意：message 解析失敗代表 header 可能是 false positive
-		// 不要消耗 length bytes，由呼叫者前進 1 byte 重試
+		// Message parse failure: the header may have been a false positive.
+		// Do not consume `length` bytes; the caller should advance by 1 byte
+		// and retry parsing.
 		return nil, 0, err
 	}
 
@@ -625,7 +649,7 @@ func parseGamePacket(data []byte, at time.Time) (*GamePacket, int, error) {
 		Sign:      sign,
 		Length:    length,
 		Flag:      flag,
-		Op:        op,
+		Op:        OpCode(op),
 		Id:        id,
 		Msg:       msg,
 		RawPacket: rawPacket,

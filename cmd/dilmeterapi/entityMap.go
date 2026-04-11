@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"gitlab.com/prilus/mabidilmeter/packet"
+	"gitlab.com/prilus/mabidilmeter/lib/packet"
 )
 
 type entityCache map[uint64]*entityInfoExtend
@@ -202,7 +202,7 @@ func (t entityCache) cleanup(at time.Time) {
 
 	for k, v := range t {
 		if v.disappearAt == 0 {
-			// 從未收到消失事件
+			// Never received a disappear event.
 			if v.IsUser() {
 				if now-v.appearAt > noDisappearUserRemoveSec {
 					delete(t, k)
@@ -215,7 +215,7 @@ func (t entityCache) cleanup(at time.Time) {
 			continue
 		}
 
-		// 已收到消失事件
+		// Disappear event has been received.
 		if v.IsUser() {
 			if now-v.disappearAt > userRemoveSec {
 				delete(t, k)

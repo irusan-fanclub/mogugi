@@ -9,6 +9,10 @@ export const eventIdFinish = 6;
 export const eventIdEntityEquipItem = 7;
 export const eventIdEntityUnequipItem = 8;
 export const eventIdEntityUpdateBody = 9;
+export const eventIdStatUpdate = 10;
+export const eventIdChat = 11;
+export const eventIdNotice = 12;
+export const eventIdChangeStance = 13;
 
 export const eventIdMessageBox = -1;
 
@@ -80,6 +84,28 @@ export type eventEntityUpdateBody = eventBase & {
     Weight: number;
     Upper: number;
     Lower: number;
+}
+
+export type eventStatUpdate = eventBase & {
+    EventId: 10;
+    Data: string; // base64-encoded raw bytes
+}
+
+export type eventChat = eventBase & {
+    EventId: 11;
+    Channel: number;
+    From: string;
+    Message: string;
+}
+
+export type eventNotice = eventBase & {
+    EventId: 12;
+    Message: string;
+}
+
+export type eventChangeStance = eventBase & {
+    EventId: 13;
+    Stance: number;
 }
 
 export type eventMessageBox = eventBase & {

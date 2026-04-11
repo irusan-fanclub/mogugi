@@ -5,26 +5,20 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"io"
-	"log"
 	"net"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
 	"unsafe"
 
 	"github.com/gopacket/gopacket/pcap"
-	"gitlab.com/prilus/mabidilmeter/constants"
-	"gitlab.com/prilus/mabidilmeter/packet"
+	"gitlab.com/prilus/mabidilmeter/lib/constants"
+	"gitlab.com/prilus/mabidilmeter/lib/packet"
+	"gitlab.com/prilus/mabidilmeter/lib/util"
 	"golang.org/x/sys/windows"
 )
 
-var logger = log.New(os.Stdout, "pcaputil ", log.LstdFlags|log.Lshortfile)
-
-func SetLogOutput(w io.Writer) {
-	logger.SetOutput(w)
-}
+var logger = util.NewLogger("pcaputil")
 
 const (
 	afInet                 = 2

@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"fmt"
 
-	"gitlab.com/prilus/mabidilmeter/util"
+	"gitlab.com/prilus/mabidilmeter/lib/util"
 )
 
 type EntityInfo struct {
@@ -329,7 +329,7 @@ func ParseEntityAppearPacket(msg Message) (*EntityInfo, error) {
 
 		v.EquipItemMap[d.PocketType] = d
 
-		// Guild robe 會多一個 string 欄位（可選）
+		// Guild robes carry an extra optional string field after the item.
 		if len(msg) >= 3 && msg[2].Type() == MessageElemTypeString {
 			msg = msg[1:]
 		}

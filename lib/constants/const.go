@@ -20,11 +20,11 @@ func init() {
 	RebuildFilter()
 }
 
-// RebuildFilter rebuilds the PCAP filter with current settings
+// RebuildFilter rebuilds the pcap BPF filter from the current settings.
+// Since the filter is scoped to the game server IP and port, TLS traffic
+// never reaches this capture and no extra content-type filtering is needed.
 func RebuildFilter() {
-	// 只過濾遊戲伺服器的 TCP 流量，port 已限定在遊戲 port，不會有 TLS 混入
 	filter := fmt.Sprintf("tcp and src net %s and src port (%s) and dst port (%s)", ServerIP, ServerSrcPort, ServerDstPort)
-
 	PCAP_GAMESERVER_FILTER = filter
 }
 
