@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/gopacket/gopacket"
@@ -266,7 +267,12 @@ func (t *GameServerPacketReader) openFile(file string, filter string) (chan game
 }
 
 func (t *GameServerPacketReader) openLog() error {
-	fileName := fmt.Sprintf("packet_capture_%v.pcapng", constants.SERVER_START_AT)
+	logDir := "logs"
+	if err := os.MkdirAll(logDir, os.ModePerm); err != nil {
+		logger.Println(err)
+		return err
+	}
+	fileName := filepath.Join(logDir, fmt.Sprintf("packet_capture_%v.pcapng", constants.SERVER_START_AT))
 	fd, err := os.OpenFile(fileName, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 	if err != nil {
 		logger.Println(err)

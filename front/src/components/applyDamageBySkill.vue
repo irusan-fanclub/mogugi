@@ -28,8 +28,9 @@
                             :draggable="ccId !== PINNED_CC"
                             :style="{
                                 cursor: ccId === PINNED_CC ? 'default' : 'grab',
-                                opacity: dragIdx === idx ? 0.4 : 1,
+                                opacity: ccId === PINNED_CC ? 0.6 : (dragIdx === idx ? 0.4 : 1),
                                 background: dragIdx === idx ? '#333' : 'transparent',
+                                userSelect: 'none',
                             }"
                             @dragstart="onDragStart(idx)"
                             @dragover="onDragOver($event, idx)"
