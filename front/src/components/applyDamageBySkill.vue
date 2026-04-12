@@ -10,44 +10,46 @@
             DPS</v-btn>
     </v-sheet>
 
-    <!-- DPS line chart (15s bins, excluding pet damage) -->
-    <v-expansion-panels class="ma-2">
-        <v-expansion-panel>
-            <v-expansion-panel-title>
-                <div class="d-flex align-center" style="gap: 8px;">
-                    <v-icon icon="mdi-chart-line" size="small" />
-                    <span class="font-weight-medium">DPS (15s, excl. pets)</span>
-                </div>
-            </v-expansion-panel-title>
-            <v-expansion-panel-text>
-                <dps-line-chart
-                    v-if="dpsChartEntities.length > 0"
-                    :entities="dpsChartEntities"
-                    :bin-seconds="15"
-                    style="height: 280px;" />
-                <v-sheet v-else class="pa-4 text-center text-medium-emphasis">
-                    No combat data yet
-                </v-sheet>
-            </v-expansion-panel-text>
-        </v-expansion-panel>
-    </v-expansion-panels>
-
-    <!-- Debuff timeline (Gantt chart + inline summary) -->
-    <v-expansion-panels class="ma-2">
-        <v-expansion-panel>
-            <v-expansion-panel-title>
-                <div class="d-flex align-center" style="gap: 8px;">
-                    <v-icon icon="mdi-shield-half-full" size="small" />
-                    <span class="font-weight-medium">Debuff Timeline</span>
-                </div>
-            </v-expansion-panel-title>
-            <v-expansion-panel-text>
-                <debuff-timeline
-                    :target="selectedTarget"
-                    style="min-height: 160px;" />
-            </v-expansion-panel-text>
-        </v-expansion-panel>
-    </v-expansion-panels>
+    <!-- DPS + Debuff stacked with shared time axis -->
+    <v-sheet v-if="dpsChartEntities.length > 0" class="mx-2 mt-1" style="border: 1px solid #2a2a2a; border-radius: 4px; overflow: hidden;">
+        <v-sheet class="d-flex align-center px-3 py-1" style="font-size: 0.8em; color: #888; background: #1a1a1a;">
+            <span>DPS (15s, excl. pets)</span>
+            <v-spacer />
+            <v-menu>
+                <template v-slot:activator="{ props: menuProps }">
+                    <v-btn v-bind="menuProps" icon="mdi-cog" size="x-small" variant="text" density="compact" />
+                </template>
+                <v-card min-width="200" style="background: #1e1e1e;">
+                    <v-card-text class="pa-2" style="font-size: 0.85em;">
+                        DPS chart settings (TODO)
+                    </v-card-text>
+                </v-card>
+            </v-menu>
+        </v-sheet>
+        <dps-line-chart
+            :entities="dpsChartEntities"
+            :bin-seconds="15"
+            :chart-height="220"
+            @timeRange="onDpsTimeRange" />
+        <v-sheet class="d-flex align-center px-3 py-1" style="font-size: 0.8em; color: #888; background: #1a1a1a;">
+            <span>Debuff Timeline</span>
+            <v-spacer />
+            <v-menu>
+                <template v-slot:activator="{ props: menuProps }">
+                    <v-btn v-bind="menuProps" icon="mdi-cog" size="x-small" variant="text" density="compact" />
+                </template>
+                <v-card min-width="200" style="background: #1e1e1e;">
+                    <v-card-text class="pa-2" style="font-size: 0.85em;">
+                        Debuff tracking settings (TODO)
+                    </v-card-text>
+                </v-card>
+            </v-menu>
+        </v-sheet>
+        <debuff-timeline
+            :target="selectedTarget"
+            :time-min="dpsTimeMin"
+            :time-max="dpsTimeMax" />
+    </v-sheet>
 
     <v-expansion-panels multiple v-for="v in pcEntities" v-bind:key="v.actor.id">
         <template v-if="v.totalDamage > 0">
@@ -431,7 +433,7 @@ export default defineComponent({
             dialogStack.open(ConditionChart, props, `CC - ${name}`);
         };
 
-        // --- DPS line chart (pet-free) ---
+        // --- DPS line chart (pet-free, follows selected target) ---
         const getNoPetDC = () => {
             const key = 'noPetByAttacker';
             if (damageCollectorMap[key]) {
@@ -454,7 +456,12 @@ export default defineComponent({
             for (const k in noPetDC.value.groupedDamages) {
                 const actor = actorManager.value.entityMap[k];
                 if (!actor || !actor.isPC) continue;
-                const damages = filterByTimeRange(noPetDC.value.groupedDamages[k], minAt, maxAt);
+                let damages = noPetDC.value.groupedDamages[k] || [];
+                // Filter to selected target when one is chosen
+                if (targetId.value) {
+                    damages = damages.filter(d => d.TargetId === targetId.value);
+                }
+                damages = filterByTimeRange(damages, minAt, maxAt);
                 if (damages.length === 0) continue;
                 result.push({ name: prettyName(actor) || k, damages });
             }
@@ -465,6 +472,14 @@ export default defineComponent({
                 return tb - ta;
             });
         });
+
+        // Shared time range between DPS chart and debuff timeline
+        const dpsTimeMin = ref<number | null>(null);
+        const dpsTimeMax = ref<number | null>(null);
+        const onDpsTimeRange = (min: number, max: number) => {
+            dpsTimeMin.value = min;
+            dpsTimeMax.value = max;
+        };
 
         // --- Debuff timeline target ---
         const selectedTarget = computed(() => {
@@ -485,6 +500,9 @@ export default defineComponent({
 
             dpsChartEntities,
             selectedTarget,
+            dpsTimeMin,
+            dpsTimeMax,
+            onDpsTimeRange,
 
             showCumulativeChart,
             showDpsChart,
