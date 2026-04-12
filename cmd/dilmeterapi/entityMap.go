@@ -1,7 +1,6 @@
 package main
 
 import (
-	"sync"
 	"time"
 
 	"gitlab.com/prilus/mabidilmeter/lib/packet"
@@ -9,9 +8,12 @@ import (
 
 type entityCache map[uint64]*entityInfoExtend
 
+// entityInfoExtend holds per-entity state. All fields are guarded by the
+// eventPublisher's mutex — do NOT add a separate mutex here. The previous
+// per-entry sync.Mutex caused races because callers (addClient, loop) used
+// different locks for map-level vs entry-level access.
 type entityInfoExtend struct {
 	*packet.EntityInfo
-	sync.Mutex
 	appearAt              int64
 	disappearAt           int64
 	characterConditionMap map[uint32]*packet.EntityCharacterCondition
@@ -53,62 +55,28 @@ func (t entityCache) addCondition(p *packet.CharacterConditionPacket) {
 	}
 
 	if !p.IsEnable {
-		e.Lock()
 		delete(e.characterConditionMap, p.CCId)
-		e.Unlock()
 		return
 	}
 
-	e.Lock()
 	e.characterConditionMap[p.CCId] = &p.EntityCharacterCondition
-	e.Unlock()
-
-	/*
-		go func() {
-			time.Sleep(time.Until(time.Unix(p.DisableAt, 0)))
-			e.Lock()
-			if cond := e.characterConditionMap[p.CCId]; cond != nil && cond.DisableAt == p.DisableAt {
-				delete(e.characterConditionMap, p.CCId)
-			}
-			e.Unlock()
-		}()
-	*/
 }
 
-// return -> isUpdated
 func (t entityCache) addOrUpdateCondition(id uint64, p *packet.EntityCharacterCondition) bool {
 	e := t[id]
 	if e == nil {
 		return false
 	}
 
-	e.Lock()
-	defer e.Unlock()
-
-	/*
-		setDisableTimer := func() {
-			time.Sleep(time.Until(time.Unix(p.DisableAt, 0)))
-			e.Lock()
-			if cond := e.characterConditionMap[p.CCId]; cond != nil && cond.DisableAt == p.DisableAt {
-				delete(e.characterConditionMap, p.CCId)
-			}
-			e.Unlock()
-		}
-	*/
-
 	if cond := e.characterConditionMap[p.CCId]; cond != nil {
-		isSame := *cond == *p
-		if isSame {
+		if *cond == *p {
 			return false
 		}
-
 		*cond = *p
-		// go setDisableTimer()
 		return true
 	}
 
 	e.characterConditionMap[p.CCId] = p
-	// go setDisableTimer()
 	return true
 }
 
@@ -118,15 +86,10 @@ func (t entityCache) addOrUpdateEquipItem(id uint64, p *packet.EntityItem) bool 
 		return false
 	}
 
-	e.Lock()
-	defer e.Unlock()
-
 	if item := e.equipItemMap[p.PocketType]; item != nil {
-		isSame := *item == *p
-		if isSame {
+		if *item == *p {
 			return false
 		}
-
 		*item = *p
 		return true
 	}
@@ -140,15 +103,7 @@ func (t entityCache) hasEquipItem(id uint64, pocketType uint32) bool {
 	if e == nil {
 		return false
 	}
-
-	e.Lock()
-	defer e.Unlock()
-
-	if item := e.equipItemMap[pocketType]; item != nil {
-		return true
-	}
-
-	return false
+	return e.equipItemMap[pocketType] != nil
 }
 
 func (t entityCache) allEquipItemPockets(id uint64) []uint32 {
@@ -157,14 +112,10 @@ func (t entityCache) allEquipItemPockets(id uint64) []uint32 {
 		return nil
 	}
 
-	e.Lock()
-	defer e.Unlock()
-
 	var pockets []uint32
 	for k := range e.equipItemMap {
 		pockets = append(pockets, k)
 	}
-
 	return pockets
 }
 
@@ -173,10 +124,6 @@ func (t entityCache) unequipItem(id uint64, pocketType uint32) {
 	if e == nil {
 		return
 	}
-
-	e.Lock()
-	defer e.Unlock()
-
 	delete(e.equipItemMap, pocketType)
 }
 
@@ -185,9 +132,6 @@ func (t entityCache) updateBody(id uint64, height float32, weight float32, upper
 	if e == nil {
 		return
 	}
-
-	e.Lock()
-	defer e.Unlock()
 
 	e.Height = height
 	e.Weight = weight
@@ -234,6 +178,5 @@ func (t *entityInfoExtend) IsUser() bool {
 	case 8001, 8002, 9001, 9002, 10001, 10002:
 		return true
 	}
-
 	return false
 }

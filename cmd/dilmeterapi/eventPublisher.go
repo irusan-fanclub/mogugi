@@ -188,27 +188,26 @@ func (t *eventPublisher) handleEntityAppear(p *packet.GamePacket) {
 	}
 
 	if len(entity.Name) <= 0 || entity.Name[0] == '_' {
-		// ignore npcs whose name starts with underscore
 		return
 	}
 
+	// Collect events under lock, publish after unlock to avoid deadlock.
+	var events []event.IEvent
+
 	t.Lock()
 	t.entityCache.add(entity, p.At)
-	t.Unlock()
 
-	t.publish(toEventEntityAppear(p.At.Unix(), entity))
+	events = append(events, toEventEntityAppear(p.At.Unix(), entity))
 
 	for _, v := range entity.CharacterConditionMap {
 		if !t.entityCache.addOrUpdateCondition(entity.Id, v) {
 			continue
 		}
-
 		attackerId := ""
 		if v.AttackerId != 0 {
 			attackerId = strconv.FormatUint(v.AttackerId, 10)
 		}
-
-		t.publish(&event.EventCharacterConditionEnable{
+		events = append(events, &event.EventCharacterConditionEnable{
 			EventBase: event.EventBase{
 				EventId: event.EventIdCharacterConditionEnable,
 				At:      p.At.Unix(),
@@ -224,7 +223,7 @@ func (t *eventPublisher) handleEntityAppear(p *packet.GamePacket) {
 		if !t.entityCache.addOrUpdateEquipItem(entity.Id, v) {
 			continue
 		}
-		t.publish(toEventEquipItem(p.At.Unix(), entity.Id, v))
+		events = append(events, toEventEquipItem(p.At.Unix(), entity.Id, v))
 	}
 
 	for _, pocketType := range t.entityCache.allEquipItemPockets(entity.Id) {
@@ -232,7 +231,7 @@ func (t *eventPublisher) handleEntityAppear(p *packet.GamePacket) {
 			continue
 		}
 		t.entityCache.unequipItem(entity.Id, pocketType)
-		t.publish(&event.EventEntityUnequipItem{
+		events = append(events, &event.EventEntityUnequipItem{
 			EventBase: event.EventBase{
 				EventId: event.EventIdEntityUnequipItem,
 				At:      p.At.Unix(),
@@ -240,6 +239,11 @@ func (t *eventPublisher) handleEntityAppear(p *packet.GamePacket) {
 			},
 			PocketType: pocketType,
 		})
+	}
+	t.Unlock()
+
+	for _, e := range events {
+		t.publish(e)
 	}
 }
 
@@ -281,7 +285,9 @@ func (t *eventPublisher) handleCreatureBodyUpdate(p *packet.GamePacket) {
 	upper := math.Float32frombits(le.Uint32(b[8:]))
 	lower := math.Float32frombits(le.Uint32(b[12:]))
 
+	t.Lock()
 	t.entityCache.updateBody(p.Id, height, weight, upper, lower)
+	t.Unlock()
 
 	t.publish(&event.EventEntityUpdateBody{
 		EventBase: event.EventBase{
@@ -374,7 +380,11 @@ func (t *eventPublisher) handleEquipmentChanged(p *packet.GamePacket) {
 		return
 	}
 
-	if !t.entityCache.addOrUpdateEquipItem(p.Id, info) {
+	t.Lock()
+	changed := t.entityCache.addOrUpdateEquipItem(p.Id, info)
+	t.Unlock()
+
+	if !changed {
 		return
 	}
 
@@ -387,11 +397,17 @@ func (t *eventPublisher) handleUnequipment(p *packet.GamePacket) {
 	}
 
 	pocketType := p.Msg[0].Data().(uint32)
-	if !t.entityCache.hasEquipItem(p.Id, pocketType) {
+
+	t.Lock()
+	has := t.entityCache.hasEquipItem(p.Id, pocketType)
+	if has {
+		t.entityCache.unequipItem(p.Id, pocketType)
+	}
+	t.Unlock()
+
+	if !has {
 		return
 	}
-
-	t.entityCache.unequipItem(p.Id, pocketType)
 
 	t.publish(&event.EventEntityUnequipItem{
 		EventBase: event.EventBase{

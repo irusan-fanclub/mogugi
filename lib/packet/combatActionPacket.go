@@ -181,25 +181,25 @@ func parseCombatActionPacket(id uint64, msg Message) (*CombatActionPacket, error
 	origMsg := msg
 
 	if msg[0].Type() != MessageElemTypeInt {
-		return nil, fmt.Errorf("parseCombatActionPacket: combatActionId has unexpected type %v", msg[1].Type())
+		return nil, fmt.Errorf("parseCombatActionPacket: combatActionId has unexpected type %v", msg[0].Type())
 	}
 	if msg[1].Type() != MessageElemTypeLong {
-		return nil, fmt.Errorf("parseCombatActionPacket: entityId has unexpected type %v", msg[2].Type())
+		return nil, fmt.Errorf("parseCombatActionPacket: entityId has unexpected type %v", msg[1].Type())
 	}
 	if msg[2].Type() != MessageElemTypeByte {
-		return nil, fmt.Errorf("parseCombatActionPacket: type has unexpected type %v", msg[3].Type())
+		return nil, fmt.Errorf("parseCombatActionPacket: type has unexpected type %v", msg[2].Type())
 	}
 	if msg[3].Type() != MessageElemTypeShort {
-		return nil, fmt.Errorf("parseCombatActionPacket: stun has unexpected type %v", msg[4].Type())
+		return nil, fmt.Errorf("parseCombatActionPacket: stun has unexpected type %v", msg[3].Type())
 	}
 	if msg[4].Type() != MessageElemTypeShort {
-		return nil, fmt.Errorf("parseCombatActionPacket: skillId has unexpected type %v", msg[5].Type())
+		return nil, fmt.Errorf("parseCombatActionPacket: skillId has unexpected type %v", msg[4].Type())
 	}
 	if msg[5].Type() != MessageElemTypeShort {
-		return nil, fmt.Errorf("parseCombatActionPacket: subSkillId has unexpected type %v", msg[6].Type())
+		return nil, fmt.Errorf("parseCombatActionPacket: subSkillId has unexpected type %v", msg[5].Type())
 	}
 	if msg[6].Type() != MessageElemTypeShort {
-		return nil, fmt.Errorf("parseCombatActionPacket: unk1 has unexpected type %v", msg[7].Type())
+		return nil, fmt.Errorf("parseCombatActionPacket: unk1 has unexpected type %v", msg[6].Type())
 	}
 
 	combatActionId := msg[0].Data().(uint32)
