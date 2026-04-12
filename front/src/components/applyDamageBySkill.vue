@@ -10,45 +10,71 @@
             DPS</v-btn>
     </v-sheet>
 
-    <!-- DPS + Debuff stacked with shared time axis -->
+    <!-- DPS + Debuff unified chart with shared X axis -->
     <v-sheet v-if="dpsChartEntities.length > 0" class="mx-2 mt-1" style="border: 1px solid #2a2a2a; border-radius: 4px; overflow: hidden;">
         <v-sheet class="d-flex align-center px-3 py-1" style="font-size: 0.8em; color: #888; background: #1a1a1a;">
-            <span>DPS (15s, excl. pets)</span>
+            <span>DPS (15s, excl. pets) + Debuff Timeline</span>
             <v-spacer />
-            <v-menu>
+            <v-menu :close-on-content-click="false">
                 <template v-slot:activator="{ props: menuProps }">
                     <v-btn v-bind="menuProps" icon="mdi-cog" size="x-small" variant="text" density="compact" />
                 </template>
-                <v-card min-width="200" style="background: #1e1e1e;">
-                    <v-card-text class="pa-2" style="font-size: 0.85em;">
-                        DPS chart settings (TODO)
-                    </v-card-text>
+                <v-card width="320" style="background: #1e1e1e;">
+                    <!-- Enabled list (draggable) -->
+                    <v-card-subtitle class="px-3 pt-3 pb-1" style="font-size: 0.75em;">Enabled (drag to reorder)</v-card-subtitle>
+                    <div style="max-height: 240px; overflow-y: auto;">
+                        <div v-for="(ccId, idx) in trackedCCIdList" :key="ccId"
+                            class="d-flex align-center px-3 py-1"
+                            :draggable="ccId !== PINNED_CC"
+                            :style="{
+                                cursor: ccId === PINNED_CC ? 'default' : 'grab',
+                                opacity: dragIdx === idx ? 0.4 : 1,
+                                background: dragIdx === idx ? '#333' : 'transparent',
+                            }"
+                            @dragstart="onDragStart(idx)"
+                            @dragover="onDragOver($event, idx)"
+                            @dragend="onDragEnd">
+                            <v-icon v-if="ccId === PINNED_CC" icon="mdi-lock" size="x-small" class="mr-1" style="opacity:0.4" />
+                            <v-icon v-else icon="mdi-drag-horizontal-variant" size="x-small" class="mr-1" style="opacity:0.4" />
+                            <img width="16" height="16" class="mr-2"
+                                :src="`/res/characterconditionimage/${region}/${ccId}/${ccId}.png`"
+                                style="border-radius:2px;" />
+                            <span style="font-size: 0.82em; flex: 1;">{{ condNameMap[ccId] ?? `CC ${ccId}` }}</span>
+                            <v-btn v-if="ccId !== PINNED_CC" icon="mdi-close" size="x-small" variant="text"
+                                density="compact" @click.stop="removeCC(ccId)" />
+                        </div>
+                    </div>
+                    <!-- Add new -->
+                    <v-divider class="my-1" />
+                    <v-card-subtitle class="px-3 pt-1 pb-1" style="font-size: 0.75em;">Add condition</v-card-subtitle>
+                    <div class="px-3 pb-2">
+                        <v-text-field v-model="addCCSearch" density="compact" variant="outlined"
+                            hide-details placeholder="Search CC..." clearable
+                            style="font-size: 0.82em;" />
+                    </div>
+                    <div style="max-height: 160px; overflow-y: auto;">
+                        <div v-for="ccId in availableCCs" :key="ccId"
+                            class="d-flex align-center px-3 py-1"
+                            style="cursor: pointer;"
+                            @click="addCC(ccId)">
+                            <v-icon icon="mdi-plus" size="x-small" class="mr-1" style="opacity:0.5" />
+                            <img width="16" height="16" class="mr-2"
+                                :src="`/res/characterconditionimage/${region}/${ccId}/${ccId}.png`"
+                                style="border-radius:2px;" />
+                            <span style="font-size: 0.82em;">{{ condNameMap[ccId] ?? `CC ${ccId}` }}</span>
+                        </div>
+                        <div v-if="availableCCs.length === 0" class="px-3 py-2 text-medium-emphasis" style="font-size: 0.8em;">
+                            No more conditions to add
+                        </div>
+                    </div>
                 </v-card>
             </v-menu>
         </v-sheet>
-        <dps-line-chart
+        <dps-debuff-chart
             :entities="dpsChartEntities"
-            :bin-seconds="15"
-            :chart-height="220"
-            @timeRange="onDpsTimeRange" />
-        <v-sheet class="d-flex align-center px-3 py-1" style="font-size: 0.8em; color: #888; background: #1a1a1a;">
-            <span>Debuff Timeline</span>
-            <v-spacer />
-            <v-menu>
-                <template v-slot:activator="{ props: menuProps }">
-                    <v-btn v-bind="menuProps" icon="mdi-cog" size="x-small" variant="text" density="compact" />
-                </template>
-                <v-card min-width="200" style="background: #1e1e1e;">
-                    <v-card-text class="pa-2" style="font-size: 0.85em;">
-                        Debuff tracking settings (TODO)
-                    </v-card-text>
-                </v-card>
-            </v-menu>
-        </v-sheet>
-        <debuff-timeline
             :target="selectedTarget"
-            :time-min="dpsTimeMin"
-            :time-max="dpsTimeMax" />
+            :bin-seconds="15"
+            :tracked-c-c-ids="trackedCCIdList" />
     </v-sheet>
 
     <v-expansion-panels multiple v-for="v in pcEntities" v-bind:key="v.actor.id">
@@ -144,13 +170,11 @@ import ConditionChart from '@/components/subComponents/conditionChart.vue';
 import DamageChart from '@/components/subComponents/damageChart.vue';
 import DamageDistribution from '@/components/subComponents/damageDistribution.vue';
 import DamageList from '@/components/subComponents/damageList.vue';
-import DpsLineChart from '@/components/subComponents/dpsLineChart.vue';
-import DebuffTimeline from '@/components/subComponents/debuffTimeline.vue';
+import DpsDebuffChart from '@/components/subComponents/dpsDebuffChart.vue';
 
 export default defineComponent({
     components: {
-        DpsLineChart,
-        DebuffTimeline,
+        DpsDebuffChart,
     },
     setup() {
         const isLoading = inject('isLoading');
@@ -158,6 +182,7 @@ export default defineComponent({
         const raceNameMap = inject('raceNameMap');
         const skillNameMap = inject('skillNameMap');
         const appEvent = inject('appEvent');
+        const condNameMap = inject('condNameMap');
         const actorManager = inject('actorManager');
         const dcManager = inject('dcManager');
         const timeRangeMin = inject('timeRangeMin');
@@ -473,18 +498,91 @@ export default defineComponent({
             });
         });
 
-        // Shared time range between DPS chart and debuff timeline
-        const dpsTimeMin = ref<number | null>(null);
-        const dpsTimeMax = ref<number | null>(null);
-        const onDpsTimeRange = (min: number, max: number) => {
-            dpsTimeMin.value = min;
-            dpsTimeMax.value = max;
-        };
-
         // --- Debuff timeline target ---
         const selectedTarget = computed(() => {
             if (!targetId.value) return null;
             return actorManager.value.entityMap[targetId.value] ?? null;
+        });
+
+        // --- Tracked CC management (ordered list, persisted in localStorage) ---
+        const CC_STORAGE_KEY = 'trackedDebuffCCIds';
+        const PINNED_CC = 494; // always first, cannot be removed or moved
+        const DEFAULT_CC_LIST = [
+            494, 182, 323, 351, 392, 464, 515, 598, 803,
+            912, 1012, 1014, 1026, 1092, 1093, 1138, 10001, 10002,
+        ];
+        const loadTrackedCCs = (): number[] => {
+            try {
+                const raw = localStorage.getItem(CC_STORAGE_KEY);
+                if (raw) {
+                    const list: number[] = JSON.parse(raw);
+                    // Ensure pinned CC is always first
+                    if (!list.includes(PINNED_CC)) list.unshift(PINNED_CC);
+                    else if (list[0] !== PINNED_CC) {
+                        const idx = list.indexOf(PINNED_CC);
+                        list.splice(idx, 1);
+                        list.unshift(PINNED_CC);
+                    }
+                    return list;
+                }
+            } catch { /* ignore */ }
+            return [...DEFAULT_CC_LIST];
+        };
+        const trackedCCIdList = ref<number[]>(loadTrackedCCs());
+
+        const saveTrackedCCs = () => {
+            localStorage.setItem(CC_STORAGE_KEY, JSON.stringify(trackedCCIdList.value));
+        };
+        const removeCC = (ccId: number) => {
+            if (ccId === PINNED_CC) return;
+            trackedCCIdList.value = trackedCCIdList.value.filter(id => id !== ccId);
+            saveTrackedCCs();
+        };
+        const addCC = (ccId: number) => {
+            if (trackedCCIdList.value.includes(ccId)) return;
+            trackedCCIdList.value = [...trackedCCIdList.value, ccId];
+            saveTrackedCCs();
+        };
+
+        // Drag reorder state
+        const dragIdx = ref(-1);
+        const onDragStart = (idx: number) => { dragIdx.value = idx; };
+        const onDragOver = (e: DragEvent, idx: number) => {
+            e.preventDefault();
+            if (dragIdx.value < 0 || idx === dragIdx.value) return;
+            // Don't allow moving into position 0 (pinned) or moving the pinned item
+            if (idx === 0 || dragIdx.value === 0) return;
+            const list = [...trackedCCIdList.value];
+            const [item] = list.splice(dragIdx.value, 1);
+            list.splice(idx, 0, item);
+            trackedCCIdList.value = list;
+            dragIdx.value = idx;
+        };
+        const onDragEnd = () => { dragIdx.value = -1; saveTrackedCCs(); };
+
+        // CCs not yet tracked, available to add
+        const addCCSearch = ref('');
+        const availableCCs = computed(() => {
+            const tracked = new Set(trackedCCIdList.value);
+            const ids = new Set<number>();
+            // From current target's history
+            if (selectedTarget.value) {
+                for (const st of selectedTarget.value.conditionHistory) {
+                    for (const c of st.List) {
+                        if (!tracked.has(c.CCId)) ids.add(c.CCId);
+                    }
+                }
+            }
+            // From default list
+            for (const id of DEFAULT_CC_LIST) {
+                if (!tracked.has(id)) ids.add(id);
+            }
+            const search = addCCSearch.value.toLowerCase();
+            return [...ids].sort((a, b) => a - b).filter(id => {
+                if (!search) return true;
+                const name = (condNameMap.value as any)?.[id] ?? `CC ${id}`;
+                return name.toLowerCase().includes(search) || String(id).includes(search);
+            });
         });
 
         return {
@@ -496,13 +594,21 @@ export default defineComponent({
             targetId,
             targetIdList,
             skillNameMap,
+            condNameMap,
             entityMap: entityMapWithTargetData,
 
             dpsChartEntities,
             selectedTarget,
-            dpsTimeMin,
-            dpsTimeMax,
-            onDpsTimeRange,
+            trackedCCIdList,
+            removeCC,
+            addCC,
+            addCCSearch,
+            availableCCs,
+            dragIdx,
+            onDragStart,
+            onDragOver,
+            onDragEnd,
+            PINNED_CC,
 
             showCumulativeChart,
             showDpsChart,
