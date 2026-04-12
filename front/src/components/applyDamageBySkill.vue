@@ -10,6 +10,45 @@
             DPS</v-btn>
     </v-sheet>
 
+    <!-- DPS line chart (15s bins, excluding pet damage) -->
+    <v-expansion-panels class="ma-2">
+        <v-expansion-panel>
+            <v-expansion-panel-title>
+                <div class="d-flex align-center" style="gap: 8px;">
+                    <v-icon icon="mdi-chart-line" size="small" />
+                    <span class="font-weight-medium">DPS (15s, excl. pets)</span>
+                </div>
+            </v-expansion-panel-title>
+            <v-expansion-panel-text>
+                <dps-line-chart
+                    v-if="dpsChartEntities.length > 0"
+                    :entities="dpsChartEntities"
+                    :bin-seconds="15"
+                    style="height: 280px;" />
+                <v-sheet v-else class="pa-4 text-center text-medium-emphasis">
+                    No combat data yet
+                </v-sheet>
+            </v-expansion-panel-text>
+        </v-expansion-panel>
+    </v-expansion-panels>
+
+    <!-- Debuff timeline (Gantt chart + inline summary) -->
+    <v-expansion-panels class="ma-2">
+        <v-expansion-panel>
+            <v-expansion-panel-title>
+                <div class="d-flex align-center" style="gap: 8px;">
+                    <v-icon icon="mdi-shield-half-full" size="small" />
+                    <span class="font-weight-medium">Debuff Timeline</span>
+                </div>
+            </v-expansion-panel-title>
+            <v-expansion-panel-text>
+                <debuff-timeline
+                    :target="selectedTarget"
+                    style="min-height: 160px;" />
+            </v-expansion-panel-text>
+        </v-expansion-panel>
+    </v-expansion-panels>
+
     <v-expansion-panels multiple v-for="v in pcEntities" v-bind:key="v.actor.id">
         <template v-if="v.totalDamage > 0">
             <v-expansion-panel>
@@ -103,9 +142,13 @@ import ConditionChart from '@/components/subComponents/conditionChart.vue';
 import DamageChart from '@/components/subComponents/damageChart.vue';
 import DamageDistribution from '@/components/subComponents/damageDistribution.vue';
 import DamageList from '@/components/subComponents/damageList.vue';
+import DpsLineChart from '@/components/subComponents/dpsLineChart.vue';
+import DebuffTimeline from '@/components/subComponents/debuffTimeline.vue';
 
 export default defineComponent({
     components: {
+        DpsLineChart,
+        DebuffTimeline,
     },
     setup() {
         const isLoading = inject('isLoading');
@@ -388,6 +431,47 @@ export default defineComponent({
             dialogStack.open(ConditionChart, props, `CC - ${name}`);
         };
 
+        // --- DPS line chart (pet-free) ---
+        const getNoPetDC = () => {
+            const key = 'noPetByAttacker';
+            if (damageCollectorMap[key]) {
+                return damageCollectorMap[key] as GroupedDamageCollector;
+            }
+            const dc = dcManager.value.getGroupedDamageCollector(
+                (d: EntityDamage) => d.PetId === '',
+                (d: EntityDamage) => d.Id,
+            );
+            damageCollectorMap[key] = dc;
+            return dc;
+        };
+        const noPetDC = ref(getNoPetDC());
+
+        const dpsChartEntities = computed(() => {
+            const minAt = timeRangeMin.value;
+            const maxAt = timeRangeMax.value;
+            const result: { name: string, damages: EntityDamage[] }[] = [];
+
+            for (const k in noPetDC.value.groupedDamages) {
+                const actor = actorManager.value.entityMap[k];
+                if (!actor || !actor.isPC) continue;
+                const damages = filterByTimeRange(noPetDC.value.groupedDamages[k], minAt, maxAt);
+                if (damages.length === 0) continue;
+                result.push({ name: prettyName(actor) || k, damages });
+            }
+
+            return result.sort((a, b) => {
+                const ta = a.damages.reduce((s, d) => s + d.Damage, 0);
+                const tb = b.damages.reduce((s, d) => s + d.Damage, 0);
+                return tb - ta;
+            });
+        });
+
+        // --- Debuff timeline target ---
+        const selectedTarget = computed(() => {
+            if (!targetId.value) return null;
+            return actorManager.value.entityMap[targetId.value] ?? null;
+        });
+
         return {
             isLoading,
             region,
@@ -398,6 +482,9 @@ export default defineComponent({
             targetIdList,
             skillNameMap,
             entityMap: entityMapWithTargetData,
+
+            dpsChartEntities,
+            selectedTarget,
 
             showCumulativeChart,
             showDpsChart,

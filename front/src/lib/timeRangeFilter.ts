@@ -1,6 +1,26 @@
 import type { EntityDamage } from '@/eventActor';
 import { needCountSkill } from '@/actionCollector';
 
+/** Bin damages into fixed-size time windows. Returns a map of bin-start → total damage. */
+export function bucketDamages(damages: EntityDamage[], binSize: number): Map<number, number> {
+    const bins = new Map<number, number>();
+    for (const d of damages) {
+        const bt = d.At - (d.At % binSize);
+        bins.set(bt, (bins.get(bt) || 0) + d.Damage);
+    }
+    return bins;
+}
+
+/** Bin damages into fixed-size time windows. Returns a map of bin-start → hit count. */
+export function bucketCounts(damages: EntityDamage[], binSize: number): Map<number, number> {
+    const bins = new Map<number, number>();
+    for (const d of damages) {
+        const bt = d.At - (d.At % binSize);
+        bins.set(bt, (bins.get(bt) || 0) + 1);
+    }
+    return bins;
+}
+
 export function filterByTimeRange(
     damages: EntityDamage[],
     minAt: number | null,

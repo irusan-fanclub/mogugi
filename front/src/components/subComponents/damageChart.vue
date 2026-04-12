@@ -18,6 +18,7 @@ import { defineComponent, ref, PropType, onMounted, onUnmounted, watch } from 'v
 import highcharts, { Options, SeriesAreaOptions } from 'highcharts';
 import type { EntityDamage } from '@/eventActor';
 import { humanReadableNumber } from '@/lib/util';
+import { bucketDamages, bucketCounts } from '@/lib/timeRangeFilter';
 import { setTimeRange, clearTimeRange } from '@/store';
 
 type ChartEntity = { name: string, damages: EntityDamage[] };
@@ -75,24 +76,6 @@ export default defineComponent({
                 })),
                 series: seriesList.map((s, i) => ({ ...s, yAxis: i })),
             };
-        };
-
-        const bucketDamages = (damages: EntityDamage[], binSize: number) => {
-            const bins = new Map<number, number>();
-            for (const d of damages) {
-                const bt = d.At - (d.At % binSize);
-                bins.set(bt, (bins.get(bt) || 0) + d.Damage);
-            }
-            return bins;
-        };
-
-        const bucketCounts = (damages: EntityDamage[], binSize: number) => {
-            const bins = new Map<number, number>();
-            for (const d of damages) {
-                const bt = d.At - (d.At % binSize);
-                bins.set(bt, (bins.get(bt) || 0) + 1);
-            }
-            return bins;
         };
 
         const getCumulativeSeries = (entities: ChartEntity[], tick: number) => {
