@@ -272,10 +272,10 @@ func startPacketWriter(ctx context.Context, ch <-chan []event.IEvent) error {
 		return err
 	}
 
-	packetLogFilename = fmt.Sprintf("packet_log_%v.ndjson", constants.SERVER_START_AT)
-	packetLogFilePath := filepath.Join(_logDir, packetLogFilename)
+	packetLogBaseName := fmt.Sprintf("packet_log_%v.ndjson", constants.SERVER_START_AT)
+	packetLogFilename = filepath.Join(_logDir, packetLogBaseName)
 
-	fd, err := os.OpenFile(packetLogFilePath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+	fd, err := os.OpenFile(packetLogFilename, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 	if err != nil {
 		logger.Println("packetWriter open file failed:", err)
 		return err

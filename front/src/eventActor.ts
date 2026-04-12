@@ -130,17 +130,20 @@ export class ActorManager {
             if (isNewEntity) {
                 entity = CustomReactive(new EntityActor(this, Id, RaceId, Name, group));
                 this.entityMap[Id] = group.entityMap[Id] = entity;
-            }
 
-            // entity appear를 받은 뒤에 api가 켜진 경우
-            for (const v of this.damages) {
-                if (v.Id == Id) {
-                    entity.onApplyDamage(v);
-                    entity.group.onApplyDamage(v);
-                }
-                else if (v.TargetId == Id) {
-                    entity.onTakeDamage(v);
-                    entity.group.onTakeDamage(v);
+                // Replay historical damages only for truly new entities
+                // (e.g. when dilmeter started after the entity appeared).
+                // Dummy entities already received damages in real-time,
+                // so replaying would duplicate them.
+                for (const v of this.damages) {
+                    if (v.Id == Id) {
+                        entity.onApplyDamage(v);
+                        entity.group.onApplyDamage(v);
+                    }
+                    else if (v.TargetId == Id) {
+                        entity.onTakeDamage(v);
+                        entity.group.onTakeDamage(v);
+                    }
                 }
             }
         }
