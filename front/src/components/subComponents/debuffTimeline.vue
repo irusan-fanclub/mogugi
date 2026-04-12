@@ -35,8 +35,14 @@ import { setTimeRange, clearTimeRange } from '@/store';
 
 const TRACKED_CC_IDS: number[] = [
     323, 351, 426, 803, 1012, 1026, 1093, 1094,
-    1138, 10001, 10002, 515, 598, 912, 913, 1092,
+    1138, 10001, 10002, 515, 598, 912, 1092,
 ];
+
+// CC IDs that should be merged into another ID for display purposes.
+// Key = alias ID, Value = canonical ID that it merges into.
+const CC_MERGE_MAP: Record<number, number> = {
+    913: 912,
+};
 
 const CC_COLORS = [
     '#7B68EE', '#FF6B6B', '#4ECDC4', '#FFD93D',
@@ -77,18 +83,45 @@ export default defineComponent({
             return h;
         });
 
+        // Resolve merged CC IDs: for each canonical ID, collect all alias
+        // IDs that should be treated as the same condition.
+        const getMergedIds = (ccId: number): number[] => {
+            const aliases = Object.entries(CC_MERGE_MAP)
+                .filter(([, canonical]) => canonical === ccId)
+                .map(([alias]) => Number(alias));
+            return [ccId, ...aliases];
+        };
+
         // Filter tracked CCs to those that actually appear in the history
+        // (including merged aliases).
         const activeCCIds = computed(() => {
             const seen = new Set<number>();
             for (const st of history.value) {
-                for (const c of st.List) seen.add(c.CCId);
+                for (const c of st.List) {
+                    const canonical = CC_MERGE_MAP[c.CCId] ?? c.CCId;
+                    seen.add(canonical);
+                }
             }
             return TRACKED_CC_IDS.filter(id => seen.has(id));
         });
 
+        // Compute coverage treating merged IDs as one condition.
+        const computeMergedCoverage = (h: EntityConditionState[], ccId: number) => {
+            const ids = getMergedIds(ccId);
+            if (h.length < 2) return { totalSec: 0, onSec: 0 };
+            const totalSec = h[h.length - 1].At - h[0].At;
+            let onSec = 0;
+            for (let i = 0; i < h.length - 1; i++) {
+                if (h[i].List.some(c => ids.includes(c.CCId))) {
+                    onSec += h[i + 1].At - h[i].At;
+                }
+            }
+            return { totalSec, onSec };
+        };
+
         const rows = computed(() =>
             activeCCIds.value.map(ccId => {
-                const { totalSec, onSec } = computeCCCoverage(history.value, ccId);
+                const { totalSec, onSec } = computeMergedCoverage(history.value, ccId);
                 const pct = totalSec > 0 ? (100 * onSec / totalSec) : 0;
                 return { ccId, name: condNameMap.value[ccId] ?? `CC ${ccId}`, pct };
             })
@@ -109,9 +142,26 @@ export default defineComponent({
             const seriesData: { x: number, x2: number, y: number, color: string }[] = [];
 
             activeCCIds.value.forEach((ccId, rowIdx) => {
-                const segments = getCCTimelineSegments(h, ccId);
+                // Merge segments from all alias IDs (e.g. 912 + 913)
+                const ids = getMergedIds(ccId);
+                const allSegments: { start: number, end: number }[] = [];
+                for (const id of ids) {
+                    allSegments.push(...getCCTimelineSegments(h, id));
+                }
+                // Sort and merge overlapping segments
+                allSegments.sort((a, b) => a.start - b.start);
+                const merged: { start: number, end: number }[] = [];
+                for (const seg of allSegments) {
+                    const last = merged[merged.length - 1];
+                    if (last && seg.start <= last.end) {
+                        last.end = Math.max(last.end, seg.end);
+                    } else {
+                        merged.push({ ...seg });
+                    }
+                }
+
                 const color = CC_COLORS[rowIdx % CC_COLORS.length];
-                for (const seg of segments) {
+                for (const seg of merged) {
                     seriesData.push({
                         x: seg.start * 1000,
                         x2: seg.end * 1000,
@@ -122,6 +172,7 @@ export default defineComponent({
             });
 
             return {
+                lang: { locale: 'en' },
                 title: { text: '' },
                 chart: {
                     type: 'xrange',
@@ -159,8 +210,8 @@ export default defineComponent({
                     style: { color: '#e0e0e0' },
                     pointFormatter() {
                         const p = this as any;
-                        const start = new Date(p.x).toLocaleTimeString();
-                        const end = new Date(p.x2).toLocaleTimeString();
+                        const start = new Date(p.x).toLocaleTimeString('en');
+                        const end = new Date(p.x2).toLocaleTimeString('en');
                         const dur = ((p.x2 - p.x) / 1000).toFixed(1);
                         return `${start} — ${end} (${dur}s)`;
                     },

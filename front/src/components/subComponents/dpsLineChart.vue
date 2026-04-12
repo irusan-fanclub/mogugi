@@ -68,6 +68,7 @@ export default defineComponent({
         };
 
         const buildChartOpt = (): Options => ({
+            lang: { locale: 'en' },
             title: { text: '' },
             chart: {
                 backgroundColor: 'transparent',
