@@ -3,13 +3,12 @@
         <v-card>
             <v-card-title class="d-flex align-center">
                 <v-icon icon="mdi-cog" class="mr-2" />
-                Config
+                設定
             </v-card-title>
             <v-card-text>
-                <div class="text-subtitle-2 mb-2">숨긴 CC 목록</div>
+                <div class="text-subtitle-2 mb-2">隱藏的 CC 列表</div>
                 <div v-if="hiddenCCList.length === 0" class="text-body-2 text-medium-emphasis">
-                    숨긴 CC가 없습니다. CC 아이콘을 Shift+Click하면 숨길 수 있습니다.
-                    目前沒有隱藏的CC圖示。CC圖示按Shift+Click可以隱藏。
+                    目前沒有隱藏的 CC。CC 圖示按 Shift+Click 可以隱藏。
                 </div>
                 <v-list v-else density="compact">
                     <v-list-item v-for="ccId in hiddenCCList" :key="ccId">
@@ -26,10 +25,9 @@
                 </v-list>
                 <v-divider class="my-3" />
 
-                <div class="text-subtitle-2 mb-2">숨긴 몹 목록</div>
+                <div class="text-subtitle-2 mb-2">隱藏的怪物列表</div>
                 <div v-if="hiddenRaceList.length === 0" class="text-body-2 text-medium-emphasis">
-                    숨긴 몹이 없습니다. Take Damage 탭에서 X 버튼을 누르면 숨길 수 있습니다.
-                    目前沒有隱藏的怪物。Take Damage頁籤按X按鈕可以隱藏。
+                    目前沒有隱藏的怪物。在 Take Damage 頁籤按 X 按鈕可以隱藏。
                 </div>
                 <v-list v-else density="compact">
                     <v-list-item v-for="raceId in hiddenRaceList" :key="raceId">
@@ -40,10 +38,15 @@
                         </template>
                     </v-list-item>
                 </v-list>
+                <v-divider class="my-3" />
+
+                <div class="text-subtitle-2 mb-2">自動選擇王目標</div>
+                <v-switch v-model="autoSelectBossModel" density="compact" hide-details color="primary"
+                    label="在 Apply Damage (By Skill) 頁籤自動選擇最新出現的王" />
             </v-card-text>
             <v-card-actions>
                 <v-spacer />
-                <v-btn color="primary" variant="flat" @click="open = false">닫기</v-btn>
+                <v-btn color="primary" variant="flat" @click="open = false">關閉</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>
@@ -51,7 +54,7 @@
 
 <script lang="ts">
 import { defineComponent, inject, computed, Ref } from 'vue';
-import { removeHiddenCC, removeHiddenRace } from '@/store';
+import { removeHiddenCC, removeHiddenRace, autoSelectBoss, setAutoSelectBoss } from '@/store';
 
 export default defineComponent({
     props: {
@@ -79,6 +82,11 @@ export default defineComponent({
         const hiddenRaceList = computed(() => [...hiddenRaceIds.value]);
         const onRemoveHiddenRace = (raceId: number) => removeHiddenRace(raceId);
 
+        const autoSelectBossModel = computed({
+            get: () => autoSelectBoss.value,
+            set: (v) => setAutoSelectBoss(v),
+        });
+
         return {
             region,
             condNameMap,
@@ -88,6 +96,7 @@ export default defineComponent({
             onRemoveHiddenCC,
             hiddenRaceList,
             onRemoveHiddenRace,
+            autoSelectBossModel,
         };
     },
 });

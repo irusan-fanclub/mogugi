@@ -50,11 +50,13 @@ const CONFIG_STORAGE_KEY = 'config';
 export interface AppConfig {
     hiddenCCIds: number[];
     hiddenRaceIds: number[];
+    autoSelectBoss: boolean;
 }
 
 const defaultConfig: AppConfig = {
     hiddenCCIds: [],
     hiddenRaceIds: [],
+    autoSelectBoss: true,
 };
 
 function loadConfig(): AppConfig {
@@ -69,6 +71,7 @@ function saveConfig() {
     const data: AppConfig = {
         hiddenCCIds: [...hiddenCCIds.value],
         hiddenRaceIds: [...hiddenRaceIds.value],
+        autoSelectBoss: autoSelectBoss.value,
     };
     localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(data));
 }
@@ -100,5 +103,14 @@ export function removeHiddenRace(raceId: number) {
     const next = new Set(hiddenRaceIds.value);
     next.delete(raceId);
     hiddenRaceIds.value = next;
+    saveConfig();
+}
+
+// Auto-select boss target in tab 3.
+export const autoSelectBoss = ref(_config.autoSelectBoss);
+export const BOSS_RACE_IDS = new Set([7600, 7601, 7602, 7160]);
+
+export function setAutoSelectBoss(v: boolean) {
+    autoSelectBoss.value = v;
     saveConfig();
 }

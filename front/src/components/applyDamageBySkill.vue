@@ -159,13 +159,14 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, inject, ref, computed, onUnmounted, onMounted, type Ref } from "vue";
+import { defineComponent, inject, ref, computed, onUnmounted, onMounted, watch, type Ref } from "vue";
 
 import { getMabiNameColor, prettyEntityName, humanReadableNumber, formatDuration } from '@/lib/util';
 import type { EntityDamage, EntityActor } from '@/eventActor';
 import { DamageCollectorBase, DualGroupedDamageCollector, GroupedDamageCollector } from '@/actionCollector';
 import { useDialogStack } from '@/lib/useDialogStack';
 import { filterByTimeRange, computeGroupedStats } from '@/lib/timeRangeFilter';
+import { autoSelectBoss, BOSS_RACE_IDS } from '@/store';
 
 import ConditionChart from '@/components/subComponents/conditionChart.vue';
 import DamageChart from '@/components/subComponents/damageChart.vue';
@@ -354,6 +355,20 @@ export default defineComponent({
         const clearTarget = () => {
             targetId.value = '';
         }
+
+        // Auto-select boss only when a *new* boss entity appears. Watch only
+        // the key list (shallow) to avoid firing on every damage update.
+        const seenBossIds = new Set<string>();
+        watch(() => Object.keys(actorManager.value.entityMap), (keys) => {
+            if (!autoSelectBoss.value) return;
+            for (const id of keys) {
+                if (seenBossIds.has(id)) continue;
+                const actor = actorManager.value.entityMap[id];
+                if (!actor || !BOSS_RACE_IDS.has(actor.raceId)) continue;
+                seenBossIds.add(id);
+                targetId.value = id;
+            }
+        }, { immediate: true });
 
         const getChartEntities = () =>
             pcEntities.value.filter(v => v.totalDamage > 10000).map(v => ({ name: prettyName(v.actor)!, damages: v.damages }));

@@ -229,15 +229,11 @@ func startWebsocketServer(newClientCb func(*websocket.Conn)) {
 		// Check if local resources directory exists
 		localPath := "./resources" + r.URL.Path[4:] // trim /res/ prefix
 		if _, err := os.Stat(localPath); err == nil {
-			// Serve from local directory
-			logger.Printf("Serving resource from local: %s", localPath)
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 			http.ServeFile(w, r, localPath)
 			return
 		}
 
-		// Fallback to remote proxy
-		logger.Printf("Serving resource from remote: %s", r.URL.Path)
 		handler(proxy)(w, r)
 	}
 

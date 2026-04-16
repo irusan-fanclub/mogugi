@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -18,8 +19,9 @@ func httpHandlerPacketLog(w http.ResponseWriter, r *http.Request) {
 
 	defer fd.Close()
 
+	baseName := filepath.Base(packetLogFilename)
 	w.Header().Add("Content-Type", "application/json")
-	w.Header().Add("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", packetLogFilename))
+	w.Header().Add("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", baseName))
 
-	http.ServeContent(w, r, packetLogFilename, time.Now(), fd)
+	http.ServeContent(w, r, baseName, time.Now(), fd)
 }
