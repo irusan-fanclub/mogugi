@@ -264,7 +264,7 @@ export default defineComponent({
                         formatter() { return fmtRelative(this.value as number); },
                     },
                 },
-                yAxis: { title: { text: '' }, gridLineColor: '#2a2a2a', labels: { style: { color: '#888' } } },
+                yAxis: { title: { text: '' }, min: 0, gridLineColor: '#2a2a2a', labels: { style: { color: '#888' } } },
                 tooltip: {
                     shared: true, backgroundColor: '#1e1e1e', borderColor: '#3a3a3a',
                     style: { color: '#e0e0e0' }, headerFormat: '',
