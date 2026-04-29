@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"gitlab.com/prilus/mabidilmeter/lib/event"
-	"gitlab.com/prilus/mabidilmeter/lib/packet"
+	"github.com/irusan-fanclub/mabidilmeter/lib/event"
+	"github.com/irusan-fanclub/mabidilmeter/lib/packet"
 )
 
 const (

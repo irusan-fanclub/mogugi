@@ -3,7 +3,7 @@ package main
 import (
 	"time"
 
-	"gitlab.com/prilus/mabidilmeter/lib/packet"
+	"github.com/irusan-fanclub/mabidilmeter/lib/packet"
 )
 
 type entityCache map[uint64]*entityInfoExtend

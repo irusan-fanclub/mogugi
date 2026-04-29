@@ -13,4 +13,4 @@ work with korea region client (packet encryption issue)
 
 ### download
 
-[release](https://gitlab.com/prilus/mabidilmeter/-/releases) tab
+[release](https://github.com/irusan-fanclub/mabidilmeter/releases) tab

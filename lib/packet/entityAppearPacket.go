@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"fmt"
 
-	"gitlab.com/prilus/mabidilmeter/lib/util"
+	"github.com/irusan-fanclub/mabidilmeter/lib/util"
 )
 
 type EntityInfo struct {

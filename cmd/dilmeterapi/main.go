@@ -17,11 +17,11 @@ import (
 	"time"
 
 	"github.com/gopacket/gopacket/pcap"
-	"gitlab.com/prilus/mabidilmeter/lib/constants"
-	"gitlab.com/prilus/mabidilmeter/lib/event"
-	"gitlab.com/prilus/mabidilmeter/lib/packet"
-	"gitlab.com/prilus/mabidilmeter/lib/pcaputil"
-	"gitlab.com/prilus/mabidilmeter/lib/util"
+	"github.com/irusan-fanclub/mabidilmeter/lib/constants"
+	"github.com/irusan-fanclub/mabidilmeter/lib/event"
+	"github.com/irusan-fanclub/mabidilmeter/lib/packet"
+	"github.com/irusan-fanclub/mabidilmeter/lib/pcaputil"
+	"github.com/irusan-fanclub/mabidilmeter/lib/util"
 	"golang.org/x/net/websocket"
 )
 

@@ -12,9 +12,9 @@ import (
 	"unsafe"
 
 	"github.com/gopacket/gopacket/pcap"
-	"gitlab.com/prilus/mabidilmeter/lib/constants"
-	"gitlab.com/prilus/mabidilmeter/lib/packet"
-	"gitlab.com/prilus/mabidilmeter/lib/util"
+	"github.com/irusan-fanclub/mabidilmeter/lib/constants"
+	"github.com/irusan-fanclub/mabidilmeter/lib/packet"
+	"github.com/irusan-fanclub/mabidilmeter/lib/util"
 	"golang.org/x/sys/windows"
 )
 

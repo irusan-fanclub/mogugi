@@ -6,8 +6,8 @@ import (
 	"log"
 	"os"
 
-	"gitlab.com/prilus/mabidilmeter/lib/packet"
-	"gitlab.com/prilus/mabidilmeter/lib/pcaputil"
+	"github.com/irusan-fanclub/mabidilmeter/lib/packet"
+	"github.com/irusan-fanclub/mabidilmeter/lib/pcaputil"
 )
 
 var logger = log.New(os.Stdout, "dilmeter ", log.LstdFlags|log.Lshortfile)

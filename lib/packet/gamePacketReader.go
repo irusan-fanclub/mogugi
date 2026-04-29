@@ -15,8 +15,8 @@ import (
 	"github.com/gopacket/gopacket/layers"
 	"github.com/gopacket/gopacket/pcap"
 	"github.com/gopacket/gopacket/pcapgo"
-	"gitlab.com/prilus/mabidilmeter/lib/constants"
-	"gitlab.com/prilus/mabidilmeter/lib/util"
+	"github.com/irusan-fanclub/mabidilmeter/lib/constants"
+	"github.com/irusan-fanclub/mabidilmeter/lib/util"
 )
 
 type GameServerPacketReader struct {

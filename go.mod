@@ -1,4 +1,4 @@
-module gitlab.com/prilus/mabidilmeter
+module github.com/irusan-fanclub/mabidilmeter
 
 go 1.23.0
 

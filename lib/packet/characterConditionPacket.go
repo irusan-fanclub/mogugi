@@ -3,7 +3,7 @@ package packet
 import (
 	"fmt"
 
-	"gitlab.com/prilus/mabidilmeter/lib/util"
+	"github.com/irusan-fanclub/mabidilmeter/lib/util"
 )
 
 type CharacterConditionPacket struct {
