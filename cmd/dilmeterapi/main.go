@@ -44,7 +44,6 @@ func main() {
 	}
 	logger.Printf("log file: %s", logFilePath)
 
-	// main ctx
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -57,72 +56,37 @@ func main() {
 
 	switch mode {
 	case "list":
-		// Print NIC list
-		nics, err := pcap.FindAllDevs()
-		if err != nil {
-			messagebox(fmt.Sprintf("FindAllDevs failed: %v", err))
-			logger.Fatalln("FindAllDevs failed:", err)
-		}
-
-		sb := strings.Builder{}
-
-		for i, nic := range nics {
-			ipStr := "unknownAddress"
-			if len(nic.Addresses) > 0 {
-				ipStr = nic.Addresses[0].IP.String()
-			}
-
-			sb.WriteString(fmt.Sprintln("* nic", i, "name:", nic.Name, "ip:", ipStr))
-		}
-
-		s := sb.String()
-		messagebox(s)
-		logger.Println(s)
+		listNics()
 		return
-
 	case "file":
 		fileName := ""
-
 		if len(os.Args) > 2 {
 			fileName = os.Args[2]
 		}
-
-		run(ctx, "", fileName)
-
-	case "":
-		logger.Println("find nic...")
-
-		nicName, err := pcaputil.FindNic()
-		if err != nil {
-			messagebox(fmt.Sprintf("%v\nis mabinogi running?", err))
-			logger.Fatalln("FindNic failed:", err)
-		}
-
-		run(ctx, nicName, "")
-
+		runFile(ctx, fileName)
 	default:
-		_, err := os.Stat(mode)
-		fileExists := err == nil
-
-		nicName, fileName := "", ""
-
-		if fileExists {
-			fileName = mode
-		} else {
-			nicName = mode
-		}
-
-		run(ctx, nicName, fileName)
+		runLive(ctx)
 	}
 
-	// Keep the process alive; goroutines do the actual work.
 	<-ctx.Done()
 }
 
-func run(ctx context.Context, nicName string, fileName string) {
+// runLive: HTTP/WS server up immediately, watchdog discovers Client.exe.
+func runLive(ctx context.Context) {
+	logger.Println("live mode: waiting for Client.exe")
+
+	pub := newEventPublisher(ctx, nil)
+	go runPacketWriter(ctx, pub)
+	go startConnectionWatchdog(ctx, pub)
+	serve(pub)
+}
+
+// runFile: replay a capture from disk. No watchdog.
+func runFile(ctx context.Context, fileName string) {
+	logger.Println("file replay mode:", fileName)
+
 	r, err := packet.NewGameServerPacketReader(&packet.GameServerPacketReaderOpt{
 		Ctx:      ctx,
-		NicName:  nicName,
 		FileName: fileName,
 	})
 	if err != nil {
@@ -131,69 +95,67 @@ func run(ctx context.Context, nicName string, fileName string) {
 	}
 
 	pub := newEventPublisher(ctx, r)
+	go runPacketWriter(ctx, pub)
+	serve(pub)
+}
 
-	// Packet writer: persists every event to an ndjson file for offline replay.
-	go func() {
-		ch := make(chan []event.IEvent, 10000)
-		defer close(ch)
+func serve(pub *eventPublisher) {
+	startWebsocketServer(websocketHandler(pub))
 
-		pub.addClient(ctx, ch)
-		if err := startPacketWriter(ctx, ch); err != nil {
-			logger.Println("startPacketWriter failed:", err)
-			return
-		}
-	}()
+	if runtime.GOOS == "windows" {
+		go exec.Command("explorer", fmt.Sprintf("http://127.0.0.1:%v", port)).Run()
+	}
+}
 
-	// Connection watchdog: detects channel switching by polling Client.exe
-	// TCP connections; only meaningful in live-NIC mode.
-	if nicName != "" {
-		go startConnectionWatchdog(ctx, pub)
+func listNics() {
+	nics, err := pcap.FindAllDevs()
+	if err != nil {
+		messagebox(fmt.Sprintf("FindAllDevs failed: %v", err))
+		logger.Fatalln("FindAllDevs failed:", err)
 	}
 
-	startWebsocketServer(func(ws *websocket.Conn) {
+	sb := strings.Builder{}
+	for i, nic := range nics {
+		ipStr := "unknownAddress"
+		if len(nic.Addresses) > 0 {
+			ipStr = nic.Addresses[0].IP.String()
+		}
+		fmt.Fprintln(&sb, "* nic", i, "name:", nic.Name, "ip:", ipStr)
+	}
+
+	s := sb.String()
+	messagebox(s)
+	logger.Println(s)
+}
+
+func runPacketWriter(ctx context.Context, pub *eventPublisher) {
+	ch := make(chan []event.IEvent, 10000)
+	defer close(ch)
+
+	pub.addClient(ctx, ch)
+	if err := startPacketWriter(ctx, ch); err != nil {
+		logger.Println("startPacketWriter failed:", err)
+	}
+}
+
+func websocketHandler(pub *eventPublisher) func(*websocket.Conn) {
+	return func(ws *websocket.Conn) {
 		logger.Printf("Client connected from %s", ws.RemoteAddr())
 		wsCtx, wsCtxCancel := context.WithCancel(ws.Request().Context())
-
-		// WebSocket send queue drains slower than expected under heavy load,
-		// so we keep a generous buffer here.
-		ch := make(chan []event.IEvent, 10000)
 		defer wsCtxCancel()
+
+		// Generous buffer: WS send drains slower than the publisher emits under load.
+		ch := make(chan []event.IEvent, 10000)
 		defer close(ch)
 
 		go pub.addClient(wsCtx, ch)
-
-		packetReceiveLoop := func() {
-			for {
-				select {
-				case <-wsCtx.Done():
-					logger.Printf("Client disconnected from %s", ws.RemoteAddr())
-					return
-				default:
-				}
-
-				var msg string
-				err := websocket.JSON.Receive(ws, &msg)
-				if err != nil {
-					logger.Printf("Receive failed: %s; closing connection...", err.Error())
-					if err = ws.Close(); err != nil {
-						logger.Println("Error closing connection:", err.Error())
-					}
-					wsCtxCancel()
-					break
-				}
-				// Incoming messages are currently ignored.
-				logger.Println("Received:", msg)
-			}
-		}
-
-		go packetReceiveLoop()
+		go drainIncoming(ws, wsCtx, wsCtxCancel)
 
 		for {
 			select {
 			case <-wsCtx.Done():
 				logger.Printf("Client disconnected from %s", ws.RemoteAddr())
 				return
-
 			case events := <-ch:
 				if err := websocket.JSON.Send(ws, events); err != nil {
 					logger.Printf("Can't send: %s", err.Error())
@@ -201,11 +163,23 @@ func run(ctx context.Context, nicName string, fileName string) {
 				}
 			}
 		}
-	})
+	}
+}
 
-	if runtime.GOOS == "windows" {
-		// ignore error
-		go exec.Command("explorer", fmt.Sprintf("http://127.0.0.1:%v", port)).Run()
+// drainIncoming receives and discards browser messages; on socket error
+// it cancels wsCtx to surface the disconnect to the outbound goroutine.
+func drainIncoming(ws *websocket.Conn, wsCtx context.Context, cancel context.CancelFunc) {
+	for wsCtx.Err() == nil {
+		var msg string
+		if err := websocket.JSON.Receive(ws, &msg); err != nil {
+			logger.Printf("Receive failed: %s; closing connection...", err.Error())
+			if cerr := ws.Close(); cerr != nil {
+				logger.Println("Error closing connection:", cerr.Error())
+			}
+			cancel()
+			return
+		}
+		logger.Println("Received:", msg)
 	}
 }
 
@@ -217,10 +191,8 @@ func startWebsocketServer(newClientCb func(*websocket.Conn)) {
 
 	handler := func(p *httputil.ReverseProxy) func(http.ResponseWriter, *http.Request) {
 		return func(w http.ResponseWriter, r *http.Request) {
-			// trim /res/ prefix
-			r.URL.Path = r.URL.Path[4:]
+			r.URL.Path = r.URL.Path[4:] // strip /res/
 			r.Host = remote.Host
-
 			p.ServeHTTP(w, r)
 		}
 	}
@@ -231,16 +203,14 @@ func startWebsocketServer(newClientCb func(*websocket.Conn)) {
 		return nil
 	}
 
-	// Resource file handler - try local first, fallback to proxy
+	// /res/* — serve from ./resources if present, else reverse-proxy to remote.
 	resourceHandler := func(w http.ResponseWriter, r *http.Request) {
-		// Check if local resources directory exists
-		localPath := "./resources" + r.URL.Path[4:] // trim /res/ prefix
+		localPath := "./resources" + r.URL.Path[4:]
 		if _, err := os.Stat(localPath); err == nil {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 			http.ServeFile(w, r, localPath)
 			return
 		}
-
 		handler(proxy)(w, r)
 	}
 
@@ -269,14 +239,9 @@ func startWebsocketServer(newClientCb func(*websocket.Conn)) {
 	<-time.After(1 * time.Second)
 }
 
-// startConnectionWatchdog polls Client.exe TCP connections every 3s.
-// When the current (ServerIP, SrcPort, DstPort) triple disappears from
-// the table and another Client.exe ESTABLISHED connection exists, it
-// triggers a reader swap — that's a channel switch.
-//
-// As a fallback, if no game packet has arrived for 60s but a Client.exe
-// connection is present, it forces a re-discover. This catches the rare
-// case where TCP table polling misses the change.
+// startConnectionWatchdog polls Client.exe TCP connections every 3s and
+// swaps the reader when the current triple disappears (channel switch).
+// A 60s packet-idle fallback catches cases the TCP poll might miss.
 func startConnectionWatchdog(ctx context.Context, pub *eventPublisher) {
 	pollTicker := time.NewTicker(3 * time.Second)
 	defer pollTicker.Stop()
@@ -321,6 +286,9 @@ func startConnectionWatchdog(ctx context.Context, pub *eventPublisher) {
 				logger.Println("watchdog: poll failed:", err)
 				continue
 			}
+			if len(conns) == 0 {
+				continue
+			}
 			alive := false
 			for _, c := range conns {
 				if c.ServerIP == constants.ServerIP &&
@@ -330,10 +298,17 @@ func startConnectionWatchdog(ctx context.Context, pub *eventPublisher) {
 					break
 				}
 			}
-			if !alive && len(conns) > 0 {
-				logger.Printf("watchdog: current connection gone, %d candidate(s); switching", len(conns))
-				go swap("channel_switch")
+			if alive {
+				continue
 			}
+			reason := "channel_switch"
+			if constants.ServerIP == "" {
+				// Empty triple = first-ever discovery, not a real switch.
+				reason = "initial"
+			} else {
+				logger.Printf("watchdog: current connection gone, %d candidate(s); switching", len(conns))
+			}
+			go swap(reason)
 
 		case <-idleTicker.C:
 			if time.Since(pub.LastPacketAt()) <= 60*time.Second {

@@ -242,9 +242,6 @@ func (t *GameServerPacketReader) openNic(nic string, filter string) (chan gamePa
 	}
 	t.handle = handle
 	t.linkType = handle.LinkType()
-	if !t.quiet {
-		logger.Printf("Interface %s LinkType: %v", nic, t.linkType)
-	}
 
 	if err := handle.SetBPFFilter(filter); err != nil { // optional
 		return nil, err
@@ -319,7 +316,6 @@ func (t *GameServerPacketReader) openLog() error {
 	}
 
 	t.logHandle = handle
-	logger.Printf("pcapng writer initialized with LinkType: %v", linkType)
 
 	return nil
 }
@@ -350,7 +346,8 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 	for i := 0; t.ctx.Err() == nil; i++ {
 		b, ci, err := t.handle.ReadPacketData()
 		if err != nil {
-			logger.Println(err, i)
+			// Expected on Close() / channel-switch — pcap handle goes
+			// away and ReadPacketData returns EOF. No diagnostic value.
 			break
 		}
 

@@ -108,11 +108,16 @@ func (t *eventPublisher) startForwarder() {
 
 // SwitchReader closes the current reader, swaps in the new one, drains
 // any unprocessed packets that were buffered from the old connection,
-// and broadcasts a SessionReset event so the UI can show a notification.
+// and (when replacing an existing reader) broadcasts a SessionReset
+// event so the UI can show a notification.
 //
 // Per-session state (entityCache, pendingEvents, frontend caches) is
 // intentionally preserved — the user wants to keep accumulated data
 // across channel switches.
+//
+// At lazy startup the publisher is created with a nil reader; the first
+// SwitchReader call installs the real one. In that case there's no
+// session to reset, so the broadcast is suppressed.
 func (t *eventPublisher) SwitchReader(newR *packet.GameServerPacketReader, reason string) {
 	t.Lock()
 	oldR := t.r
@@ -150,6 +155,11 @@ drainLoop:
 	}
 
 	t.startForwarder()
+
+	if oldR == nil {
+		logger.Printf("Initial reader installed (reason=%s)", reason)
+		return
+	}
 
 	logger.Printf("SessionReset: reason=%s", reason)
 	t.publish(&event.EventSessionReset{
@@ -808,9 +818,8 @@ func (t *eventPublisher) addClient(ctx context.Context, ch chan<- []event.IEvent
 	}
 	t.Unlock()
 
-	logger.Println("send initial data", clientId, ",", len(initial), "events")
-
 	if len(initial) > 0 {
+		logger.Printf("send initial data: client=%d events=%d", clientId, len(initial))
 		ch <- initial
 	}
 

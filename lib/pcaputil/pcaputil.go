@@ -72,10 +72,60 @@ func ensureNicCache() {
 	nicCacheOnce.Do(func() {
 		cachedInterfaceMap = buildInterfaceMap()
 		cachedInterfaceNicMap = buildInterfaceNicMap()
-		for friendly, nic := range cachedInterfaceNicMap {
-			logger.Printf("Mapped friendly name '%s' to NIC '%s'", friendly, nic)
+
+		names := make([]string, 0, len(cachedInterfaceNicMap))
+		maxWidth := 0
+		for friendly := range cachedInterfaceNicMap {
+			names = append(names, friendly)
+			if w := displayWidth(friendly); w > maxWidth {
+				maxWidth = w
+			}
+		}
+		sort.Strings(names)
+
+		logger.Printf("NIC list (%d):", len(names))
+		idxWidth := len(strconv.Itoa(len(names)))
+		for i, friendly := range names {
+			pad := maxWidth - displayWidth(friendly)
+			logger.Printf("  [%*d] %s%s  %s", idxWidth, i+1, friendly, strings.Repeat(" ", pad), cachedInterfaceNicMap[friendly])
 		}
 	})
+}
+
+// displayWidth returns the column width of s in a monospaced font,
+// counting East Asian Wide / Fullwidth runes as 2 columns. Used to
+// align mixed-script names (English NIC names alongside 中文 / 한국어
+// labels) in log output.
+func displayWidth(s string) int {
+	w := 0
+	for _, r := range s {
+		if isWideRune(r) {
+			w += 2
+		} else {
+			w += 1
+		}
+	}
+	return w
+}
+
+func isWideRune(r rune) bool {
+	switch {
+	case r >= 0x1100 && r <= 0x115F, // Hangul Jamo
+		r >= 0x2E80 && r <= 0x303E,    // CJK Radicals / Symbols
+		r >= 0x3041 && r <= 0x33FF,    // Hiragana / Katakana / CJK symbols
+		r >= 0x3400 && r <= 0x4DBF,    // CJK Extension A
+		r >= 0x4E00 && r <= 0x9FFF,    // CJK Unified Ideographs
+		r >= 0xA000 && r <= 0xA4CF,    // Yi
+		r >= 0xAC00 && r <= 0xD7A3,    // Hangul Syllables
+		r >= 0xF900 && r <= 0xFAFF,    // CJK Compatibility Ideographs
+		r >= 0xFE30 && r <= 0xFE4F,    // CJK Compatibility Forms
+		r >= 0xFF00 && r <= 0xFF60,    // Fullwidth Forms
+		r >= 0xFFE0 && r <= 0xFFE6,    // Fullwidth signs
+		r >= 0x20000 && r <= 0x2FFFD,  // CJK Extensions B-F
+		r >= 0x30000 && r <= 0x3FFFD:  // CJK Extension G
+		return true
+	}
+	return false
 }
 
 // PollClientConnections enumerates all currently ESTABLISHED Client.exe
@@ -87,27 +137,43 @@ func PollClientConnections() ([]ClientConnection, error) {
 		return nil, err
 	}
 
+	// First pass: filter ESTABLISHED rows owned by Client.exe. If none,
+	// the game isn't running — return early without enumerating NICs
+	// (which logs the full list on first call). Watchdog calls this
+	// every 3s while idle, so the fast-exit matters.
+	type rawConn struct {
+		localIP    string
+		remoteIP   string
+		remotePort uint32
+		localPort  uint32
+	}
+	var raw []rawConn
+	for _, row := range rows {
+		if row.State != 5 {
+			continue
+		}
+		name, err := processName(row.OwningPID)
+		if err != nil || !strings.EqualFold(name, "Client.exe") {
+			continue
+		}
+		raw = append(raw, rawConn{
+			localIP:    ipv4FromDWORD(row.LocalAddr).String(),
+			remoteIP:   ipv4FromDWORD(row.RemoteAddr).String(),
+			remotePort: row.RemotePort,
+			localPort:  row.LocalPort,
+		})
+	}
+	if len(raw) == 0 {
+		return nil, nil
+	}
+
 	ensureNicCache()
 	ifaceMap := cachedInterfaceMap
 	nicMap := cachedInterfaceNicMap
 
 	var conns []ClientConnection
-	for _, row := range rows {
-		if row.State != 5 {
-			continue
-		}
-
-		name, err := processName(row.OwningPID)
-		if err != nil || !strings.EqualFold(name, "Client.exe") {
-			continue
-		}
-
-		localIP := ipv4FromDWORD(row.LocalAddr)
-		remoteIP := ipv4FromDWORD(row.RemoteAddr)
-		remotePort := portFromDWORD(row.RemotePort)
-		localPort := portFromDWORD(row.LocalPort)
-
-		friendlyName, ok := ifaceMap[localIP.String()]
+	for _, r := range raw {
+		friendlyName, ok := ifaceMap[r.localIP]
 		if !ok {
 			continue
 		}
@@ -115,13 +181,12 @@ func PollClientConnections() ([]ClientConnection, error) {
 		if !ok {
 			continue
 		}
-
 		conns = append(conns, ClientConnection{
 			NicName:      nicName,
 			FriendlyName: friendlyName,
-			ServerIP:     remoteIP.String(),
-			ServerPort:   fmt.Sprintf("%d", remotePort),
-			LocalPort:    fmt.Sprintf("%d", localPort),
+			ServerIP:     r.remoteIP,
+			ServerPort:   fmt.Sprintf("%d", portFromDWORD(r.remotePort)),
+			LocalPort:    fmt.Sprintf("%d", portFromDWORD(r.localPort)),
 		})
 	}
 
@@ -170,7 +235,17 @@ func FindNic() (string, error) {
 		return pi > pj
 	})
 
-	logger.Printf("Testing %d Client.exe connection(s)...", len(conns))
+	logger.Printf("Testing %d Client.exe connection(s):", len(conns))
+	maxRemote := 0
+	for _, c := range conns {
+		if w := len(c.ServerIP) + 1 + len(c.ServerPort); w > maxRemote {
+			maxRemote = w
+		}
+	}
+	for i, c := range conns {
+		remote := fmt.Sprintf("%s:%s", c.ServerIP, c.ServerPort)
+		logger.Printf("  [%d] %-*s -> :%-5s  %s", i+1, maxRemote, remote, c.LocalPort, c.FriendlyName)
+	}
 
 	for _, c := range conns {
 		ApplyConnectionFilter(c)
