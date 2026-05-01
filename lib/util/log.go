@@ -1,12 +1,18 @@
 package util
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"sync/atomic"
 )
+
+// _logModuleWidth is the fixed column width for the module name in
+// log output. Set to the longest existing module name so every line
+// lines up at the message column. Bump this if you add a longer name.
+const _logModuleWidth = 11
 
 // writer is a process-wide switchable io.Writer used by all loggers
 // created via NewLogger. It allows LogInit to redirect every logger's
@@ -47,6 +53,11 @@ func LogInit(logFileName string) error {
 
 // NewLogger creates a log.Logger whose output follows the shared
 // switchable writer. Call LogInit at program start to enable file logging.
+//
+// Output format: "<date time> [<module padded>] <message>"
+// Lshortfile is intentionally omitted — the file:line column varies in
+// width and would prevent message alignment.
 func NewLogger(name string) *log.Logger {
-	return log.New(writer, name+" ", log.LstdFlags|log.Lshortfile)
+	prefix := fmt.Sprintf("[%-*s] ", _logModuleWidth, name)
+	return log.New(writer, prefix, log.LstdFlags|log.Lmsgprefix)
 }

@@ -103,6 +103,10 @@
     >
         <component :is="d.component" v-bind="d.props" />
     </floating-window>
+
+    <v-snackbar v-model="resetSnackbar" :timeout="4000" color="info" location="bottom right">
+        <v-icon icon="mdi-swap-horizontal" class="mr-2" />{{ resetSnackbarText }}
+    </v-snackbar>
 </template>
 
 <script lang="ts">
@@ -110,7 +114,7 @@ import { defineComponent, onMounted, inject, ref } from "vue";
 
 import { useDialogStack } from '@/lib/useDialogStack';
 import { SocketClient } from '@/lib/socketClient';
-import { eventBase, eventIdMessageBox, eventMessageBox } from "./protocols";
+import { eventBase, eventIdMessageBox, eventIdSessionReset, eventMessageBox, eventSessionReset } from "./protocols";
 import { clearTimeRange } from '@/store';
 
 import TakeDamageComponent from '@/components/takeDamage.vue';
@@ -152,6 +156,8 @@ export default defineComponent({
         const configOpen = ref(false);
         const msgBoxOpen = ref(false);
         const msgBoxText = ref('');
+        const resetSnackbar = ref(false);
+        const resetSnackbarText = ref('');
 
         const isStandalone = __IS_STANDALONE__;
 
@@ -163,8 +169,16 @@ export default defineComponent({
                     const e = event as eventMessageBox;
                     msgBoxOpen.value = true;
                     msgBoxText.value += `${e.Message}\n`;
+                    continue;
+                }
 
-                    return;
+                if (event.EventId === eventIdSessionReset) {
+                    const e = event as eventSessionReset;
+                    resetSnackbarText.value = e.Reason === 'channel_switch'
+                        ? '偵測到換線'
+                        : '偵測到連線異常';
+                    resetSnackbar.value = true;
+                    continue;
                 }
 
                 actorManager.value.onEvent(event);
@@ -361,6 +375,8 @@ export default defineComponent({
             socketConnected,
             msgBoxOpen,
             msgBoxText,
+            resetSnackbar,
+            resetSnackbarText,
             forceRefresh,
             clearData,
             download,

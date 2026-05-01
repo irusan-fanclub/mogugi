@@ -15,6 +15,7 @@ export const eventIdNotice = 12;
 export const eventIdChangeStance = 13;
 
 export const eventIdMessageBox = -1;
+export const eventIdSessionReset = -2;
 
 export type eventBase = {
     EventId: eventId;
@@ -111,4 +112,9 @@ export type eventChangeStance = eventBase & {
 export type eventMessageBox = eventBase & {
     EventId: -1;
     Message: string;
+}
+
+export type eventSessionReset = eventBase & {
+    EventId: -2;
+    Reason: string;
 }

@@ -23,15 +23,19 @@ type eventPublisher struct {
 	sync.Mutex
 
 	// non-mutable
-	ctx         context.Context
-	r           *packet.GameServerPacketReader
-	clientMap   map[uint32]*eventClient
-	entityCache entityCache
+	ctx       context.Context
+	clientMap map[uint32]*eventClient
+	packetCh  chan *packet.GamePacket
 
 	// mutable (guarded by the embedded mutex)
+	r               *packet.GameServerPacketReader
+	fwdCancel       context.CancelFunc
+	fwdDone         chan struct{}
+	entityCache     entityCache
 	currentClientId uint32
 	pendingEvents   []event.IEvent
 	lastSentAt      time.Time
+	lastPacketAt    time.Time
 }
 
 type eventClient struct {
@@ -46,15 +50,124 @@ func newEventPublisher(ctx context.Context, r *packet.GameServerPacketReader) *e
 		ctx:             ctx,
 		r:               r,
 		clientMap:       make(map[uint32]*eventClient),
+		packetCh:        make(chan *packet.GamePacket, 100),
 		entityCache:     make(entityCache),
 		currentClientId: 1,
 		pendingEvents:   make([]event.IEvent, 0, _maxPendingEvents),
 		lastSentAt:      time.Now(),
+		lastPacketAt:    time.Now(),
 	}
 
+	v.startForwarder()
 	go v.loop()
 
 	return v
+}
+
+// startForwarder spawns a goroutine that bridges the current reader's
+// packet channel into the publisher's internal packetCh. This indirection
+// is what makes hot-swapping the reader (channel switch) possible.
+//
+// Caller must hold no locks; this method takes the lock internally.
+func (t *eventPublisher) startForwarder() {
+	fwdCtx, cancel := context.WithCancel(t.ctx)
+	done := make(chan struct{})
+
+	t.Lock()
+	t.fwdCancel = cancel
+	t.fwdDone = done
+	r := t.r
+	t.Unlock()
+
+	if r == nil {
+		cancel()
+		close(done)
+		return
+	}
+
+	go func() {
+		defer close(done)
+		ch := r.PacketCh()
+		for {
+			select {
+			case <-fwdCtx.Done():
+				return
+			case p, ok := <-ch:
+				if !ok {
+					return
+				}
+				select {
+				case <-fwdCtx.Done():
+					return
+				case t.packetCh <- p:
+				}
+			}
+		}
+	}()
+}
+
+// SwitchReader closes the current reader, swaps in the new one, drains
+// any unprocessed packets that were buffered from the old connection,
+// and broadcasts a SessionReset event so the UI can show a notification.
+//
+// Per-session state (entityCache, pendingEvents, frontend caches) is
+// intentionally preserved — the user wants to keep accumulated data
+// across channel switches.
+func (t *eventPublisher) SwitchReader(newR *packet.GameServerPacketReader, reason string) {
+	t.Lock()
+	oldR := t.r
+	oldCancel := t.fwdCancel
+	oldDone := t.fwdDone
+	t.r = newR
+	t.lastPacketAt = time.Now()
+	t.Unlock()
+
+	if oldCancel != nil {
+		oldCancel()
+	}
+	if oldR != nil {
+		oldR.Close()
+	}
+	if oldDone != nil {
+		<-oldDone
+	}
+
+	// Drop any packets already buffered from the old reader — they
+	// belong to the previous connection and would be parsed against
+	// stale TCP sequence state.
+	drained := 0
+drainLoop:
+	for {
+		select {
+		case <-t.packetCh:
+			drained++
+		default:
+			break drainLoop
+		}
+	}
+	if drained > 0 {
+		logger.Printf("SwitchReader: dropped %d in-flight packet(s)", drained)
+	}
+
+	t.startForwarder()
+
+	logger.Printf("SessionReset: reason=%s", reason)
+	t.publish(&event.EventSessionReset{
+		EventBase: event.EventBase{
+			EventId: event.EventIdSessionReset,
+			At:      time.Now().Unix(),
+			Id:      "0",
+		},
+		Reason: reason,
+	})
+}
+
+// LastPacketAt returns the timestamp of the most recently received
+// game packet. The connection watchdog uses this for idle detection.
+func (t *eventPublisher) LastPacketAt() time.Time {
+	t.Lock()
+	defer t.Unlock()
+	return t.lastPacketAt
 }
 
 // publish appends an event to the pending buffer and triggers a flush
@@ -114,13 +227,17 @@ func (t *eventPublisher) loop() {
 		case <-flushTicker.C:
 			t.flushNow()
 
-		case p := <-t.r.PacketCh():
+		case p := <-t.packetCh:
 			if debug {
 				logger.Printf("packet op %s id %x", p.Op, p.Id)
 				for i, msg := range p.Msg {
 					logger.Println("* msg", i, msg.Type(), msg.String())
 				}
 			}
+
+			t.Lock()
+			t.lastPacketAt = time.Now()
+			t.Unlock()
 
 			t.handlePacket(p)
 		}

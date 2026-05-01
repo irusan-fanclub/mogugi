@@ -21,8 +21,10 @@ import (
 
 type GameServerPacketReader struct {
 	// non-mutable
-	ctx      context.Context
-	packetCh chan *GamePacket
+	ctx       context.Context
+	ctxCancel context.CancelFunc
+	packetCh  chan *GamePacket
+	quiet     bool
 
 	// mutable
 	handle *pcap.Handle
@@ -43,6 +45,10 @@ type GameServerPacketReaderOpt struct {
 	Ctx      context.Context
 	FileName string
 	NicName  string
+	// Quiet suppresses informational logs and skips opening the pcapng
+	// log file. Used by short-lived test readers (NIC discovery probes)
+	// so they don't spam the log or stomp on the live capture file.
+	Quiet bool
 }
 
 type gamePacketPayload struct {
@@ -72,12 +78,22 @@ func NewGameServerPacketReader(opt *GameServerPacketReaderOpt) (*GameServerPacke
 
 	filter := constants.PCAP_GAMESERVER_FILTER
 
-	logger.Println("game packet filter...", filter)
+	if !opt.Quiet {
+		logger.Println("game packet filter...", filter)
+	}
+
+	// Derive a cancellable context from the parent so Close() can stop
+	// our internal goroutines without requiring the parent ctx to be
+	// cancelled (e.g. on channel-switch the parent ctx is the long-lived
+	// process ctx).
+	ctx, cancel := context.WithCancel(opt.Ctx)
 
 	v := &GameServerPacketReader{
-		ctx:      opt.Ctx,
-		packetCh: make(chan *GamePacket, packetQueueSize),
-		linkType: layers.LinkTypeNull, // default, will be updated when opening
+		ctx:       ctx,
+		ctxCancel: cancel,
+		packetCh:  make(chan *GamePacket, packetQueueSize),
+		quiet:     opt.Quiet,
+		linkType:  layers.LinkTypeNull, // default, will be updated when opening
 	}
 
 	var payloadCh chan gamePacketPayload
@@ -99,9 +115,13 @@ func NewGameServerPacketReader(opt *GameServerPacketReaderOpt) (*GameServerPacke
 
 	// openLog must run after openNic/openFile so t.linkType is the real
 	// link type (not the default) when the pcapng writer is initialised.
-	if err := v.openLog(); err != nil {
-		logger.Println("openLog failed", err)
-		return nil, err
+	// Skip for quiet/test readers — they're short-lived probes and would
+	// truncate the live pcapng capture if allowed to write to it.
+	if !opt.Quiet {
+		if err := v.openLog(); err != nil {
+			logger.Println("openLog failed", err)
+			return nil, err
+		}
 	}
 
 	// Start readPacketLoop. File mode delays 20 seconds so a WebSocket
@@ -176,8 +196,10 @@ func (t *GameServerPacketReader) packetLoop(payloadCh <-chan gamePacketPayload) 
 	for {
 		select {
 		case <-t.ctx.Done():
-			logger.Printf("[Stats] Payloads: %d, Parsed: %d, Errors: %d",
-				t.payloadCount, t.parsedCount, t.parseErrorCount)
+			if !t.quiet {
+				logger.Printf("[Stats] Payloads: %d, Parsed: %d, Errors: %d",
+					t.payloadCount, t.parsedCount, t.parseErrorCount)
+			}
 			return
 
 		case payloadData := <-payloadCh:
@@ -220,7 +242,9 @@ func (t *GameServerPacketReader) openNic(nic string, filter string) (chan gamePa
 	}
 	t.handle = handle
 	t.linkType = handle.LinkType()
-	logger.Printf("Interface %s LinkType: %v", nic, t.linkType)
+	if !t.quiet {
+		logger.Printf("Interface %s LinkType: %v", nic, t.linkType)
+	}
 
 	if err := handle.SetBPFFilter(filter); err != nil { // optional
 		return nil, err
@@ -522,11 +546,18 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 }
 
 func (t *GameServerPacketReader) Close() {
-	logger.Printf("[Close Stats] Payloads: %d, Parsed: %d, Errors: %d",
-		t.payloadCount, t.parsedCount, t.parseErrorCount)
+	if !t.quiet {
+		logger.Printf("[Close Stats] Payloads: %d, Parsed: %d, Errors: %d",
+			t.payloadCount, t.parsedCount, t.parseErrorCount)
 
-	if t.parseErrorCount > 0 {
-		logger.Printf("[Close Stats] Last error at: %v", t.lastErrorTime)
+		if t.parseErrorCount > 0 {
+			logger.Printf("[Close Stats] Last error at: %v", t.lastErrorTime)
+		}
+	}
+
+	if t.ctxCancel != nil {
+		t.ctxCancel()
+		t.ctxCancel = nil
 	}
 
 	if t.handle != nil {

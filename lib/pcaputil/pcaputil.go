@@ -7,7 +7,10 @@ import (
 	"fmt"
 	"net"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -46,29 +49,54 @@ type mibTCPTableOwnerPID struct {
 	Table      [1]mibTCPRowOwnerPID
 }
 
-func FindNic() (string, error) {
-	// Find the network interface where Client.exe has TCP connections
-	// by scanning Client.exe TCP connections and testing each connection
+// ClientConnection describes a single Client.exe ESTABLISHED TCP
+// connection along with the pcap NIC name that owns its local IP.
+type ClientConnection struct {
+	NicName      string
+	FriendlyName string
+	ServerIP     string
+	ServerPort   string
+	LocalPort    string
+}
 
+// nicCache memoizes interface mappings — they are queried by every
+// watchdog poll but never change for the process lifetime in practice
+// (NICs aren't hot-swapped while the meter is running).
+var (
+	nicCacheOnce        sync.Once
+	cachedInterfaceMap  map[string]string
+	cachedInterfaceNicMap map[string]string
+)
+
+func ensureNicCache() {
+	nicCacheOnce.Do(func() {
+		cachedInterfaceMap = buildInterfaceMap()
+		cachedInterfaceNicMap = buildInterfaceNicMap()
+		for friendly, nic := range cachedInterfaceNicMap {
+			logger.Printf("Mapped friendly name '%s' to NIC '%s'", friendly, nic)
+		}
+	})
+}
+
+// PollClientConnections enumerates all currently ESTABLISHED Client.exe
+// TCP connections and resolves each to a pcap NIC. No filter is applied
+// and no packets are read — this is a fast, side-effect-free probe.
+func PollClientConnections() ([]ClientConnection, error) {
 	rows, err := getTCPRows()
 	if err != nil {
-		logger.Println("getTCPRows failed:", err)
-		return "", err
+		return nil, err
 	}
 
-	ifaceMap := getInterfaceMap()
-	nicMap := getInterfaceNicMap()
+	ensureNicCache()
+	ifaceMap := cachedInterfaceMap
+	nicMap := cachedInterfaceNicMap
 
-	// Collect all Client.exe connections (don't deduplicate by NIC)
-	var clientConnections []connectionWithNic
-
+	var conns []ClientConnection
 	for _, row := range rows {
-		// Skip non-ESTABLISHED connections
-		if row.State != 5 { // TCP_ESTABLISHED = 5
+		if row.State != 5 {
 			continue
 		}
 
-		// Check if this connection belongs to Client.exe
 		name, err := processName(row.OwningPID)
 		if err != nil || !strings.EqualFold(name, "Client.exe") {
 			continue
@@ -79,77 +107,87 @@ func FindNic() (string, error) {
 		remotePort := portFromDWORD(row.RemotePort)
 		localPort := portFromDWORD(row.LocalPort)
 
-		logger.Printf("Found Client.exe connection: %s:%d -> %s:%d (PID: %d)",
-			localIP.String(), localPort, remoteIP.String(), remotePort, row.OwningPID)
-
-		// Get friendly interface name from local IP
-		if friendlyName, ok := ifaceMap[localIP.String()]; ok {
-			logger.Printf("  Interface: %s", friendlyName)
-
-			nicName, ok := nicMap[friendlyName]
-			if !ok {
-				logger.Printf("Warning: Could not map friendly name '%s' to NIC name", friendlyName)
-				continue
-			}
-
-			clientConnections = append(clientConnections, connectionWithNic{
-				nicName:      nicName,
-				friendlyName: friendlyName,
-				connInfo: connectionInfo{
-					ServerIP:   remoteIP.String(),
-					ServerPort: fmt.Sprintf("%d", remotePort),
-					LocalPort:  fmt.Sprintf("%d", localPort),
-				},
-			})
+		friendlyName, ok := ifaceMap[localIP.String()]
+		if !ok {
+			continue
 		}
-	}
-
-	// Test each connection in order
-	if len(clientConnections) > 0 {
-		logger.Printf("Testing %d Client.exe connection(s)...", len(clientConnections))
-
-		for i, conn := range clientConnections {
-			logger.Printf("[%d/%d] Testing connection on NIC: %s (%s)",
-				i+1, len(clientConnections), conn.nicName, conn.friendlyName)
-
-			// Update filter with actual connection details
-			updateFilterWithConnection(conn.connInfo)
-			logger.Printf("  Updated filter - ServerIP: %s, SrcPort: %s, DstPort: %s",
-				conn.connInfo.ServerIP, conn.connInfo.ServerPort, conn.connInfo.LocalPort)
-
-			if found := testNicForPackets(conn.nicName); found {
-				logger.Printf("  Success: Found game packets on this connection")
-				return conn.nicName, nil
-			}
+		nicName, ok := nicMap[friendlyName]
+		if !ok {
+			continue
 		}
 
-		// No game packets found on any Client.exe connection
-		return "", errors.New("no game packets found on any Client.exe connection")
+		conns = append(conns, ClientConnection{
+			NicName:      nicName,
+			FriendlyName: friendlyName,
+			ServerIP:     remoteIP.String(),
+			ServerPort:   fmt.Sprintf("%d", remotePort),
+			LocalPort:    fmt.Sprintf("%d", localPort),
+		})
 	}
 
-	// No Client.exe connections found
-	return "", errors.New("no Client.exe network connections found")
+	return conns, nil
 }
 
-type connectionWithNic struct {
-	nicName      string
-	friendlyName string
-	connInfo     connectionInfo
-}
-
-type connectionInfo struct {
-	ServerIP   string
-	ServerPort string
-	LocalPort  string
-}
-
-func updateFilterWithConnection(connInfo connectionInfo) {
-	constants.ServerIP = connInfo.ServerIP
-	constants.ServerSrcPort = connInfo.ServerPort
-	constants.ServerDstPort = connInfo.LocalPort
+// ApplyConnectionFilter updates the global BPF filter to match the
+// given connection. Subsequent NewGameServerPacketReader calls will pick
+// up the new filter. Logging is left to the caller (FindNic only logs
+// the final successful triple).
+func ApplyConnectionFilter(c ClientConnection) {
+	constants.ServerIP = c.ServerIP
+	constants.ServerSrcPort = c.ServerPort
+	constants.ServerDstPort = c.LocalPort
 	constants.RebuildFilter()
-	logger.Printf("Filter updated with connection: %s:%s -> 0.0.0.0:%s",
-		connInfo.ServerIP, connInfo.ServerPort, connInfo.LocalPort)
+}
+
+func FindNic() (string, error) {
+	conns, err := PollClientConnections()
+	if err != nil {
+		logger.Println("PollClientConnections failed:", err)
+		return "", err
+	}
+
+	if len(conns) == 0 {
+		return "", errors.New("no Client.exe network connections found")
+	}
+
+	// Snapshot the current filter so we can restore it if every
+	// candidate fails — otherwise constants.* would be left pointing at
+	// the last (wrong) candidate, and the watchdog's "alive" check would
+	// match it on the next poll.
+	savedIP := constants.ServerIP
+	savedSrcPort := constants.ServerSrcPort
+	savedDstPort := constants.ServerDstPort
+
+	// Test high server-side ports first. Login / patch / lobby servers
+	// tend to use lower well-known ports (e.g. 11020), while game shards
+	// listen on larger ports (e.g. 11022, 59062). Trying the larger
+	// candidates first usually picks the actual game connection on the
+	// first attempt and avoids the 3-second per-candidate timeout we'd
+	// otherwise pay on the login connection.
+	sort.SliceStable(conns, func(i, j int) bool {
+		pi, _ := strconv.Atoi(conns[i].ServerPort)
+		pj, _ := strconv.Atoi(conns[j].ServerPort)
+		return pi > pj
+	})
+
+	logger.Printf("Testing %d Client.exe connection(s)...", len(conns))
+
+	for _, c := range conns {
+		ApplyConnectionFilter(c)
+
+		if testNicForPackets(c.NicName) {
+			logger.Printf("Picked NIC %s (%s) -> %s:%s",
+				c.NicName, c.FriendlyName, c.ServerIP, c.ServerPort)
+			return c.NicName, nil
+		}
+	}
+
+	constants.ServerIP = savedIP
+	constants.ServerSrcPort = savedSrcPort
+	constants.ServerDstPort = savedDstPort
+	constants.RebuildFilter()
+
+	return "", errors.New("no game packets found on any Client.exe connection")
 }
 
 func testNicForPackets(nicName string) bool {
@@ -161,17 +199,16 @@ func testNicForPackets(nicName string) bool {
 	r, err := packet.NewGameServerPacketReader(&packet.GameServerPacketReaderOpt{
 		Ctx:     ctx,
 		NicName: nicName,
+		Quiet:   true,
 	})
 
 	if err != nil {
-		logger.Printf("  Error opening NIC %s: %v", nicName, err)
 		return false
 	}
 	defer r.Close()
 
 	select {
 	case <-time.After(packetWaitTime):
-		logger.Printf("  Timeout on %s", nicName)
 		return false
 
 	case <-r.PacketCh():
@@ -196,7 +233,7 @@ func processName(pid uint32) (string, error) {
 	return filepath.Base(full), nil
 }
 
-func getInterfaceNicMap() map[string]string {
+func buildInterfaceNicMap() map[string]string {
 	// Create a mapping from friendly interface names to pcap NIC names
 	result := map[string]string{}
 
@@ -237,8 +274,6 @@ func getInterfaceNicMap() map[string]string {
 				if adapter, ok := ipToAdapter[addr.IP.String()]; ok {
 					friendlyName := windows.UTF16PtrToString(adapter.FriendlyName)
 					result[friendlyName] = nic.Name
-					logger.Printf("Mapped friendly name '%s' to NIC '%s'",
-						friendlyName, nic.Name)
 					break
 				}
 			}
@@ -360,7 +395,7 @@ func portFromDWORD(port uint32) int {
 	return int(binary.BigEndian.Uint16(b[:]))
 }
 
-func getInterfaceMap() map[string]string {
+func buildInterfaceMap() map[string]string {
 	result := map[string]string{}
 
 	var size uint32

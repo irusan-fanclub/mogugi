@@ -22,6 +22,7 @@ const (
 // from persistence.
 const (
 	EventIdMessageBox EventId = -1 - iota
+	EventIdSessionReset
 )
 
 type IEvent interface {
@@ -131,4 +132,11 @@ type EventChangeStance struct {
 type EventMessageBox struct {
 	EventBase
 	Message string
+}
+
+// EventSessionReset signals the frontend to wipe per-session state.
+// Reason values: "channel_switch", "idle_fallback".
+type EventSessionReset struct {
+	EventBase
+	Reason string
 }

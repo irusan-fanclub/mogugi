@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/gopacket/gopacket/pcap"
@@ -143,6 +144,12 @@ func run(ctx context.Context, nicName string, fileName string) {
 		}
 	}()
 
+	// Connection watchdog: detects channel switching by polling Client.exe
+	// TCP connections; only meaningful in live-NIC mode.
+	if nicName != "" {
+		go startConnectionWatchdog(ctx, pub)
+	}
+
 	startWebsocketServer(func(ws *websocket.Conn) {
 		logger.Printf("Client connected from %s", ws.RemoteAddr())
 		wsCtx, wsCtxCancel := context.WithCancel(ws.Request().Context())
@@ -260,6 +267,86 @@ func startWebsocketServer(newClientCb func(*websocket.Conn)) {
 	}()
 
 	<-time.After(1 * time.Second)
+}
+
+// startConnectionWatchdog polls Client.exe TCP connections every 3s.
+// When the current (ServerIP, SrcPort, DstPort) triple disappears from
+// the table and another Client.exe ESTABLISHED connection exists, it
+// triggers a reader swap — that's a channel switch.
+//
+// As a fallback, if no game packet has arrived for 60s but a Client.exe
+// connection is present, it forces a re-discover. This catches the rare
+// case where TCP table polling misses the change.
+func startConnectionWatchdog(ctx context.Context, pub *eventPublisher) {
+	pollTicker := time.NewTicker(3 * time.Second)
+	defer pollTicker.Stop()
+
+	idleTicker := time.NewTicker(10 * time.Second)
+	defer idleTicker.Stop()
+
+	var switching int32
+
+	swap := func(reason string) {
+		if !atomic.CompareAndSwapInt32(&switching, 0, 1) {
+			return
+		}
+		defer atomic.StoreInt32(&switching, 0)
+
+		nicName, err := pcaputil.FindNic()
+		if err != nil {
+			logger.Println("watchdog: discover failed:", err)
+			return
+		}
+
+		newR, err := packet.NewGameServerPacketReader(&packet.GameServerPacketReaderOpt{
+			Ctx:     ctx,
+			NicName: nicName,
+		})
+		if err != nil {
+			logger.Println("watchdog: open new reader failed:", err)
+			return
+		}
+
+		pub.SwitchReader(newR, reason)
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+
+		case <-pollTicker.C:
+			conns, err := pcaputil.PollClientConnections()
+			if err != nil {
+				logger.Println("watchdog: poll failed:", err)
+				continue
+			}
+			alive := false
+			for _, c := range conns {
+				if c.ServerIP == constants.ServerIP &&
+					c.ServerPort == constants.ServerSrcPort &&
+					c.LocalPort == constants.ServerDstPort {
+					alive = true
+					break
+				}
+			}
+			if !alive && len(conns) > 0 {
+				logger.Printf("watchdog: current connection gone, %d candidate(s); switching", len(conns))
+				go swap("channel_switch")
+			}
+
+		case <-idleTicker.C:
+			if time.Since(pub.LastPacketAt()) <= 60*time.Second {
+				continue
+			}
+			conns, err := pcaputil.PollClientConnections()
+			if err != nil || len(conns) == 0 {
+				continue
+			}
+			logger.Println("watchdog: idle 60s, fallback re-discover")
+			go swap("idle_fallback")
+		}
+	}
 }
 
 func startPacketWriter(ctx context.Context, ch <-chan []event.IEvent) error {

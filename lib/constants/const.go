@@ -7,14 +7,13 @@ import (
 
 var PCAP_GAMESERVER_FILTER = ""
 
-// kr server
-// const _SERVER_MABI_KR = "211.218.233.0/24"
-// const _PORT_MABI_KR = "11020 or 11021 or 11023"
-
-// Gearup Taiwan server (Taiwan 15) - default values
-var ServerIP = "210.208.80.0/24"
+// Server IP / port defaults are intentionally empty: pcaputil.FindNic
+// discovers the live Client.exe connection at startup and writes these
+// via ApplyConnectionFilter. Hard-coded server addresses (KR / Gearup
+// Taiwan / etc.) used to live here but are no longer needed.
+var ServerIP = ""
 var ServerSrcPort = ""
-var ServerDstPort = "11022 or 59062"
+var ServerDstPort = ""
 
 func init() {
 	RebuildFilter()
