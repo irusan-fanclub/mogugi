@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import vuetify from 'vite-plugin-vuetify';
@@ -8,10 +9,13 @@ import wasm from 'vite-plugin-wasm';
 const targetPort = 8030;
 const targetUrl = `http://localhost:${targetPort}`;
 
+const pkg = JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'utf8'));
+
 // https://vitejs.dev/config/
 export default defineConfig({
     define: {
         __IS_STANDALONE__: process.env.STANDALONE === 'true',
+        __APP_VERSION__: JSON.stringify(pkg.version),
     },
     plugins: [
         vue(),

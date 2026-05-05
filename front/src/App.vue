@@ -1,7 +1,7 @@
 <template>
     <v-sheet width="100vw" class="d-flex flex-wrap pl-1 pr-1">
         <v-sheet width="100svw" class="d-flex">
-            <span style="text-wrap-mode: nowrap;">dilmatulgi<template v-if="isStandalone">
+            <span style="text-wrap-mode: nowrap;">dilmatulgi <span style="opacity:0.5; font-size:0.85em;">v{{ appVersion }}</span><template v-if="isStandalone">
                 <v-icon icon="mdi-check" color="success" />standalone
             </template><template v-else>, api
                 <span v-if="socketConnected"><v-icon icon="mdi-check" color="success" />connected</span>
@@ -160,6 +160,7 @@ export default defineComponent({
         const resetSnackbarText = ref('');
 
         const isStandalone = __IS_STANDALONE__;
+        const appVersion = __APP_VERSION__;
 
         const socket = new SocketClient(`/ws`);
         socket.onConnect = isConnected => socketConnected.value = isConnected;
@@ -375,6 +376,7 @@ export default defineComponent({
             socketConnected,
             msgBoxOpen,
             msgBoxText,
+            appVersion,
             resetSnackbar,
             resetSnackbarText,
             forceRefresh,

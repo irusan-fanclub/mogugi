@@ -52,7 +52,7 @@ func main() {
 		mode = os.Args[1]
 	}
 
-	logger.Println("* dilmatulgi", mode)
+	logger.Printf("* dilmatulgi v%s %s", constants.Version, mode)
 
 	switch mode {
 	case "list":
