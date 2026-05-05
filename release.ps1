@@ -102,15 +102,23 @@ $distDir = "dist"
 if (-not (Test-Path $distDir)) { New-Item -ItemType Directory -Path $distDir | Out-Null }
 
 $releaseExe = "$distDir/dilmeterapi_mogu_$Version.exe"
+$releaseZip = "$distDir/dilmeterapi_mogu_$Version.zip"
 if (Test-Path $releaseExe) { Remove-Item $releaseExe -Force }
+if (Test-Path $releaseZip) { Remove-Item $releaseZip -Force }
 
 Copy-Item $apiBin $releaseExe
-$releaseInfo = Get-Item $releaseExe
-Write-Host "Packaged $releaseExe ($([math]::Round($releaseInfo.Length / 1MB, 2)) MB)" -ForegroundColor Green
+$exeInfo = Get-Item $releaseExe
+Write-Host "Packaged $releaseExe ($([math]::Round($exeInfo.Length / 1MB, 2)) MB)" -ForegroundColor Green
+
+Compress-Archive -Path $releaseExe -DestinationPath $releaseZip -CompressionLevel Optimal
+$zipInfo = Get-Item $releaseZip
+Write-Host "Packaged $releaseZip ($([math]::Round($zipInfo.Length / 1MB, 2)) MB)" -ForegroundColor Green
 
 Write-Host "`n=== Release v$Version ready ===" -ForegroundColor Green
-Write-Host "Artifact: $releaseExe" -ForegroundColor Cyan
+Write-Host "Artifacts:" -ForegroundColor Cyan
+Write-Host "  $releaseExe" -ForegroundColor Cyan
+Write-Host "  $releaseZip" -ForegroundColor Cyan
 Write-Host "Next steps (manual):" -ForegroundColor Cyan
 Write-Host "  git tag v$Version" -ForegroundColor Gray
 Write-Host "  git push --tags" -ForegroundColor Gray
-Write-Host "  gh release create v$Version $releaseExe --title `"v$Version`" --notes `"...`"" -ForegroundColor Gray
+Write-Host "  gh release create v$Version $releaseExe $releaseZip --title `"v$Version`" --notes `"...`"" -ForegroundColor Gray
