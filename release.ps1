@@ -37,35 +37,37 @@ Write-Host "=== Mabidilmeter Release v$Version ===" -ForegroundColor Cyan
 # ── Frontend build ────────────────────────────────────────────────────────────
 Write-Host "`n[1/4] Building Frontend..." -ForegroundColor Yellow
 Push-Location front
-try {
-    # Sync package.json version so __APP_VERSION__ matches the release tag.
-    $pkgPath = "package.json"
-    $pkg = Get-Content $pkgPath -Raw | ConvertFrom-Json
-    if ($pkg.version -ne $Version) {
-        Write-Host "Updating package.json version $($pkg.version) -> $Version" -ForegroundColor Gray
-        $pkg.version = $Version
-        ($pkg | ConvertTo-Json -Depth 32) | Set-Content -Path $pkgPath -Encoding utf8
-    }
 
-    npm install
-    npm run build
+# Sync package.json version so __APP_VERSION__ matches the release tag.
+$pkgPath = "package.json"
+$pkg = Get-Content $pkgPath -Raw | ConvertFrom-Json
+if ($pkg.version -ne $Version) {
+    Write-Host "Updating package.json version $($pkg.version) -> $Version" -ForegroundColor Gray
+    $pkg.version = $Version
+    ($pkg | ConvertTo-Json -Depth 32) | Set-Content -Path $pkgPath -Encoding utf8
+}
 
-    # Copy to embed dir consumed by go:embed.
-    $staticPath = "../cmd/dilmeterapi/static"
-    if (Test-Path $staticPath) {
-        Get-ChildItem -Path $staticPath -Exclude ".keep" | Remove-Item -Recurse -Force
-    } else {
-        New-Item -ItemType Directory -Force -Path $staticPath | Out-Null
-        New-Item -ItemType File -Force -Path "$staticPath/.keep" | Out-Null
-    }
-    Copy-Item -Path "dist/*" -Destination $staticPath -Recurse -Force
-    Write-Host "Frontend OK" -ForegroundColor Green
+# Suppress NativeCommandError from npm's stderr writes (vite emits
+# warnings to stderr even on success).
+$prevPref = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+& npm install 2>&1 | Out-Host
+if ($LASTEXITCODE -ne 0) { $ErrorActionPreference = $prevPref; Pop-Location; Write-Host "npm install failed" -ForegroundColor Red; exit 1 }
+
+& npm run build 2>&1 | Out-Host
+if ($LASTEXITCODE -ne 0) { $ErrorActionPreference = $prevPref; Pop-Location; Write-Host "frontend build failed" -ForegroundColor Red; exit 1 }
+$ErrorActionPreference = $prevPref
+
+# Copy to embed dir consumed by go:embed.
+$staticPath = "../cmd/dilmeterapi/static"
+if (Test-Path $staticPath) {
+    Get-ChildItem -Path $staticPath -Exclude ".keep" | Remove-Item -Recurse -Force
+} else {
+    New-Item -ItemType Directory -Force -Path $staticPath | Out-Null
+    New-Item -ItemType File -Force -Path "$staticPath/.keep" | Out-Null
 }
-catch {
-    Pop-Location
-    Write-Host "Frontend build failed: $_" -ForegroundColor Red
-    exit 1
-}
+Copy-Item -Path "dist/*" -Destination $staticPath -Recurse -Force
+Write-Host "Frontend OK" -ForegroundColor Green
 Pop-Location
 
 # ── Tests ────────────────────────────────────────────────────────────────────
@@ -82,21 +84,16 @@ if (-not $SkipTest) {
 # ── Backend build with embedded version ──────────────────────────────────────
 Write-Host "`n[3/4] Building Backend (release flags)..." -ForegroundColor Yellow
 
-# Clean prior outputs to avoid mixing versions.
 $binDir = "bin"
 if (-not (Test-Path $binDir)) { New-Item -ItemType Directory -Path $binDir | Out-Null }
 
 $ldflags = "-s -w -X github.com/irusan-fanclub/mabidilmeter/lib/constants.Version=$Version"
 $apiBin  = "$binDir/dilmeterapi.exe"
-$testBin = "$binDir/dilmetertest.exe"
 
 go build -ldflags $ldflags -trimpath -o $apiBin ./cmd/dilmeterapi
 if ($LASTEXITCODE -ne 0) { Write-Host "dilmeterapi build failed" -ForegroundColor Red; exit 1 }
 
-go build -ldflags $ldflags -trimpath -o $testBin ./cmd/dilmetertest
-if ($LASTEXITCODE -ne 0) { Write-Host "dilmetertest build failed" -ForegroundColor Red; exit 1 }
-
-Write-Host "Built $apiBin, $testBin" -ForegroundColor Green
+Write-Host "Built $apiBin" -ForegroundColor Green
 
 # ── Package ─────────────────────────────────────────────────────────────────
 Write-Host "`n[4/4] Packaging..." -ForegroundColor Yellow
@@ -104,16 +101,16 @@ Write-Host "`n[4/4] Packaging..." -ForegroundColor Yellow
 $distDir = "dist"
 if (-not (Test-Path $distDir)) { New-Item -ItemType Directory -Path $distDir | Out-Null }
 
-$zipPath = "$distDir/dilmeterapi-v$Version.zip"
-if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+$releaseExe = "$distDir/dilmeterapi_mogu_$Version.exe"
+if (Test-Path $releaseExe) { Remove-Item $releaseExe -Force }
 
-Compress-Archive -Path $apiBin, $testBin -DestinationPath $zipPath -CompressionLevel Optimal
-$zipInfo = Get-Item $zipPath
-Write-Host "Packaged $zipPath ($([math]::Round($zipInfo.Length / 1MB, 2)) MB)" -ForegroundColor Green
+Copy-Item $apiBin $releaseExe
+$releaseInfo = Get-Item $releaseExe
+Write-Host "Packaged $releaseExe ($([math]::Round($releaseInfo.Length / 1MB, 2)) MB)" -ForegroundColor Green
 
 Write-Host "`n=== Release v$Version ready ===" -ForegroundColor Green
-Write-Host "Artifact: $zipPath" -ForegroundColor Cyan
+Write-Host "Artifact: $releaseExe" -ForegroundColor Cyan
 Write-Host "Next steps (manual):" -ForegroundColor Cyan
 Write-Host "  git tag v$Version" -ForegroundColor Gray
 Write-Host "  git push --tags" -ForegroundColor Gray
-Write-Host "  gh release create v$Version $zipPath --title `"v$Version`" --notes `"...`"" -ForegroundColor Gray
+Write-Host "  gh release create v$Version $releaseExe --title `"v$Version`" --notes `"...`"" -ForegroundColor Gray
