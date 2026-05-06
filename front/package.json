@@ -1,6 +1,6 @@
 {
   "name": "dilmeter-front",
-  "version": "0.2.5",
+  "version": "0.2.1",
   "private": true,
   "scripts": {
     "serve": "vite serve",
