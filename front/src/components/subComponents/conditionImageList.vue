@@ -46,7 +46,7 @@ export default defineComponent({
         const onClickCond = (e: MouseEvent, cond: EntityCondition) => {
             if (e.shiftKey) {
                 const name = condNameMap.value[cond.CCId] ?? `CC ${cond.CCId}`;
-                if (confirm(`${name}을(를) 숨기시겠습니까?`)) {
+                if (confirm(`隱藏 ${name}？`)) {
                     addHiddenCC(cond.CCId);
                 }
                 return;

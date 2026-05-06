@@ -60,10 +60,15 @@ func main() {
 		return
 	case "file":
 		fileName := ""
-		if len(os.Args) > 2 {
-			fileName = os.Args[2]
+		realtime := false
+		for _, a := range os.Args[2:] {
+			if a == "--realtime" {
+				realtime = true
+			} else if fileName == "" {
+				fileName = a
+			}
 		}
-		runFile(ctx, fileName)
+		runFile(ctx, fileName, realtime)
 	default:
 		runLive(ctx)
 	}
@@ -82,12 +87,13 @@ func runLive(ctx context.Context) {
 }
 
 // runFile: replay a capture from disk. No watchdog.
-func runFile(ctx context.Context, fileName string) {
-	logger.Println("file replay mode:", fileName)
+func runFile(ctx context.Context, fileName string, realtime bool) {
+	logger.Println("file replay mode:", fileName, "realtime:", realtime)
 
 	r, err := packet.NewGameServerPacketReader(&packet.GameServerPacketReaderOpt{
 		Ctx:      ctx,
 		FileName: fileName,
+		Realtime: realtime,
 	})
 	if err != nil {
 		messagebox(fmt.Sprintf("NewGameServerPacketReader failed: %v", err))

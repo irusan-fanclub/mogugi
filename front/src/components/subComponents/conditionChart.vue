@@ -19,7 +19,7 @@
                 </template>
             </v-select>
             <v-btn v-if="selectedCCId != null" icon="mdi-close" size="x-small" variant="text"
-                @click="hideSelectedCC" title="이 CC 숨기기" />
+                @click="hideSelectedCC" title="隱藏此 CC" />
             <span>Total: {{ totalDurationText }}</span>
             <span>ON: {{ onDurationText }} ({{ onPercent }}%)</span>
         </v-sheet>

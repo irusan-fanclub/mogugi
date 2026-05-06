@@ -1,4 +1,5 @@
 <template>
+    <div class="px-2">
     <v-expansion-panels multiple
         v-for="v in visibleGroups"
         v-bind:key="v.actor.id">
@@ -68,8 +69,7 @@
         </template>
 
     </v-expansion-panels>
-
-
+    </div>
 </template>
 
 <script lang="ts">
@@ -297,7 +297,7 @@ export default defineComponent({
 
         const hideGroup = (actor: GroupActor) => {
             const name = prettyName(actor) || actor.id;
-            if (confirm(`${name}을(를) 숨기시겠습니까?`)) {
+            if (confirm(`隱藏 ${name}？`)) {
                 addHiddenRace(actor.raceId);
             }
         };

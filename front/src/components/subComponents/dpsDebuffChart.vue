@@ -4,18 +4,22 @@
     </v-sheet>
     <v-sheet v-else class="d-flex flex-column" style="overflow: hidden;">
         <div ref="dpsChartDom" style="width: 100%;"></div>
-        <div v-if="debuffRows.length > 0" ref="debuffChartDom" style="width: 100%;"></div>
-        <v-sheet v-if="debuffRows.length > 0" class="d-flex align-center flex-shrink-0 flex-wrap"
-            style="gap: 10px; padding: 4px 10px;">
-            <span style="font-size: 0.75em; color: #666;">Coverage:</span>
-            <span v-for="r in debuffRows" :key="r.ccId" class="d-flex align-center" style="gap: 3px;">
-                <img width="14" height="14"
-                    :src="`/res/characterconditionimage/${region}/${r.ccId}/${r.ccId}.png`"
-                    style="border-radius: 2px;" />
-                <span :style="{ fontSize: '0.75em', fontWeight: '600', color: coverageColor(r.pct) }">
-                    {{ r.pct.toFixed(1) }}%
+        <div v-if="chartCCIds.length > 0" ref="debuffChartDom" style="width: 100%;"></div>
+        <v-sheet v-if="coverageStrips.some(s => s.rows.length > 0)"
+            class="d-flex flex-column flex-shrink-0" style="padding: 4px 10px; gap: 2px;">
+            <div v-for="(strip, i) in coverageStrips" :key="i" v-show="strip.rows.length > 0"
+                class="d-flex align-center flex-wrap" style="gap: 10px;">
+                <span :style="{ fontSize: '0.75em', minWidth: '64px', color: strip.label ? '#666' : 'transparent' }">Coverage:</span>
+                <span v-for="r in strip.rows" :key="r.ccId" class="d-flex align-center"
+                    :title="ccName(condNameMap, r.ccId) + ' ' + r.ccId" style="gap: 3px;">
+                    <img width="14" height="14" :src="ccIconUrl(region, r.ccId)" style="border-radius: 2px;" />
+                    <span :style="{
+                        fontSize: '0.75em', fontWeight: '600', color: coverageColor(r.pct),
+                        width: '3.5em', textAlign: 'right',
+                        fontVariantNumeric: 'tabular-nums',
+                    }">{{ r.pct.toFixed(1) }}%</span>
                 </span>
-            </span>
+            </div>
         </v-sheet>
     </v-sheet>
 </template>
@@ -27,6 +31,7 @@ import type { EntityDamage, EntityActor, EntityConditionState } from '@/eventAct
 import { bucketDamages } from '@/lib/timeRangeFilter';
 import { getCCTimelineSegments } from '@/lib/conditionCoverage';
 import { setTimeRange, clearTimeRange } from '@/store';
+import { ccIconUrl, ccName } from '@/lib/util';
 
 type ChartEntity = { name: string, damages: EntityDamage[] };
 
@@ -54,7 +59,7 @@ function coverageColor(pct: number): string {
     return '#EF5350';
 }
 
-const UPDATE_INTERVAL_MS = 15_000;
+const UPDATE_INTERVAL_MS = 250;
 
 export default defineComponent({
     props: {
@@ -62,6 +67,7 @@ export default defineComponent({
         target: { type: Object as PropType<EntityActor | null>, default: null },
         binSeconds: { type: Number, default: 15 },
         trackedCCIds: { type: Array as PropType<number[]>, default: () => [] },
+        chartHiddenCCIds: { type: Array as PropType<number[]>, default: () => [] },
     },
     setup(props) {
         const region = inject('region') as Ref<string>;
@@ -75,6 +81,7 @@ export default defineComponent({
         let debuffChart: highcharts.Chart | undefined;
         let updateTimer = 0;
         let lastEntityKeys = '';
+        let lastActiveKey = '';
 
         const fightStart = computed(() => {
             let min = Infinity;
@@ -112,7 +119,10 @@ export default defineComponent({
             const h = props.target.conditionHistory;
             const s = timeRangeMin.value, e = timeRangeMax.value;
             if (s !== null && e !== null) return h.filter(st => st.At >= s && st.At <= e);
-            return h;
+            // Vue 3.4+ computed short-circuits on Object.is — actor pushes
+            // _conditionHistory in place, so we must hand back a new array
+            // ref or downstream computeds never invalidate.
+            return h.slice();
         });
 
         const activeCCIds = computed(() => {
@@ -123,19 +133,34 @@ export default defineComponent({
             return props.trackedCCIds.filter(id => seen.has(id));
         });
 
-        const debuffRows = computed(() =>
-            activeCCIds.value.map(ccId => {
+        const chartCCIds = computed(() => {
+            const hidden = new Set(props.chartHiddenCCIds);
+            return activeCCIds.value.filter(id => !hidden.has(id));
+        });
+
+        // Coverage % for every tracked CC; un-seen CCs render at 0% so
+        // the user can tell which tracked debuffs are missing.
+        const coverageStrips = computed(() => {
+            const h = history.value;
+            const fightEndAt = fightStart.value + globalMaxMs.value / 1000;
+            const total = h.length > 0 ? Math.max(0, fightEndAt - h[0].At) : 0;
+            const hidden = new Set(props.chartHiddenCCIds);
+            const chart: { ccId: number, pct: number }[] = [];
+            const cov: { ccId: number, pct: number }[] = [];
+            for (const ccId of props.trackedCCIds) {
                 const ids = getMergedIds(ccId);
-                const h = history.value;
-                if (h.length < 2) return { ccId, pct: 0 };
-                const total = h[h.length - 1].At - h[0].At;
                 let on = 0;
-                for (let i = 0; i < h.length - 1; i++) {
-                    if (h[i].List.some(c => ids.includes(c.CCId))) on += h[i + 1].At - h[i].At;
+                if (h.length > 0 && total > 0) {
+                    for (let i = 0; i < h.length; i++) {
+                        const segEnd = i + 1 < h.length ? h[i + 1].At : fightEndAt;
+                        if (h[i].List.some(c => ids.includes(c.CCId))) on += segEnd - h[i].At;
+                    }
                 }
-                return { ccId, pct: total > 0 ? (100 * on / total) : 0 };
-            })
-        );
+                const row = { ccId, pct: total > 0 ? (100 * on / total) : 0 };
+                (hidden.has(ccId) ? cov : chart).push(row);
+            }
+            return [{ label: true, rows: chart }, { label: false, rows: cov }];
+        });
 
         const fmtRelative = (ms: number) => {
             const sec = Math.max(0, Math.floor(ms / 1000));
@@ -278,7 +303,7 @@ export default defineComponent({
         // --- Debuff chart ---
         const buildDebuffOpt = (): Options => {
             const origin = fightStart.value;
-            const ccIds = activeCCIds.value;
+            const ccIds = chartCCIds.value;
             const h = history.value;
             const maxMs = globalMaxMs.value;
             if (h.length < 2 || ccIds.length === 0) {
@@ -291,7 +316,7 @@ export default defineComponent({
 
             const yAxes = ccIds.map((id, i) => ({
                 title: {
-                    text: `<img src="/res/characterconditionimage/${region.value}/${id}/${id}.png" width="16" height="16" style="vertical-align:middle" />`,
+                    text: `<img src="${ccIconUrl(region.value, id)}" width="16" height="16" style="vertical-align:middle" />`,
                     useHTML: true, rotation: 0,
                 },
                 min: 0, max: 1, tickInterval: 1,
@@ -305,14 +330,21 @@ export default defineComponent({
             const series: SeriesAreaOptions[] = ccIds.map((ccId, idx) => {
                 const ids = getMergedIds(ccId);
                 const data: [number, number][] = [];
+                let lastActive = 0;
                 for (const st of h) {
-                    const active = st.List.some(c => ids.includes(c.CCId)) ? 1 : 0;
-                    data.push([(st.At - origin) * 1000, active]);
+                    lastActive = st.List.some(c => ids.includes(c.CCId)) ? 1 : 0;
+                    data.push([(st.At - origin) * 1000, lastActive]);
+                }
+                // _conditionHistory only grows on set-membership change,
+                // so the last point lags during refresh-only periods —
+                // pin the still-active bar to the chart's right edge.
+                if (lastActive === 1 && data.length > 0) {
+                    data.push([maxMs, 1]);
                 }
                 const color = CC_COLORS[idx % CC_COLORS.length];
                 return {
                     type: 'area' as const,
-                    name: condNameMap.value[ccId]?.replace(/\s*\d+$/, '') ?? `CC ${ccId}`,
+                    name: ccName(condNameMap.value, ccId),
                     data, step: 'left' as const, yAxis: idx,
                     color, fillOpacity: 0.5, lineWidth: 0, showInLegend: false,
                     marker: {
@@ -333,9 +365,9 @@ export default defineComponent({
                 title: { text: '' },
                 chart: {
                     backgroundColor: 'transparent',
-                    height: Math.max(80, n * 22 + 20),
+                    height: n * 16 + 4,
                     marginLeft: CHART_MARGIN_LEFT,
-                    spacing: [0, 8, 4, 8], animation: false,
+                    spacing: [0, 8, 0, 8], animation: false,
                     zooming: { type: 'x' },
                     events: {
                         selection(e): undefined {
@@ -355,10 +387,8 @@ export default defineComponent({
                 xAxis: {
                     type: 'linear', min: 0, max: maxMs > 0 ? maxMs : undefined,
                     crosshair: { color: '#ffffff33', width: 1 },
-                    labels: {
-                        style: { color: '#888' },
-                        formatter() { return fmtRelative(this.value as number); },
-                    },
+                    labels: { enabled: false }, // shared with DPS chart's xAxis above
+                    lineWidth: 0, tickLength: 0,
                 },
                 yAxis: yAxes as any,
                 legend: { enabled: false },
@@ -387,32 +417,61 @@ export default defineComponent({
                 if (dpsChartDom.value && props.entities.length > 0) {
                     dpsChart = highcharts.chart(dpsChartDom.value, buildDpsOpt());
                 }
-                if (debuffChartDom.value && activeCCIds.value.length > 0) {
+                if (debuffChartDom.value && chartCCIds.value.length > 0) {
                     debuffChart = highcharts.chart(debuffChartDom.value, buildDebuffOpt());
                 }
                 setupHoverSync();
             });
             lastEntityKeys = props.entities.map(e => e.name).join(',');
+            lastActiveKey = chartCCIds.value.join(',');
+        };
+
+        // In-place data refresh: setData + setExtremes on existing charts,
+        // no destroy/recreate. Bails to fullRebuild on series-count mismatch
+        // since yAxis layout depends on it.
+        const updateData = () => {
+            if (!dpsChart && !debuffChart) { fullRebuild(); return; }
+            const newDpsSeries = (buildDpsOpt().series ?? []) as SeriesLineOptions[];
+            const newDebuffSeries = (buildDebuffOpt().series ?? []) as SeriesAreaOptions[];
+            if (dpsChart && newDpsSeries.length !== dpsChart.series.length) { fullRebuild(); return; }
+            if (debuffChart && newDebuffSeries.length !== debuffChart.series.length) { fullRebuild(); return; }
+
+            const maxMs = globalMaxMs.value;
+            const apply = (chart: highcharts.Chart, series: { data?: unknown }[]) => {
+                if (maxMs > 0) chart.xAxis[0].setExtremes(0, maxMs, false, false);
+                for (let i = 0; i < series.length; i++) {
+                    if (series[i].data) chart.series[i].setData(series[i].data as [number, number][], false, false);
+                }
+                chart.redraw(false);
+            };
+            if (dpsChart) apply(dpsChart, newDpsSeries);
+            if (debuffChart) apply(debuffChart, newDebuffSeries);
         };
 
         const scheduleUpdate = () => {
             const keys = props.entities.map(e => e.name).join(',');
-            if (keys !== lastEntityKeys) { fullRebuild(); return; }
+            const activeKey = chartCCIds.value.join(',');
+            if (keys !== lastEntityKeys || activeKey !== lastActiveKey) {
+                lastActiveKey = activeKey;
+                fullRebuild();
+                return;
+            }
             if (updateTimer) return;
-            updateTimer = window.setTimeout(() => { updateTimer = 0; fullRebuild(); }, UPDATE_INTERVAL_MS);
+            updateTimer = window.setTimeout(() => { updateTimer = 0; updateData(); }, UPDATE_INTERVAL_MS);
         };
 
         onMounted(fullRebuild);
         watch(() => props.target, fullRebuild);
         watch(() => props.trackedCCIds, fullRebuild);
+        watch(() => props.chartHiddenCCIds, fullRebuild);
         watch(() => props.entities, scheduleUpdate);
-        watch([activeCCIds, history], scheduleUpdate);
+        watch([activeCCIds, chartCCIds, history], scheduleUpdate);
         onUnmounted(() => {
             if (updateTimer) clearTimeout(updateTimer);
             dpsChart?.destroy(); debuffChart?.destroy();
         });
 
-        return { region, dpsChartDom, debuffChartDom, debuffRows, coverageColor };
+        return { region, condNameMap, dpsChartDom, debuffChartDom, chartCCIds, coverageStrips, coverageColor, ccIconUrl, ccName };
     },
 });
 </script>

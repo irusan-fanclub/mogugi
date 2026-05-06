@@ -64,6 +64,33 @@ export function getMabiNameColor(name: string): string {
     return '#' + ccolor.map(v => v.toString(16).padStart(2, '0')).join('');
 }
 
+// CCs whose game icon is generic/un-recognisable; show a recognisable
+// icon (either another CC or the source skill) instead.
+const CC_ICON_OVERRIDE: Record<number, { kind: 'skill' | 'cc', id: number }> = {
+    323: { kind: 'skill', id: 20018 }, // 傷害詛咒 2 → 憤怒衝擊
+    494: { kind: 'cc', id: 23 },       // 無敵 → CC #23
+};
+
+export function ccIconUrl(region: string, ccId: number): string {
+    const ov = CC_ICON_OVERRIDE[ccId];
+    if (ov?.kind === 'skill') return `/res/skillimage/${region}/${ov.id}/${ov.id}.png`;
+    if (ov?.kind === 'cc') return `/res/characterconditionimage/${region}/${ov.id}/${ov.id}.png`;
+    return `/res/characterconditionimage/${region}/${ccId}/${ccId}.png`;
+}
+
+// CCs whose in-game name is too long for our compact UI; show a short
+// custom label instead. Falls back to condNameMap (with trailing CCId
+// stripped) and finally `CC <id>`.
+const CC_NAME_OVERRIDE: Record<number, string> = {
+    10001: '物防保減少瑪奇魔法陣',
+    10002: '魔防保減少瑪奇魔法陣',
+};
+
+export function ccName(condNameMap: Record<number, string>, ccId: number): string {
+    return CC_NAME_OVERRIDE[ccId]
+        ?? (condNameMap[ccId] ?? `CC ${ccId}`).replace(/\s*\d+$/, '');
+}
+
 export interface IUpdateCallback {
     setUpdateCallback(track: () => void, trigger: () => void): void;
 }

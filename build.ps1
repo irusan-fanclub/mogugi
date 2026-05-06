@@ -1,86 +1,84 @@
-# Build script for Mabidilmeter
-# Builds frontend, backend, and runs tests
+# Dev build script — fast iterate-and-test loop.
+#
+# Builds the frontend, copies it into cmd/dilmeterapi/static/ for go:embed,
+# and builds the backend into bin/dilmeterapi.exe.
+#
+# Does NOT touch version files or produce dist/ artifacts; for that, use
+# release.ps1.
+#
+# Usage:
+#   .\build.ps1                # full rebuild (frontend + backend)
+#   .\build.ps1 -BackendOnly   # skip frontend build (Go-only changes)
+#   .\build.ps1 -FrontendOnly  # skip Go build (front-only changes)
+#   .\build.ps1 -Install       # run `npm install` before building
+#   .\build.ps1 -Test          # also run go test ./... and build cmd/dilmetertest
 
 param(
-    [switch]$SkipTest,
+    [switch]$BackendOnly,
     [switch]$FrontendOnly,
-    [switch]$BackendOnly
+    [switch]$Install,
+    [switch]$Test
 )
 
 $ErrorActionPreference = "Stop"
+Set-Location $PSScriptRoot
 
-Write-Host "=== Mabidilmeter Build Script ===" -ForegroundColor Cyan
+Write-Host "=== Build ===" -ForegroundColor Cyan
 
-# Build Frontend
+# ── Frontend ────────────────────────────────────────────────────────────────
 if (-not $BackendOnly) {
-    Write-Host "`n[1/4] Building Frontend..." -ForegroundColor Yellow
+    Write-Host "`n[frontend] building..." -ForegroundColor Yellow
     Push-Location front
-    try {
-        Write-Host "Installing dependencies..." -ForegroundColor Gray
-        npm install
-        
-        Write-Host "Building frontend..." -ForegroundColor Gray
-        npm run build
-        
-        Write-Host "Copying frontend to static folder..." -ForegroundColor Gray
-        $staticPath = "../cmd/dilmeterapi/static"
-        if (Test-Path $staticPath) {
-            # Remove all files except .keep
-            Get-ChildItem -Path $staticPath -Exclude ".keep" | Remove-Item -Recurse -Force
-        } else {
-            New-Item -ItemType Directory -Force -Path $staticPath | Out-Null
-            New-Item -ItemType File -Force -Path "$staticPath/.keep" | Out-Null
-        }
-        Copy-Item -Path "dist/*" -Destination $staticPath -Recurse -Force
-        
-        Write-Host "Frontend build completed successfully!" -ForegroundColor Green
+
+    # npm/vite write progress + warnings to stderr even on success;
+    # downgrade to non-fatal so PowerShell doesn't terminate the script.
+    $prevPref = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+
+    if ($Install -or -not (Test-Path "node_modules")) {
+        Write-Host "  npm install..." -ForegroundColor Gray
+        & npm install 2>&1 | Out-Host
+        if ($LASTEXITCODE -ne 0) { $ErrorActionPreference = $prevPref; Pop-Location; Write-Host "npm install failed" -ForegroundColor Red; exit 1 }
     }
-    catch {
-        Write-Host "Frontend build failed: $_" -ForegroundColor Red
-        Pop-Location
-        exit 1
-    }
+
+    & npm run build 2>&1 | Out-Host
+    if ($LASTEXITCODE -ne 0) { $ErrorActionPreference = $prevPref; Pop-Location; Write-Host "frontend build failed" -ForegroundColor Red; exit 1 }
+    $ErrorActionPreference = $prevPref
     Pop-Location
+
+    # Sync to go:embed dir.
+    $staticDir = "cmd/dilmeterapi/static"
+    if (Test-Path $staticDir) {
+        Get-ChildItem -Path $staticDir -Exclude ".keep" | Remove-Item -Recurse -Force
+    } else {
+        New-Item -ItemType Directory -Force -Path $staticDir | Out-Null
+        New-Item -ItemType File -Force -Path "$staticDir/.keep" | Out-Null
+    }
+    Copy-Item -Path "front/dist/*" -Destination $staticDir -Recurse -Force
 }
 
-# Run Tests
-if (-not $SkipTest -and -not $FrontendOnly) {
-    Write-Host "`n[2/4] Running Go Tests..." -ForegroundColor Yellow
-    try {
-        go test ./...
-        Write-Host "All tests passed!" -ForegroundColor Green
-    }
-    catch {
-        Write-Host "Tests failed: $_" -ForegroundColor Red
-        exit 1
-    }
+# ── Tests (opt-in) ──────────────────────────────────────────────────────────
+if ($Test -and -not $FrontendOnly) {
+    Write-Host "`n[test] go test ./..." -ForegroundColor Yellow
+    go test ./...
+    if ($LASTEXITCODE -ne 0) { Write-Host "tests failed" -ForegroundColor Red; exit 1 }
 }
 
-# Build Backend - dilmeterapi
+# ── Backend ─────────────────────────────────────────────────────────────────
 if (-not $FrontendOnly) {
-    Write-Host "`n[3/4] Building Backend (dilmeterapi)..." -ForegroundColor Yellow
-    try {
-        go build -o bin/dilmeterapi.exe ./cmd/dilmeterapi
-        Write-Host "dilmeterapi built successfully!" -ForegroundColor Green
-    }
-    catch {
-        Write-Host "dilmeterapi build failed: $_" -ForegroundColor Red
-        exit 1
-    }
-}
+    Write-Host "`n[backend] go build ./cmd/dilmeterapi..." -ForegroundColor Yellow
+    if (-not (Test-Path "bin")) { New-Item -ItemType Directory -Path "bin" | Out-Null }
+    $apiBin = "bin/dilmeterapi.exe"
+    go build -o $apiBin ./cmd/dilmeterapi
+    if ($LASTEXITCODE -ne 0) { Write-Host "backend build failed" -ForegroundColor Red; exit 1 }
+    $info = Get-Item $apiBin
+    Write-Host "  $apiBin ($([math]::Round($info.Length / 1MB, 2)) MB)" -ForegroundColor Green
 
-# Build Backend - dilmetertest
-if (-not $FrontendOnly) {
-    Write-Host "`n[4/4] Building Backend (dilmetertest)..." -ForegroundColor Yellow
-    try {
+    if ($Test) {
+        Write-Host "`n[backend] go build ./cmd/dilmetertest..." -ForegroundColor Yellow
         go build -o bin/dilmetertest.exe ./cmd/dilmetertest
-        Write-Host "dilmetertest built successfully!" -ForegroundColor Green
-    }
-    catch {
-        Write-Host "dilmetertest build failed: $_" -ForegroundColor Red
-        exit 1
+        if ($LASTEXITCODE -ne 0) { Write-Host "dilmetertest build failed" -ForegroundColor Red; exit 1 }
     }
 }
 
-Write-Host "`n=== Build Completed Successfully! ===" -ForegroundColor Green
-Write-Host "Output directory: bin/" -ForegroundColor Cyan
+Write-Host "`n=== OK ===" -ForegroundColor Green

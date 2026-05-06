@@ -25,6 +25,7 @@ type GameServerPacketReader struct {
 	ctxCancel context.CancelFunc
 	packetCh  chan *GamePacket
 	quiet     bool
+	realtime  bool
 
 	// mutable
 	handle *pcap.Handle
@@ -49,6 +50,9 @@ type GameServerPacketReaderOpt struct {
 	// log file. Used by short-lived test readers (NIC discovery probes)
 	// so they don't spam the log or stomp on the live capture file.
 	Quiet bool
+	// Realtime paces file replay by capture timestamp diffs (capped at
+	// 200ms per gap) so the frontend sees events at original cadence.
+	Realtime bool
 }
 
 type gamePacketPayload struct {
@@ -78,6 +82,13 @@ func NewGameServerPacketReader(opt *GameServerPacketReaderOpt) (*GameServerPacke
 
 	filter := constants.PCAP_GAMESERVER_FILTER
 
+	// File replays are already pre-filtered; the constants used to
+	// build the BPF expression are only populated by FindNic in live
+	// mode.
+	if opt.FileName != "" {
+		filter = ""
+	}
+
 	if !opt.Quiet {
 		logger.Println("game packet filter...", filter)
 	}
@@ -93,6 +104,7 @@ func NewGameServerPacketReader(opt *GameServerPacketReaderOpt) (*GameServerPacke
 		ctxCancel: cancel,
 		packetCh:  make(chan *GamePacket, packetQueueSize),
 		quiet:     opt.Quiet,
+		realtime:  opt.Realtime,
 		linkType:  layers.LinkTypeNull, // default, will be updated when opening
 	}
 
@@ -274,9 +286,11 @@ func (t *GameServerPacketReader) openFile(file string, filter string) (chan game
 		return nil, err
 	}
 
-	if err := handle.SetBPFFilter(filter); err != nil { // optional
-		logger.Println(err)
-		return nil, err
+	if filter != "" {
+		if err := handle.SetBPFFilter(filter); err != nil { // optional
+			logger.Println(err)
+			return nil, err
+		}
 	}
 
 	t.handle = handle
@@ -343,12 +357,30 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 	pendingTcpLayers := make([]pendingTcpLayer, 0, packetQueueSize)
 
 	lastDropped := 0
+	var prevCapTime time.Time
 	for i := 0; t.ctx.Err() == nil; i++ {
 		b, ci, err := t.handle.ReadPacketData()
 		if err != nil {
 			// Expected on Close() / channel-switch — pcap handle goes
 			// away and ReadPacketData returns EOF. No diagnostic value.
 			break
+		}
+
+		if t.realtime {
+			if !prevCapTime.IsZero() {
+				gap := ci.Timestamp.Sub(prevCapTime)
+				if gap > 200*time.Millisecond {
+					gap = 200 * time.Millisecond
+				}
+				if gap > 0 {
+					select {
+					case <-t.ctx.Done():
+						return
+					case <-time.After(gap):
+					}
+				}
+			}
+			prevCapTime = ci.Timestamp
 		}
 
 		if t.logHandle != nil {

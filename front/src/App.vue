@@ -16,7 +16,7 @@
                     <v-btn @click="loadFromFile" v-bind="props" :loading="isLoading" color="primary" size="small"
                         prepend-icon="mdi-upload" class="ml-1">Load</v-btn>
                 </template>
-                파일에서 데이터를 로드합니다
+                從檔案載入資料
             </v-tooltip>
             <template v-if="!isStandalone">
                 <v-btn @click="download" :loading="isLoading" color="primary" size="small" prepend-icon="mdi-download"
@@ -26,7 +26,7 @@
                         <v-btn @click="loadFromServer" v-bind="props" :loading="isLoading" color="primary" size="small"
                             prepend-icon="mdi-refresh" class="ml-1">Reload</v-btn>
                     </template>
-                    서버에서 데이터를 다시 로드합니다
+                    從伺服器重新載入
                 </v-tooltip>
             </template>
             <v-btn @click="clearData" :loading="isLoading" color="primary" size="small" prepend-icon="mdi-close"
@@ -36,14 +36,14 @@
                     <v-btn @click="forceRefresh" v-bind="props" color="secondary" size="small"
                         prepend-icon="mdi-refresh-circle" class="ml-1">Force Refresh</v-btn>
                 </template>
-                모든 UI를 강제로 갱신합니다
+                強制刷新 UI
             </v-tooltip>
             <v-tooltip>
                 <template v-slot:activator="{ props }">
                     <v-btn @click="configOpen = true" v-bind="props" size="small" prepend-icon="mdi-cog"
-                        class="ml-1 mr-4">설정</v-btn>
+                        class="ml-1 mr-4">Settings</v-btn>
                 </template>
-                설정
+                設定
             </v-tooltip></v-sheet>
     </v-sheet>
 
@@ -90,7 +90,7 @@
             <v-card-text style="white-space: pre-wrap;">{{ msgBoxText }}</v-card-text>
             <v-card-actions>
                 <v-spacer />
-                <v-btn color="primary" variant="flat" @click="msgBoxOpen = false">확인</v-btn>
+                <v-btn color="primary" variant="flat" @click="msgBoxOpen = false">OK</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>
@@ -328,7 +328,7 @@ export default defineComponent({
         }
 
         const dialogStack = useDialogStack();
-        const tab = ref('');
+        const tab = ref('applyDamageBySkill');
 
         onMounted(async () => {
             regionList.value = ['kr', 'krt', 'cn', 'jp', 'tw', 'us'];
@@ -400,3 +400,13 @@ export default defineComponent({
 });
 
 </script>
+
+<style>
+/* Compact rows for tabs 1/2/3 attacker/group lists. Vuetify defaults to
+   48px min-height which is too airy for our dense data tables. */
+.v-expansion-panel-title {
+    min-height: 32px !important;
+    padding-top: 4px !important;
+    padding-bottom: 4px !important;
+}
+</style>

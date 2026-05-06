@@ -8,7 +8,7 @@ import (
 // Version is the build version. Override at link time via:
 //
 //	go build -ldflags "-X github.com/irusan-fanclub/mabidilmeter/lib/constants.Version=x.y.z"
-var Version = "0.2.0"
+var Version = "0.2.5"
 
 var PCAP_GAMESERVER_FILTER = ""
 

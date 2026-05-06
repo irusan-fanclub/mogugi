@@ -1,5 +1,6 @@
 <template>
-    <v-sheet class="d-flex align-center ma-2 flex-wrap" style="gap: 8px;">
+    <div class="px-2">
+    <v-sheet class="d-flex align-center my-2 flex-wrap" style="gap: 8px;">
         <v-select v-model="targetId" :items="targetIdList"
             :item-title="vv => `${vv[0] ? prettyEntityName(entityMap[vv[0]]?.actor) : 'all'} ${humanReadableNumber(vv[1] || 0)}`"
             :item-value="vv => vv[0]" variant="outlined" density="compact" hide-details style="flex: 1; min-width: 150px;">
@@ -11,7 +12,7 @@
     </v-sheet>
 
     <!-- DPS + Debuff unified chart with shared X axis -->
-    <v-sheet v-if="dpsChartEntities.length > 0" class="mx-2 mt-1" style="border: 1px solid #2a2a2a; border-radius: 4px; overflow: hidden;">
+    <v-sheet v-if="dpsChartEntities.length > 0" class="mt-1 mb-2" style="border: 1px solid #2a2a2a; border-radius: 4px; overflow: hidden;">
         <v-sheet class="d-flex align-center px-3 py-1" style="font-size: 0.8em; color: #888; background: #1a1a1a;">
             <span>DPS (15s, excl. pets) + Debuff Timeline</span>
             <v-spacer />
@@ -21,7 +22,12 @@
                 </template>
                 <v-card width="320" style="background: #1e1e1e;">
                     <!-- Enabled list (draggable) -->
-                    <v-card-subtitle class="px-3 pt-3 pb-1" style="font-size: 0.75em;">Enabled (drag to reorder)</v-card-subtitle>
+                    <v-card-subtitle class="px-3 pt-3 pb-1 d-flex align-center" style="font-size: 0.75em;">
+                        <span>Enabled (drag to reorder)</span>
+                        <v-spacer />
+                        <v-btn variant="text" size="x-small" density="compact" prepend-icon="mdi-restore"
+                            @click="resetTrackedCCs">Reset</v-btn>
+                    </v-card-subtitle>
                     <div style="max-height: 240px; overflow-y: auto;">
                         <div v-for="(ccId, idx) in trackedCCIdList" :key="ccId"
                             class="d-flex align-center px-3 py-1"
@@ -38,9 +44,15 @@
                             <v-icon v-if="ccId === PINNED_CC" icon="mdi-lock" size="x-small" class="mr-1" style="opacity:0.4" />
                             <v-icon v-else icon="mdi-drag-horizontal-variant" size="x-small" class="mr-1" style="opacity:0.4" />
                             <img width="16" height="16" class="mr-2"
-                                :src="`/res/characterconditionimage/${region}/${ccId}/${ccId}.png`"
+                                :src="ccIconUrl(region, ccId)"
                                 style="border-radius:2px;" />
-                            <span style="font-size: 0.82em; flex: 1;">{{ condNameMap[ccId] ?? `CC ${ccId}` }}</span>
+                            <span style="font-size: 0.82em; flex: 1;">{{ ccName(condNameMap, ccId) }} {{ ccId }}</span>
+                            <v-btn icon size="x-small" variant="text" density="compact" class="mr-1"
+                                :title="chartHiddenCCIds.has(ccId) ? 'Coverage only — click to show on chart' : 'Chart + coverage — click to hide from chart'"
+                                @click.stop="toggleChartMode(ccId)">
+                                <v-icon icon="mdi-chart-timeline-variant" size="small"
+                                    :style="{ opacity: chartHiddenCCIds.has(ccId) ? 0.3 : 1 }" />
+                            </v-btn>
                             <v-btn v-if="ccId !== PINNED_CC" icon="mdi-close" size="x-small" variant="text"
                                 density="compact" @click.stop="removeCC(ccId)" />
                         </div>
@@ -60,9 +72,9 @@
                             @click="addCC(ccId)">
                             <v-icon icon="mdi-plus" size="x-small" class="mr-1" style="opacity:0.5" />
                             <img width="16" height="16" class="mr-2"
-                                :src="`/res/characterconditionimage/${region}/${ccId}/${ccId}.png`"
+                                :src="ccIconUrl(region, ccId)"
                                 style="border-radius:2px;" />
-                            <span style="font-size: 0.82em;">{{ condNameMap[ccId] ?? `CC ${ccId}` }}</span>
+                            <span style="font-size: 0.82em;">{{ ccName(condNameMap, ccId) }} {{ ccId }}</span>
                         </div>
                         <div v-if="availableCCs.length === 0" class="px-3 py-2 text-medium-emphasis" style="font-size: 0.8em;">
                             No more conditions to add
@@ -75,7 +87,8 @@
             :entities="dpsChartEntities"
             :target="selectedTarget"
             :bin-seconds="15"
-            :tracked-c-c-ids="trackedCCIdList" />
+            :tracked-c-c-ids="trackedCCIdList"
+            :chart-hidden-c-c-ids="[...chartHiddenCCIds]" />
     </v-sheet>
 
     <v-expansion-panels multiple v-for="v in pcEntities" v-bind:key="v.actor.id">
@@ -140,28 +153,20 @@
                 </v-expansion-panel-text>
             </v-expansion-panel>
             <v-sheet width="100%" class="mb-2"
-                style="position: relative; overflow: hidden; border-radius: 4px; cursor: pointer; background: rgba(255,255,255,0.12);"
+                style="position: relative; overflow: hidden; border-radius: 4px; cursor: pointer; background: rgba(255,255,255,0.12); height: 4px;"
                 @click.stop="showEntityAllDamageList(v.actor.id)">
-                <div :style="{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${Math.round(100 * v.totalDamage / allApplyDamage)}%`, background: getMabiNameColor(prettyEntityName(v.actor)!), opacity: 0.4 }" />
-                <div class="d-flex align-center pa-1" style="position: relative; gap: 4px;">
-                    <span class="font-weight-medium">{{ prettyEntityName(v.actor) }}</span>
-                    <v-spacer />
-                    <span style="min-width: 80px; text-align: center; color: #FFD54F;">{{ humanReadableNumber(v.totalDamage) }}</span>
-                    <span style="min-width: 80px; text-align: center; color: #42A5F5;">{{ humanReadableNumber(arrayDps(v.totalDamage, v.damages)) }}</span>
-                    <span style="min-width: 56px; text-align: center; color: #66BB6A;">{{ (100 * v.totalDamage / allApplyDamage).toFixed(1) }}%</span>
-                </div>
+                <div :style="{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${Math.round(100 * v.totalDamage / allApplyDamage)}%`, background: getMabiNameColor(prettyEntityName(v.actor)!), opacity: 0.6 }" />
             </v-sheet>
         </template>
 
     </v-expansion-panels>
-
-
+    </div>
 </template>
 
 <script lang="ts">
 import { defineComponent, inject, ref, computed, onUnmounted, onMounted, watch, type Ref } from "vue";
 
-import { getMabiNameColor, prettyEntityName, humanReadableNumber, formatDuration } from '@/lib/util';
+import { getMabiNameColor, prettyEntityName, humanReadableNumber, formatDuration, ccIconUrl, ccName } from '@/lib/util';
 import type { EntityDamage, EntityActor } from '@/eventActor';
 import { DamageCollectorBase, DualGroupedDamageCollector, GroupedDamageCollector } from '@/actionCollector';
 import { useDialogStack } from '@/lib/useDialogStack';
@@ -524,9 +529,11 @@ export default defineComponent({
         const CC_STORAGE_KEY = 'trackedDebuffCCIds';
         const PINNED_CC = 494; // always first, cannot be removed or moved
         const DEFAULT_CC_LIST = [
-            494, 182, 323, 351, 392, 464, 515, 598, 803,
-            912, 1012, 1014, 1026, 1092, 1093, 1138, 10001, 10002,
+            494,                                          // pinned
+            803, 323, 1026, 464, 578, 10001, 10002,       // chart visible
+            1164, 1165, 1166, 1092, 1093, 392, 912, 598, 1138, // coverage only
         ];
+        const DEFAULT_CHART_HIDDEN_CC_LIST = [1164, 1165, 1166, 1092, 1093, 392, 912, 598, 1138];
         const loadTrackedCCs = (): number[] => {
             try {
                 const raw = localStorage.getItem(CC_STORAGE_KEY);
@@ -558,6 +565,32 @@ export default defineComponent({
             if (trackedCCIdList.value.includes(ccId)) return;
             trackedCCIdList.value = [...trackedCCIdList.value, ccId];
             saveTrackedCCs();
+        };
+
+        const CHART_HIDDEN_KEY = 'chartHiddenCCIds';
+        const loadChartHidden = (): Set<number> => {
+            try {
+                const raw = localStorage.getItem(CHART_HIDDEN_KEY);
+                if (raw) return new Set(JSON.parse(raw) as number[]);
+            } catch { /* ignore */ }
+            return new Set(DEFAULT_CHART_HIDDEN_CC_LIST);
+        };
+        const chartHiddenCCIds = ref<Set<number>>(loadChartHidden());
+        const saveChartHidden = () => {
+            localStorage.setItem(CHART_HIDDEN_KEY, JSON.stringify([...chartHiddenCCIds.value]));
+        };
+        const toggleChartMode = (ccId: number) => {
+            const next = new Set(chartHiddenCCIds.value);
+            if (next.has(ccId)) next.delete(ccId); else next.add(ccId);
+            chartHiddenCCIds.value = next;
+            saveChartHidden();
+        };
+
+        const resetTrackedCCs = () => {
+            trackedCCIdList.value = [...DEFAULT_CC_LIST];
+            chartHiddenCCIds.value = new Set(DEFAULT_CHART_HIDDEN_CC_LIST);
+            saveTrackedCCs();
+            saveChartHidden();
         };
 
         // Drag reorder state
@@ -596,8 +629,7 @@ export default defineComponent({
             const search = addCCSearch.value.toLowerCase();
             return [...ids].sort((a, b) => a - b).filter(id => {
                 if (!search) return true;
-                const name = (condNameMap.value as any)?.[id] ?? `CC ${id}`;
-                return name.toLowerCase().includes(search) || String(id).includes(search);
+                return ccName(condNameMap.value, id).toLowerCase().includes(search) || String(id).includes(search);
             });
         });
 
@@ -618,6 +650,9 @@ export default defineComponent({
             trackedCCIdList,
             removeCC,
             addCC,
+            resetTrackedCCs,
+            chartHiddenCCIds,
+            toggleChartMode,
             addCCSearch,
             availableCCs,
             dragIdx,
@@ -642,6 +677,8 @@ export default defineComponent({
             humanReadableNumber,
             formatDuration,
             prettyEntityName: prettyName,
+            ccIconUrl,
+            ccName,
         }
     }
 });

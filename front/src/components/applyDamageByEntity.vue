@@ -1,4 +1,5 @@
 <template>
+    <div class="px-2">
     <v-expansion-panels multiple v-for="v in pcEntities" v-bind:key="v.actor.id">
         <template v-if="v.totalDamage > 0">
             <v-expansion-panel>
@@ -33,22 +34,14 @@
                 </v-expansion-panel-text>
             </v-expansion-panel>
             <v-sheet width="100%" class="mb-2"
-                style="position: relative; overflow: hidden; border-radius: 4px; cursor: pointer;"
+                style="position: relative; overflow: hidden; border-radius: 4px; cursor: pointer; background: rgba(255,255,255,0.12); height: 4px;"
                 @click.stop="showEntityAllDamageList(v.actor.id)">
-                <div :style="{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${Math.round(100 * v.totalDamage / allApplyDamage)}%`, background: getMabiNameColor(prettyEntityName(v.actor)!), opacity: 0.4 }" />
-                <div class="d-flex align-center pa-1" style="position: relative; gap: 4px;">
-                    <span class="font-weight-medium">{{ prettyEntityName(v.actor) }}</span>
-                    <v-spacer />
-                    <span style="min-width: 80px; text-align: center; color: #FFD54F;">{{ humanReadableNumber(v.totalDamage) }}</span>
-                    <span style="min-width: 80px; text-align: center; color: #42A5F5;">{{ humanReadableNumber(arrayDps(v.totalDamage, v.damages)) }}</span>
-                    <span style="min-width: 56px; text-align: center; color: #66BB6A;">{{ (100 * v.totalDamage / allApplyDamage).toFixed(1) }}%</span>
-                </div>
+                <div :style="{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${Math.round(100 * v.totalDamage / allApplyDamage)}%`, background: getMabiNameColor(prettyEntityName(v.actor)!), opacity: 0.6 }" />
             </v-sheet>
         </template>
 
     </v-expansion-panels>
-
-
+    </div>
 </template>
 
 <script lang="ts">
