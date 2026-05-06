@@ -15,9 +15,9 @@
                     <img width="14" height="14" :src="ccIconUrl(region, r.ccId)" style="border-radius: 2px;" />
                     <span :style="{
                         fontSize: '0.75em', fontWeight: '600', color: coverageColor(r.pct),
-                        width: '3.5em', textAlign: 'right',
+                        width: '2.8em', textAlign: 'right',
                         fontVariantNumeric: 'tabular-nums',
-                    }">{{ r.pct.toFixed(1) }}%</span>
+                    }">{{ fmtPct(r.pct) }}</span>
                 </span>
             </div>
         </v-sheet>
@@ -57,6 +57,13 @@ function coverageColor(pct: number): string {
     if (pct >= 60) return '#66BB6A';
     if (pct >= 40) return '#FFD54F';
     return '#EF5350';
+}
+
+// 100% drops the decimal so it fits the same column width as "99.9%".
+function fmtPct(pct: number): string {
+    let s = pct.toFixed(1);
+    if (s === '100.0') s = '100';
+    return s + '%';
 }
 
 const UPDATE_INTERVAL_MS = 250;
@@ -471,7 +478,7 @@ export default defineComponent({
             dpsChart?.destroy(); debuffChart?.destroy();
         });
 
-        return { region, condNameMap, dpsChartDom, debuffChartDom, chartCCIds, coverageStrips, coverageColor, ccIconUrl, ccName };
+        return { region, condNameMap, dpsChartDom, debuffChartDom, chartCCIds, coverageStrips, coverageColor, fmtPct, ccIconUrl, ccName };
     },
 });
 </script>
