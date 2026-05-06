@@ -8,7 +8,7 @@ on:
       tag:
         description: 'Release tag to announce (test mode)'
         required: true
-        default: 'v0.2.0'
+        default: 'v0.2.1'
 
 permissions:
   contents: read
@@ -33,21 +33,7 @@ jobs:
           name=$(echo "$json" | jq -r '.name // .tagName')
           url=$(echo  "$json" | jq -r '.url')
           body=$(echo "$json" | jq -r '.body')
-
-          # Both the bare exe and the zip are first-class downloads.
-          exe_name=$(echo "$json" | jq -r '.assets[]? | select(.name | endswith(".exe")) | .name' | head -n1)
           zip_name=$(echo "$json" | jq -r '.assets[]? | select(.name | endswith(".zip")) | .name' | head -n1)
-
-          dl_lines=""
-          if [ -n "$exe_name" ]; then
-            dl_lines="[$exe_name](https://github.com/${{ github.repository }}/releases/download/$tag/$exe_name)"
-          fi
-          if [ -n "$zip_name" ]; then
-            zip_line="[$zip_name](https://github.com/${{ github.repository }}/releases/download/$tag/$zip_name)"
-            if [ -n "$dl_lines" ]; then dl_lines="$dl_lines"$'\n'"$zip_line"; else dl_lines="$zip_line"; fi
-          fi
-
-          src_url="https://github.com/${{ github.repository }}/archive/refs/tags/$tag.zip"
 
           if [ "${#body}" -gt 4000 ]; then
             body="${body:0:3990}…（已截斷，完整內容請點 release 連結）"
@@ -57,55 +43,52 @@ jobs:
             echo "name=$name"
             echo "url=$url"
             echo "tag=$tag"
-            echo "src_url=$src_url"
-            echo "dl_lines<<DL_EOF"
-            echo "$dl_lines"
-            echo "DL_EOF"
+            echo "zip_name=$zip_name"
             echo "body<<RELEASE_BODY_EOF"
             echo "$body"
             echo "RELEASE_BODY_EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Send Discord embed
+      - name: Download release zip
+        if: ${{ steps.rel.outputs.zip_name != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p _release
+          gh release download "${{ steps.rel.outputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --pattern "${{ steps.rel.outputs.zip_name }}" \
+            --dir _release
+
+      - name: Send Discord embed (with attached zip)
         env:
           WEBHOOK:  ${{ secrets.DISCORD_WEBHOOK_URL }}
           NAME:     ${{ steps.rel.outputs.name }}
           URL:      ${{ steps.rel.outputs.url }}
           BODY:     ${{ steps.rel.outputs.body }}
-          TAG:      ${{ steps.rel.outputs.tag }}
-          DL_LINES: ${{ steps.rel.outputs.dl_lines }}
-          SRC_URL:  ${{ steps.rel.outputs.src_url }}
-          # THUMB: drop a 256x256 PNG in the repo (e.g. icons/app-256.png)
-          # then uncomment to embed it as the right-side thumbnail.
-          # THUMB: https://raw.githubusercontent.com/${{ github.repository }}/master/icons/app-256.png
+          ZIP_NAME: ${{ steps.rel.outputs.zip_name }}
         run: |
-          fields=$(jq -n \
-            --arg dl  "$DL_LINES" \
-            --arg tag "$TAG"      \
-            --arg su  "$SRC_URL"  \
-            '[
-              (if $dl != "" then
-                { name: "📥 下載", value: $dl, inline: true }
-              else empty end),
-              { name: "📦 原始碼", value: ("[" + $tag + ".zip](" + $su + ")"), inline: true }
-            ]')
-
           payload=$(jq -n \
-            --arg title    "$NAME" \
-            --arg desc     "$BODY" \
-            --arg url      "$URL"  \
-            --argjson flds "$fields" \
+            --arg title "$NAME" \
+            --arg desc  "$BODY" \
+            --arg url   "$URL"  \
             '{
               embeds: [{
                 title: $title,
                 description: $desc,
                 url: $url,
                 color: 9024762,
-                fields: $flds,
                 footer: { text: "irusan-fanclub/mabidilmeter" }
               }],
               allowed_mentions: { parse: [] }
             }')
 
-          curl -fsS -X POST -H "Content-Type: application/json" \
-               -d "$payload" "$WEBHOOK"
+          if [ -n "$ZIP_NAME" ] && [ -f "_release/$ZIP_NAME" ]; then
+            curl -fsS -X POST \
+              -F "payload_json=$payload;type=application/json" \
+              -F "files[0]=@_release/$ZIP_NAME" \
+              "$WEBHOOK"
+          else
+            curl -fsS -X POST -H "Content-Type: application/json" \
+              -d "$payload" "$WEBHOOK"
+          fi
