@@ -29,7 +29,7 @@ import { defineComponent, PropType, ref, computed, inject, onMounted, onUnmounte
 import highcharts, { Options, SeriesLineOptions, SeriesAreaOptions } from 'highcharts';
 import type { EntityDamage, EntityActor, EntityConditionState } from '@/eventActor';
 import { bucketDamages } from '@/lib/timeRangeFilter';
-import { getCCTimelineSegments } from '@/lib/conditionCoverage';
+import { computeCCCoverage } from '@/lib/conditionCoverage';
 import { setTimeRange, clearTimeRange } from '@/store';
 import { ccIconUrl, ccName } from '@/lib/util';
 
@@ -150,20 +150,12 @@ export default defineComponent({
         const coverageStrips = computed(() => {
             const h = history.value;
             const fightEndAt = fightStart.value + globalMaxMs.value / 1000;
-            const total = h.length > 0 ? Math.max(0, fightEndAt - h[0].At) : 0;
             const hidden = new Set(props.chartHiddenCCIds);
             const chart: { ccId: number, pct: number }[] = [];
             const cov: { ccId: number, pct: number }[] = [];
             for (const ccId of props.trackedCCIds) {
-                const ids = getMergedIds(ccId);
-                let on = 0;
-                if (h.length > 0 && total > 0) {
-                    for (let i = 0; i < h.length; i++) {
-                        const segEnd = i + 1 < h.length ? h[i + 1].At : fightEndAt;
-                        if (h[i].List.some(c => ids.includes(c.CCId))) on += segEnd - h[i].At;
-                    }
-                }
-                const row = { ccId, pct: total > 0 ? (100 * on / total) : 0 };
+                const { totalSec, onSec } = computeCCCoverage(h, getMergedIds(ccId), fightEndAt);
+                const row = { ccId, pct: totalSec > 0 ? (100 * onSec / totalSec) : 0 };
                 (hidden.has(ccId) ? cov : chart).push(row);
             }
             return [{ label: true, rows: chart }, { label: false, rows: cov }];

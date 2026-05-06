@@ -44,6 +44,7 @@ import { defineComponent, ref, PropType, watch, computed, inject, onMounted, onU
 import highcharts, { Options, SeriesAreaOptions } from 'highcharts';
 import type { EntityConditionState } from '@/eventActor';
 import { getMabiNameColor, prettyEntityName } from '@/lib/util';
+import { computeCCCoverage, computeCCCoverageBy } from '@/lib/conditionCoverage';
 import { setTimeRange, clearTimeRange, addHiddenCC } from '@/store';
 
 function formatDuration(seconds: number): string {
@@ -132,23 +133,8 @@ export default defineComponent({
 
         // compute total duration & on duration for selected CC
         const timeStats = computed(() => {
-            const history = filteredHistory.value;
-            if (history.length < 2 || selectedCCId.value == null) {
-                return { totalSec: 0, onSec: 0 };
-            }
-
-            const ccId = selectedCCId.value;
-            const totalSec = history[history.length - 1].At - history[0].At;
-            let onSec = 0;
-
-            for (let i = 0; i < history.length - 1; i++) {
-                const active = history[i].List.some(c => c.CCId === ccId);
-                if (active) {
-                    onSec += history[i + 1].At - history[i].At;
-                }
-            }
-
-            return { totalSec, onSec };
+            if (selectedCCId.value == null) return { totalSec: 0, onSec: 0 };
+            return computeCCCoverage(filteredHistory.value, [selectedCCId.value]);
         });
 
         const totalDurationText = computed(() => formatDuration(timeStats.value.totalSec));
@@ -167,13 +153,10 @@ export default defineComponent({
 
             return props.attackers.map(a => {
                 const filtered = history.filter(s => s.At >= a.startTime && s.At <= a.endTime);
-                const totalSec = filtered.length >= 2 ? filtered[filtered.length - 1].At - filtered[0].At : 0;
-                let onSec = 0;
-                for (let i = 0; i < filtered.length - 1; i++) {
-                    if (filtered[i].List.some(c => c.CCId === ccId && resolveAttackerId(c.AttackerId) === a.id)) {
-                        onSec += filtered[i + 1].At - filtered[i].At;
-                    }
-                }
+                const { totalSec, onSec } = computeCCCoverageBy(
+                    filtered,
+                    c => c.CCId === ccId && resolveAttackerId(c.AttackerId) === a.id,
+                );
                 const pct = totalSec > 0 ? (100 * onSec / totalSec).toFixed(1) : '0.0';
                 return {
                     name: a.name,
