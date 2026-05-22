@@ -34,6 +34,15 @@ if ($Version -notmatch '^\d+\.\d+\.\d+(-[\w.]+)?$') {
 
 Write-Host "=== Mabidilmeter Release v$Version ===" -ForegroundColor Cyan
 
+. (Join-Path $PSScriptRoot 'keys-lib.ps1')
+try {
+    $lic = Get-LicenseKeyLDFlag
+} catch {
+    Write-Host $_.Exception.Message -ForegroundColor Red
+    exit 1
+}
+Write-Host "Embedding $($lic.Count) license key hash(es)" -ForegroundColor Gray
+
 # ── Frontend build ────────────────────────────────────────────────────────────
 Write-Host "`n[1/4] Building Frontend..." -ForegroundColor Yellow
 Push-Location front
@@ -87,7 +96,7 @@ Write-Host "`n[3/4] Building Backend (release flags)..." -ForegroundColor Yellow
 $binDir = "bin"
 if (-not (Test-Path $binDir)) { New-Item -ItemType Directory -Path $binDir | Out-Null }
 
-$ldflags = "-s -w -X github.com/irusan-fanclub/mabidilmeter/lib/constants.Version=$Version"
+$ldflags = "-s -w -X github.com/irusan-fanclub/mabidilmeter/lib/constants.Version=$Version $($lic.LDFlag)"
 $apiBin  = "$binDir/dilmeterapi.exe"
 
 go build -ldflags $ldflags -trimpath -o $apiBin ./cmd/dilmeterapi

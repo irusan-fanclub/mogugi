@@ -20,6 +20,7 @@ import (
 	"github.com/gopacket/gopacket/pcap"
 	"github.com/irusan-fanclub/mabidilmeter/lib/constants"
 	"github.com/irusan-fanclub/mabidilmeter/lib/event"
+	"github.com/irusan-fanclub/mabidilmeter/lib/license"
 	"github.com/irusan-fanclub/mabidilmeter/lib/packet"
 	"github.com/irusan-fanclub/mabidilmeter/lib/pcaputil"
 	"github.com/irusan-fanclub/mabidilmeter/lib/util"
@@ -43,6 +44,11 @@ func main() {
 		logger.Println("LogInit failed:", err)
 	}
 	logger.Printf("log file: %s", logFilePath)
+
+	if err := license.Verify(); err != nil {
+		logger.Println("license check failed:", err)
+		os.Exit(1)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
