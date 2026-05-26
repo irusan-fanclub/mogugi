@@ -450,6 +450,7 @@ export default defineComponent({
 
         onMounted(() => {
             appEvent.value.addEventListener('clear', clearTarget);
+            promptOnDefaultsChange();
         })
 
         const allApplyDamage = computed(() =>
@@ -531,9 +532,9 @@ export default defineComponent({
         const DEFAULT_CC_LIST = [
             494,                                          // pinned
             803, 323, 1026, 464, 578, 10001, 10002,       // chart visible
-            1164, 1165, 1166, 1092, 1093, 392, 912, 598, 1138, // coverage only
+            1164, 1165, 1166, 1093, 392, 912, 598, 1138, // coverage only
         ];
-        const DEFAULT_CHART_HIDDEN_CC_LIST = [1164, 1165, 1166, 1092, 1093, 392, 912, 598, 1138];
+        const DEFAULT_CHART_HIDDEN_CC_LIST = [1164, 1165, 1166, 1093, 392, 912, 598, 1138];
         const loadTrackedCCs = (): number[] => {
             try {
                 const raw = localStorage.getItem(CC_STORAGE_KEY);
@@ -591,6 +592,29 @@ export default defineComponent({
             chartHiddenCCIds.value = new Set(DEFAULT_CHART_HIDDEN_CC_LIST);
             saveTrackedCCs();
             saveChartHidden();
+        };
+
+        // On version bump, if the user's saved list differs from current
+        // defaults, offer to reset.
+        const APP_VERSION_KEY = 'lastSeenAppVersion';
+        const promptOnDefaultsChange = () => {
+            const lastVersion = localStorage.getItem(APP_VERSION_KEY);
+            const isFirstRun     = lastVersion === null;
+            const versionChanged = lastVersion !== __APP_VERSION__;
+
+            const trackedMatches = JSON.stringify(trackedCCIdList.value) === JSON.stringify(DEFAULT_CC_LIST);
+            const sortedHidden = [...chartHiddenCCIds.value].sort((a, b) => a - b);
+            const sortedDefaultHidden = [...DEFAULT_CHART_HIDDEN_CC_LIST].sort((a, b) => a - b);
+            const hiddenMatches = JSON.stringify(sortedHidden) === JSON.stringify(sortedDefaultHidden);
+
+            if (!isFirstRun && versionChanged && !(trackedMatches && hiddenMatches)) {
+                const ok = window.confirm(
+                    `你目前的 CC 追蹤清單與 v${__APP_VERSION__} 預設不同，要重置為預設值嗎？\n（會覆蓋目前儲存的追蹤項目）`
+                );
+                if (ok) resetTrackedCCs();
+            }
+
+            localStorage.setItem(APP_VERSION_KEY, __APP_VERSION__);
         };
 
         // Drag reorder state

@@ -340,6 +340,10 @@ export default defineComponent({
                 for (const v of list) {
                     raceNameMap.value[v.Id] = `${db.value.getCurLangString(v.Name)} ${v.Id}`;
                 }
+
+                // Manual overrides for entries the DB doesn't yet carry.
+                // Remove once the DB ships an updated RaceList.
+                raceNameMap.value[7615] = '雷楠的米勒：悔恨 7615';
             }
             {
                 const list = await db.value.getSortedListData('SkillList');
