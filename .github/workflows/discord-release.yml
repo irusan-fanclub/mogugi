@@ -8,7 +8,7 @@ on:
       tag:
         description: 'Release tag to announce (test mode)'
         required: true
-        default: 'v0.2.1'
+        default: 'v0.2.2'
 
 permissions:
   contents: read
@@ -33,7 +33,7 @@ jobs:
           name=$(echo "$json" | jq -r '.name // .tagName')
           url=$(echo  "$json" | jq -r '.url')
           body=$(echo "$json" | jq -r '.body')
-          zip_name=$(echo "$json" | jq -r '.assets[]? | select(.name | endswith(".zip")) | .name' | head -n1)
+          exe_name=$(echo "$json" | jq -r '.assets[]? | select(.name | endswith(".exe")) | .name' | head -n1)
 
           if [ "${#body}" -gt 4000 ]; then
             body="${body:0:3990}…（已截斷，完整內容請點 release 連結）"
@@ -43,22 +43,29 @@ jobs:
             echo "name=$name"
             echo "url=$url"
             echo "tag=$tag"
-            echo "zip_name=$zip_name"
+            echo "exe_name=$exe_name"
             echo "body<<RELEASE_BODY_EOF"
             echo "$body"
             echo "RELEASE_BODY_EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Download release zip
-        if: ${{ steps.rel.outputs.zip_name != '' }}
+      - name: Bundle exe + license.key into zip
+        id: bundle
+        if: ${{ steps.rel.outputs.exe_name != '' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LICENSE_KEY: ${{ secrets.LICENSE_KEY }}
         run: |
           mkdir -p _release
           gh release download "${{ steps.rel.outputs.tag }}" \
             --repo "${{ github.repository }}" \
-            --pattern "${{ steps.rel.outputs.zip_name }}" \
+            --pattern "${{ steps.rel.outputs.exe_name }}" \
             --dir _release
+          printf '%s' "$LICENSE_KEY" > _release/license.key
+          exe_name="${{ steps.rel.outputs.exe_name }}"
+          zip_name="${exe_name%.exe}.zip"
+          (cd _release && zip "$zip_name" "$exe_name" license.key)
+          echo "zip_name=$zip_name" >> "$GITHUB_OUTPUT"
 
       - name: Send Discord embed (with attached zip)
         env:
@@ -66,7 +73,7 @@ jobs:
           NAME:     ${{ steps.rel.outputs.name }}
           URL:      ${{ steps.rel.outputs.url }}
           BODY:     ${{ steps.rel.outputs.body }}
-          ZIP_NAME: ${{ steps.rel.outputs.zip_name }}
+          ZIP_NAME: ${{ steps.bundle.outputs.zip_name }}
         run: |
           payload=$(jq -n \
             --arg title "$NAME" \
