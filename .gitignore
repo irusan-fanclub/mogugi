@@ -12,6 +12,7 @@ packet_log_*.ndjson
 
 # tool local data
 .claude/
+logs/
 
 # license / keys (must never be committed)
 license.key
