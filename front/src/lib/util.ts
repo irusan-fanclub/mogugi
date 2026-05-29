@@ -71,11 +71,11 @@ const CC_ICON_OVERRIDE: Record<number, { kind: 'skill' | 'cc', id: number }> = {
     494: { kind: 'cc', id: 23 },       // 無敵 → CC #23
 };
 
-export function ccIconUrl(region: string, ccId: number): string {
+export function ccIconUrl(_region: string, ccId: number): string {
     const ov = CC_ICON_OVERRIDE[ccId];
-    if (ov?.kind === 'skill') return `/res/skillimage/${region}/${ov.id}/${ov.id}.png`;
-    if (ov?.kind === 'cc') return `/res/characterconditionimage/${region}/${ov.id}/${ov.id}.png`;
-    return `/res/characterconditionimage/${region}/${ccId}/${ccId}.png`;
+    if (ov?.kind === 'skill') return `/icons/skill/${ov.id}.png`;
+    if (ov?.kind === 'cc') return `/icons/cc/${ov.id}.png`;
+    return `/icons/cc/${ccId}.png`;
 }
 
 // CCs whose in-game name is too long for our compact UI; show a short

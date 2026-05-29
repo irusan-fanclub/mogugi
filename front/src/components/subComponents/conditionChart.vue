@@ -7,13 +7,13 @@
                 <template v-slot:item="{ props: itemProps, item }">
                     <v-list-item v-bind="itemProps">
                         <template v-slot:prepend>
-                            <img width="16" height="16" :src="`/res/characterconditionimage/${region}/${item.raw.value}/${item.raw.value}.png`" />
+                            <img width="16" height="16" :src="`/icons/cc/${item.raw.value}.png`" />
                         </template>
                     </v-list-item>
                 </template>
                 <template v-slot:selection="{ item }">
                     <div class="d-flex align-center" style="gap: 4px;">
-                        <img width="16" height="16" :src="`/res/characterconditionimage/${region}/${item.raw.value}/${item.raw.value}.png`" />
+                        <img width="16" height="16" :src="`/icons/cc/${item.raw.value}.png`" />
                         <span>{{ item.raw.label }}</span>
                     </div>
                 </template>

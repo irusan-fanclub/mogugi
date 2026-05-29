@@ -4,7 +4,7 @@
             @mouseover="e => setCondTooltip(e.target! as HTMLElement, cond)"
             @mouseleave="e => setCondTooltip(e.target! as HTMLElement, undefined)"
             @click="e => onClickCond(e as MouseEvent, cond)"
-            :src='`/res/characterconditionimage/${region}/${cond.CCId}/${cond.CCId}.png`' />
+            :src='`/icons/cc/${cond.CCId}.png`' />
     </template>
 
     <v-tooltip v-if="condTooltip" v-model="condTooltipValue" :activator="condTooltipParent">

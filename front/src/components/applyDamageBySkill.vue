@@ -122,7 +122,7 @@
                         <div :style="{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${Math.round(100 * damageBySkill / v.totalDamage)}%`, background: getMabiNameColor(skillNameMap[+skillId] || `unknownSkill:${skillId}`), opacity: 0.4 }" />
                         <!-- row 1: icon, name, buttons, damage, % -->
                         <div class="d-flex align-center pa-1" style="position: relative; gap: 4px;">
-                            <img width="28" height="28" :src="`/res/skillimage/${region}/${skillId}/${skillId}.png`" style="border-radius: 2px;" />
+                            <img width="28" height="28" :src="`/icons/skill/${skillId}.png`" style="border-radius: 2px;" />
                             <span class="font-weight-medium">{{ skillNameMap[+skillId] || `unknownSkill:${skillId}` }}</span>
                             <v-tooltip text="Distribution"><template v-slot:activator="{ props: tp }">
                                 <v-btn v-bind="tp" @click.stop="showSkillDistribution(v, +skillId)" size="x-small" icon="mdi-chart-bar" variant="text" density="compact" />

@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -196,39 +194,8 @@ func drainIncoming(ws *websocket.Conn, wsCtx context.Context, cancel context.Can
 }
 
 func startWebsocketServer(newClientCb func(*websocket.Conn)) {
-	remote, err := url.Parse("https://mabires.pril.cc")
-	if err != nil {
-		panic(err)
-	}
-
-	handler := func(p *httputil.ReverseProxy) func(http.ResponseWriter, *http.Request) {
-		return func(w http.ResponseWriter, r *http.Request) {
-			r.URL.Path = r.URL.Path[4:] // strip /res/
-			r.Host = remote.Host
-			p.ServeHTTP(w, r)
-		}
-	}
-
-	proxy := httputil.NewSingleHostReverseProxy(remote)
-	proxy.ModifyResponse = func(r *http.Response) error {
-		r.Header.Set("Access-Control-Allow-Origin", "*")
-		return nil
-	}
-
-	// /res/* — serve from ./resources if present, else reverse-proxy to remote.
-	resourceHandler := func(w http.ResponseWriter, r *http.Request) {
-		localPath := "./resources" + r.URL.Path[4:]
-		if _, err := os.Stat(localPath); err == nil {
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-			http.ServeFile(w, r, localPath)
-			return
-		}
-		handler(proxy)(w, r)
-	}
-
 	http.Handle("/ws", websocket.Handler(newClientCb))
 	http.HandleFunc("/api/packet_log", httpHandlerPacketLog)
-	http.HandleFunc("/res/", resourceHandler)
 
 	var staticFS = fs.FS(staticFiles)
 	htmlContent, err := fs.Sub(staticFS, "static")

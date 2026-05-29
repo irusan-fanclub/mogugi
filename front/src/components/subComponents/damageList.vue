@@ -10,7 +10,7 @@
                     <v-sheet class="d-flex">
                         <v-sheet width="32" class="mr-2">
                             <img width="32" height="32"
-                                :src='`/res/skillimage/${region}/${item.SkillId}/${item.SkillId}.png`' />
+                                :src='`/icons/skill/${item.SkillId}.png`' />
                         </v-sheet>
 
                         <v-sheet>
