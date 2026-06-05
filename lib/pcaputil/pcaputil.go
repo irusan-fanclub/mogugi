@@ -68,6 +68,64 @@ var (
 	cachedInterfaceNicMap map[string]string
 )
 
+// lastPickedNic remembers the device a brute-force probe last succeeded on.
+// On a PPPoE setup the connection's local IP belongs to a WAN-Miniport
+// adapter npcap can't capture on, so FindNic has to probe physical devices;
+// caching the winner lets subsequent channel-switch re-discoveries try the
+// known-good device first instead of paying the full per-device timeout
+// sweep every time.
+var (
+	lastPickedNicMu sync.Mutex
+	lastPickedNic   string
+)
+
+func setLastPickedNic(name string) {
+	lastPickedNicMu.Lock()
+	lastPickedNic = name
+	lastPickedNicMu.Unlock()
+}
+
+func getLastPickedNic() string {
+	lastPickedNicMu.Lock()
+	defer lastPickedNicMu.Unlock()
+	return lastPickedNic
+}
+
+// orderCandidates returns devs with preferred moved to the front. A preferred
+// value that is empty or absent from devs is ignored, so a stale cached NIC is
+// never probed for a device that no longer exists.
+func orderCandidates(preferred string, devs []string) []string {
+	if preferred == "" {
+		return devs
+	}
+	ordered := make([]string, 0, len(devs))
+	found := false
+	for _, d := range devs {
+		if d == preferred {
+			found = true
+			continue
+		}
+		ordered = append(ordered, d)
+	}
+	if !found {
+		return devs
+	}
+	return append([]string{preferred}, ordered...)
+}
+
+// allDeviceNames returns every capturable npcap device name.
+func allDeviceNames() ([]string, error) {
+	devs, err := pcap.FindAllDevs()
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(devs))
+	for _, d := range devs {
+		names = append(names, d.Name)
+	}
+	return names, nil
+}
+
 func ensureNicCache() {
 	nicCacheOnce.Do(func() {
 		cachedInterfaceMap = buildInterfaceMap()
@@ -173,14 +231,14 @@ func PollClientConnections() ([]ClientConnection, error) {
 
 	var conns []ClientConnection
 	for _, r := range raw {
-		friendlyName, ok := ifaceMap[r.localIP]
-		if !ok {
-			continue
-		}
-		nicName, ok := nicMap[friendlyName]
-		if !ok {
-			continue
-		}
+		// Both lookups are best-effort. On a PPPoE setup the local IP belongs
+		// to a WAN-Miniport adapter: ifaceMap resolves it to a friendly name
+		// (e.g. "寬頻網路") but nicMap has no npcap device for it, since npcap
+		// captures on the underlying physical NIC, not the virtual dial-up
+		// one. We must still surface the connection (NicName empty) so the
+		// watchdog sees the game is running and FindNic can probe devices.
+		friendlyName := ifaceMap[r.localIP]
+		nicName := nicMap[friendlyName]
 		conns = append(conns, ClientConnection{
 			NicName:      nicName,
 			FriendlyName: friendlyName,
@@ -250,10 +308,34 @@ func FindNic() (string, error) {
 	for _, c := range conns {
 		ApplyConnectionFilter(c)
 
-		if testNicForPackets(c.NicName) {
-			logger.Printf("Picked NIC %s (%s) -> %s:%s",
-				c.NicName, c.FriendlyName, c.ServerIP, c.ServerPort)
-			return c.NicName, nil
+		// When the connection mapped to a specific npcap device, test only
+		// that one. When it didn't (PPPoE / WAN-Miniport local IP), we don't
+		// know which physical NIC carries the traffic, so probe every device
+		// — cached known-good device first to keep channel-switch
+		// re-discovery fast.
+		var candidates []string
+		if c.NicName != "" {
+			candidates = []string{c.NicName}
+		} else {
+			devs, err := allDeviceNames()
+			if err != nil {
+				logger.Println("FindNic: enumerate devices failed:", err)
+				continue
+			}
+			candidates = orderCandidates(getLastPickedNic(), devs)
+			logger.Printf("  %s:%s has no mapped NIC (PPPoE?); probing %d device(s)",
+				c.ServerIP, c.ServerPort, len(candidates))
+		}
+
+		for _, nic := range candidates {
+			if testNicForPackets(nic) {
+				if c.NicName == "" {
+					setLastPickedNic(nic)
+				}
+				logger.Printf("Picked NIC %s (%s) -> %s:%s",
+					nic, c.FriendlyName, c.ServerIP, c.ServerPort)
+				return nic, nil
+			}
 		}
 	}
 

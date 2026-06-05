@@ -334,21 +334,58 @@ func (t *GameServerPacketReader) openLog() error {
 	return nil
 }
 
+// ipv4PayloadOffset returns the byte offset of the IPv4 header within a
+// captured frame, based on the link type and (for Ethernet) the EtherType.
+// It transparently unwraps PPPoE-session encapsulation — the framing used by
+// 中華電信 寬頻 / PPPoE dial-up, where the public IP lives on a WAN-Miniport
+// interface but traffic is captured on the underlying Ethernet NIC as
+// PPPoE-encapsulated frames. The second return value is false when the frame
+// carries no IPv4 payload (ARP, PPP control frames, truncated frames) and
+// should be skipped.
+func ipv4PayloadOffset(linkType layers.LinkType, b []byte) (int, bool) {
+	switch linkType {
+	case layers.LinkTypeNull, layers.LinkTypeLoop:
+		// DLT_NULL / DLT_LOOP carry a 4-byte address-family prefix before IPv4.
+		// A frame with only the prefix (and no IPv4 header) is skipped.
+		if len(b) <= 4 {
+			return 0, false
+		}
+		return 4, true
+
+	default:
+		// Ethernet-style framing: 14-byte header, EtherType at bytes 12-13.
+		if len(b) < 14 {
+			return 0, false
+		}
+		switch binary.BigEndian.Uint16(b[12:14]) {
+		case 0x0800: // IPv4
+			return 14, true
+		case 0x8864: // PPPoE Session
+			// Ethernet(14) + PPPoE(6) + PPP protocol(2). RFC 2516 forbids PPP
+			// protocol-field compression, so the proto field is always 2 bytes;
+			// 0x0021 == IPv4 (other values are PPP control frames like LCP).
+			if len(b) < 22 {
+				return 0, false
+			}
+			if binary.BigEndian.Uint16(b[20:22]) != 0x0021 {
+				return 0, false
+			}
+			return 22, true
+		default:
+			return 0, false
+		}
+	}
+}
+
 func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
-	eth := layers.Ethernet{}
 	ip4 := layers.IPv4{}
 	tcp := layers.TCP{}
 	payload := gopacket.Payload{}
 
-	// Pick the decoding parser based on the link type (supports Ethernet
-	// and loopback).
-	var layerParser *gopacket.DecodingLayerParser
-	switch t.linkType {
-	case layers.LinkTypeNull, layers.LinkTypeLoop:
-		layerParser = gopacket.NewDecodingLayerParser(layers.LayerTypeIPv4, &ip4, &tcp, &payload)
-	default:
-		layerParser = gopacket.NewDecodingLayerParser(layers.LayerTypeEthernet, &eth, &ip4, &tcp, &payload)
-	}
+	// Every supported link layer (Ethernet, loopback, PPPoE) is stripped down
+	// to the IPv4 header by ipv4PayloadOffset before decoding, so a single
+	// IPv4-first parser covers all cases.
+	layerParser := gopacket.NewDecodingLayerParser(layers.LayerTypeIPv4, &ip4, &tcp, &payload)
 	packetLayers := []gopacket.LayerType(nil)
 
 	// Sequence number tracking.
@@ -399,16 +436,13 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 			}
 		}
 
-		// Loopback captures have a 4-byte address-family prefix before
-		// the IPv4 header that the decoding parser cannot consume; skip it.
-		packetData := b
-		if t.linkType == layers.LinkTypeNull || t.linkType == layers.LinkTypeLoop {
-			if len(b) > 4 {
-				packetData = b[4:]
-			} else {
-				continue
-			}
+		// Strip the link layer (Ethernet / loopback prefix / PPPoE+PPP) down
+		// to the IPv4 header; skip frames that carry no IPv4 payload.
+		off, ok := ipv4PayloadOffset(t.linkType, b)
+		if !ok {
+			continue
 		}
+		packetData := b[off:]
 
 		if err := layerParser.DecodeLayers(packetData, &packetLayers); err != nil {
 			logger.Println(err)

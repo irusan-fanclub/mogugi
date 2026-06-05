@@ -27,9 +27,16 @@ func init() {
 // RebuildFilter rebuilds the pcap BPF filter from the current settings.
 // Since the filter is scoped to the game server IP and port, TLS traffic
 // never reaches this capture and no extra content-type filtering is needed.
+//
+// The expression matches the game connection both as plain Ethernet/IP and as
+// PPPoE-encapsulated traffic (中華電信 寬頻 / PPPoE dial-up). On a PPPoE setup
+// the public IP lives on a WAN-Miniport interface, but packets are captured on
+// the underlying Ethernet NIC as PPPoE-session frames whose inner IP/ports the
+// `pppoes` qualifier reaches. readPacketLoop unwraps the encapsulation on the
+// decode side.
 func RebuildFilter() {
-	filter := fmt.Sprintf("tcp and src net %s and src port (%s) and dst port (%s)", ServerIP, ServerSrcPort, ServerDstPort)
-	PCAP_GAMESERVER_FILTER = filter
+	base := fmt.Sprintf("tcp and src net %s and src port (%s) and dst port (%s)", ServerIP, ServerSrcPort, ServerDstPort)
+	PCAP_GAMESERVER_FILTER = fmt.Sprintf("(%s) or (pppoes and %s)", base, base)
 }
 
 var SERVER_START_AT = time.Now().Unix()
