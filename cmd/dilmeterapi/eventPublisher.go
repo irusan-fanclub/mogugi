@@ -304,6 +304,24 @@ func (t *eventPublisher) handlePacket(p *packet.GamePacket) {
 
 	case packet.OpcodeChangeStance, packet.OpcodeChangeStanceRes:
 		t.handleChangeStance(p)
+
+	case packet.OpcodeChannelCharacterInfoR:
+		t.handleChannelCharacterInfo(p)
+	}
+}
+
+// handleChannelCharacterInfo parses an owner-only 0x5209 snapshot and writes
+// the entity's inventory to {exedir}/items_log/{entity}.csv. This is a
+// side-effect-only path (no client event); any failure is logged and ignored
+// so metering is never disturbed.
+func (t *eventPublisher) handleChannelCharacterInfo(p *packet.GamePacket) {
+	snap, err := packet.ParseEntitySnapshot(p.Msg)
+	if err != nil {
+		logger.Printf("item-index: parse 0x5209 failed: %v", err)
+		return
+	}
+	if err := writeEntitySnapshot(snap); err != nil {
+		logger.Printf("item-index: write csv failed: %v", err)
 	}
 }
 

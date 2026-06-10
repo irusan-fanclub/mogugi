@@ -228,6 +228,7 @@ func startWebsocketServer(newClientCb func(*websocket.Conn)) {
 
 	http.Handle("/ws", websocket.Handler(newClientCb))
 	http.HandleFunc("/api/packet_log", httpHandlerPacketLog)
+	http.HandleFunc("/api/item-index", httpHandlerItemIndex)
 	http.HandleFunc("/res/", resourceHandler)
 
 	var staticFS = fs.FS(staticFiles)
