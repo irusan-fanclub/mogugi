@@ -650,10 +650,13 @@ export default defineComponent({
             for (const id of DEFAULT_CC_LIST) {
                 if (!tracked.has(id)) ids.add(id);
             }
-            const search = addCCSearch.value.toLowerCase();
+            // v-text-field's `clearable` sets the model to null on clear, so
+            // guard against null/empty before lowercasing.
+            const search = (addCCSearch.value ?? '').toLowerCase();
             return [...ids].sort((a, b) => a - b).filter(id => {
                 if (!search) return true;
-                return ccName(condNameMap.value, id).toLowerCase().includes(search) || String(id).includes(search);
+                const name = ccName(condNameMap.value, id) ?? '';
+                return name.toLowerCase().includes(search) || String(id).includes(search);
             });
         });
 
