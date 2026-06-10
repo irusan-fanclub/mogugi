@@ -322,7 +322,10 @@ func (t *eventPublisher) handleChannelCharacterInfo(p *packet.GamePacket) {
 	}
 	if err := writeEntitySnapshot(snap); err != nil {
 		logger.Printf("item-index: write csv failed: %v", err)
+		return
 	}
+	dir, _ := itemsLogDir()
+	logger.Printf("item-index: wrote %q (%d items) -> %s", snap.Name, len(snap.Items), dir)
 }
 
 func (t *eventPublisher) handleEntityAppear(p *packet.GamePacket) {

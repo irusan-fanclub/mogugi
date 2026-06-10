@@ -53,12 +53,19 @@ export default defineComponent({
         });
         const itemKindCount = computed(() => idx.value.size);
 
+        const allHolders = (): Holder[] => {
+            const out: Holder[] = [];
+            for (const holders of idx.value.values()) out.push(...holders);
+            return out;
+        };
+
         const rows = computed(() => {
             const q = query.value?.trim();
-            if (!q) return [];
-            const holders = /^\d+$/.test(q)
-                ? searchById(idx.value, Number(q))
-                : searchByName(idx.value, q, nameToIds);
+            const holders = !q
+                ? allHolders()
+                : /^\d+$/.test(q)
+                    ? searchById(idx.value, Number(q))
+                    : searchByName(idx.value, q, nameToIds);
             return holders.map(h => ({
                 item: itemName(h.id),
                 entity: h.entity,
