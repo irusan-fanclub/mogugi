@@ -5,6 +5,7 @@ package packet
 var OpCodeStringMap = map[uint32]string{
 	28202: "OpcodeChangeStance",
 	28201: "OpcodeChangeStanceRes",
+	21001: "OpcodeChannelCharacterInfoR",
 	21100: "OpcodeChat",
 	31014: "OpcodeCombatAction",
 	32001: "OpcodeCombatAttackRes",
