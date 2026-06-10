@@ -14,9 +14,10 @@ import Database from 'better-sqlite3';
 const BUILD_VERSION = 1;
 
 const REGION = 'tw';
-const TAG = 'tw-v151';
+const VER = 'v154';
+const TAG = `${REGION}-${VER}`;
 const REPO = 'irusan-fanclub/mabitsequal-builds';
-const ASSET = `mabi_${REGION}_v151.sqlite`;
+const ASSET = `mabi_${REGION}_${VER}.sqlite`;
 const SHA_ASSET = `${ASSET}.sha256`;
 
 const FRONT = path.resolve(import.meta.dirname, '..');
