@@ -11,8 +11,9 @@ import (
 	"github.com/irusan-fanclub/mabidilmeter/lib/packet"
 )
 
-// osExecutable is indirected for testing.
-var osExecutable = os.Executable
+// itemsLogDirPath 是物品索引 CSV 的輸出目錄，與 logs/ 同層（相對工作目錄）。
+// 以變數形式存在以便測試覆寫。
+var itemsLogDirPath = "items_log"
 
 // IndexItem / IndexEntity 是 /api/item-index 的聚合模型。
 type IndexItem struct {
@@ -47,13 +48,9 @@ func sanitizeEntityName(name string) string {
 	return strings.TrimSpace(b.String())
 }
 
-// itemsLogDir 回傳 {exedir}/items_log（依需求用 exe 目錄而非 cwd）。
+// itemsLogDir 回傳物品索引輸出目錄（與 logs/ 同層）。
 func itemsLogDir() (string, error) {
-	exe, err := osExecutable()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(filepath.Dir(exe), "items_log"), nil
+	return itemsLogDirPath, nil
 }
 
 // writeEntitySnapshot 把快照寫到 {exedir}/items_log/。

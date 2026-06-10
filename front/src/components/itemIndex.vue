@@ -21,7 +21,12 @@ export default defineComponent({
         const loading = ref(false);
         const idx = ref(new Map<number, Holder[]>());
 
-        const itemName = (id: number): string => itemNameMap.value[id] ?? `Item ${id}`;
+        // itemNameMap 的值格式為「名稱 id」，這裡去掉結尾的 id 只留名稱。
+        const itemName = (id: number): string => {
+            const label = itemNameMap.value[id];
+            if (!label) return `Item ${id}`;
+            return label.replace(/\s*\d+$/, '');
+        };
 
         // nameToIds: 回傳 label 含查詢字串的所有 item id（模糊比對）。
         const nameToIds = (name: string): number[] => {
@@ -68,6 +73,7 @@ export default defineComponent({
                     : searchByName(idx.value, q, nameToIds);
             return holders.map(h => ({
                 item: itemName(h.id),
+                itemId: h.id,
                 entity: h.entity,
                 master: h.master,
                 container: h.container,
@@ -78,9 +84,10 @@ export default defineComponent({
 
         const headers = [
             { title: '物品', key: 'item' },
-            { title: '實體', key: 'entity' },
-            { title: '飼主', key: 'master' },
-            { title: '容器', key: 'container' },
+            { title: '物品ID', key: 'itemId' },
+            { title: '角色', key: 'entity' },
+            { title: 'Owner', key: 'master' },
+            { title: '背包', key: 'container' },
             { title: '數量', key: 'qty' },
             { title: '座標', key: 'pos' },
         ];

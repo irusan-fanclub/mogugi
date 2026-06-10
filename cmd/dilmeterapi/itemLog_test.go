@@ -65,16 +65,16 @@ func TestReadItemIndex_MissingDir(t *testing.T) {
 }
 
 func TestWriteEntitySnapshot_UsesItemsLogDir(t *testing.T) {
-	dir := t.TempDir()
-	old := osExecutable
-	osExecutable = func() (string, error) { return filepath.Join(dir, "app.exe"), nil }
-	defer func() { osExecutable = old }()
+	dir := filepath.Join(t.TempDir(), "items_log")
+	old := itemsLogDirPath
+	itemsLogDirPath = dir
+	defer func() { itemsLogDirPath = old }()
 
 	snap := &packet.EntitySnapshot{Name: "汪汪", Items: []packet.InventoryItem{{ItemID: 7}}}
 	if err := writeEntitySnapshot(snap); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "items_log", "汪汪.csv")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "汪汪.csv")); err != nil {
 		t.Fatalf("csv not written: %v", err)
 	}
 }
