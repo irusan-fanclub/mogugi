@@ -59,6 +59,7 @@
         <v-tab value="applyDamageByEntity">Apply Damage (By Entity)</v-tab>
         <v-tab value="applyDamageBySkill">Apply Damage (By Skill)</v-tab>
         <v-tab value="entityList">Characters</v-tab>
+        <v-tab value="itemIndex">物品索引</v-tab>
     </v-tabs>
 
     <v-tabs-window v-model="tab">
@@ -76,6 +77,10 @@
 
         <v-tabs-window-item value="entityList">
             <entity-list />
+        </v-tabs-window-item>
+
+        <v-tabs-window-item value="itemIndex">
+            <item-index />
         </v-tabs-window-item>
     </v-tabs-window>
 
@@ -121,6 +126,7 @@ import TakeDamageComponent from '@/components/takeDamage.vue';
 import ApplyDamageByEntityComponent from '@/components/applyDamageByEntity.vue';
 import ApplyDamageBySkillComponent from '@/components/applyDamageBySkill.vue';
 import EntityListComponent from "./components/entityList.vue";
+import ItemIndexComponent from "./components/itemIndex.vue";
 import ConfigDialogComponent from "./components/configDialog.vue";
 import FloatingWindowComponent from "./components/subComponents/floatingWindow.vue";
 
@@ -131,6 +137,7 @@ export default defineComponent({
         ApplyDamageByEntity: ApplyDamageByEntityComponent,
         ApplyDamageBySkill: ApplyDamageBySkillComponent,
         EntityList: EntityListComponent,
+        ItemIndex: ItemIndexComponent,
         ConfigDialog: ConfigDialogComponent,
         FloatingWindow: FloatingWindowComponent,
     },
