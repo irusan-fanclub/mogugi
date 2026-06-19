@@ -34,6 +34,16 @@ func TestActivate_Expired(t *testing.T) {
 	}
 }
 
+func TestActivate_NoMacKey(t *testing.T) {
+	priv := setTestKey(t) // public key injected, but MacKeyHex left empty
+	oldMac, oldPath := MacKeyHex, pathOverride
+	MacKeyHex, pathOverride = "", t.TempDir()
+	t.Cleanup(func() { MacKeyHex, pathOverride = oldMac, oldPath })
+	if err := Activate(mintCode(t, priv, time.Now().Unix(), 1)); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("err=%v want ErrInvalid", err)
+	}
+}
+
 func TestStatus_TamperedMAC(t *testing.T) {
 	priv := setupActivated(t)
 	if err := Activate(mintCode(t, priv, time.Now().Unix(), 1)); err != nil {

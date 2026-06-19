@@ -31,6 +31,11 @@ func Status() bool {
 // Activate 驗證新發的碼（簽章 + 30 分鐘視窗），成功則把碼綁定本機寫入
 // license.dat。失敗回 ErrInvalid 或 ErrExpired。
 func Activate(code string) error {
+	// Fail closed if the MAC key wasn't injected: otherwise we would write a
+	// license.dat that Status() can never accept (it requires MacKeyHex).
+	if MacKeyHex == "" {
+		return ErrInvalid
+	}
 	issuedAt, err := decodeCode(code)
 	if err != nil {
 		return err
