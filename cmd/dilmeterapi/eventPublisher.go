@@ -644,8 +644,10 @@ func (t *eventPublisher) handleEffectDelayed(p *packet.GamePacket) {
 	}
 
 	ttype := p.Msg[1].Data().(uint32)
-	if ttype != 317 {
-		// Not a Chain Blade Blast
+	if ttype != 318 {
+		// Not 星塵-family delayed damage (Blast 58100 / Flare 58101 /
+		// 連續攻擊 58009). The discriminator changed 317 -> 318 in the
+		// 2026-06 update; see packet_capture_1781767719.
 		return
 	}
 
