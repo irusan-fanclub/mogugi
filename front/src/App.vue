@@ -1,4 +1,6 @@
 <template>
+  <license-gate v-if="!licenseActivated" @activated="onActivated" />
+  <template v-else>
     <v-sheet width="100vw" class="d-flex flex-wrap pl-1 pr-1">
         <v-sheet width="100svw" class="d-flex">
             <span style="text-wrap-mode: nowrap;">dilmatulgi <span style="opacity:0.5; font-size:0.85em;">v{{ appVersion }}</span><template v-if="isStandalone">
@@ -112,6 +114,7 @@
     <v-snackbar v-model="resetSnackbar" :timeout="4000" color="info" location="bottom right">
         <v-icon icon="mdi-swap-horizontal" class="mr-2" />{{ resetSnackbarText }}
     </v-snackbar>
+  </template>
 </template>
 
 <script lang="ts">
@@ -129,6 +132,7 @@ import EntityListComponent from "./components/entityList.vue";
 import ItemIndexComponent from "./components/itemIndex.vue";
 import ConfigDialogComponent from "./components/configDialog.vue";
 import FloatingWindowComponent from "./components/subComponents/floatingWindow.vue";
+import LicenseGateComponent from "./components/licenseGate.vue";
 
 export default defineComponent({
     name: "App",
@@ -140,6 +144,7 @@ export default defineComponent({
         ItemIndex: ItemIndexComponent,
         ConfigDialog: ConfigDialogComponent,
         FloatingWindow: FloatingWindowComponent,
+        LicenseGate: LicenseGateComponent,
     },
     setup() {
         const isLoading = inject('isLoading');
@@ -167,6 +172,17 @@ export default defineComponent({
         const resetSnackbarText = ref('');
 
         const isStandalone = __IS_STANDALONE__;
+        // 未啟用時顯示驗證碼輸入畫面；standalone build 無後端，不需驗證。
+        const licenseActivated = ref(isStandalone);
+        const onActivated = () => { licenseActivated.value = true; };
+        onMounted(async () => {
+            if (licenseActivated.value) return;
+            try {
+                const r = await fetch('/api/license/status');
+                const d = await r.json();
+                licenseActivated.value = !!d.activated;
+            } catch { /* 連不到後端就維持上鎖 */ }
+        });
         const appVersion = __APP_VERSION__;
 
         const socket = new SocketClient(`/ws`);
@@ -383,6 +399,8 @@ export default defineComponent({
             isLoading,
             region,
             isStandalone,
+            licenseActivated,
+            onActivated,
 
             socketConnected,
             msgBoxOpen,
