@@ -36,12 +36,12 @@ Write-Host "=== Mabidilmeter Release v$Version ===" -ForegroundColor Cyan
 
 . (Join-Path $PSScriptRoot 'keys-lib.ps1')
 try {
-    $lic = Get-LicenseKeyLDFlag
+    $lic = Get-LicenseLDFlag
 } catch {
     Write-Host $_.Exception.Message -ForegroundColor Red
     exit 1
 }
-Write-Host "Embedding $($lic.Count) license key hash(es)" -ForegroundColor Gray
+Write-Host "Embedding license public key + mac key" -ForegroundColor Gray
 
 # ── Frontend build ────────────────────────────────────────────────────────────
 Write-Host "`n[1/4] Building Frontend..." -ForegroundColor Yellow

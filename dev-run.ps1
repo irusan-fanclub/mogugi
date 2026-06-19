@@ -12,7 +12,7 @@ $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot 'keys-lib.ps1')
 try {
-    $lic = Get-LicenseKeyLDFlag
+    $lic = Get-LicenseLDFlag
 } catch {
     Write-Host $_.Exception.Message -ForegroundColor Red
     exit 1
