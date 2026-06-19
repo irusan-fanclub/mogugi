@@ -220,9 +220,11 @@ func startWebsocketServer(newClientCb func(*websocket.Conn)) {
 		handler(proxy)(w, r)
 	}
 
-	http.Handle("/ws", websocket.Handler(newClientCb))
-	http.HandleFunc("/api/packet_log", httpHandlerPacketLog)
-	http.HandleFunc("/api/item-index", httpHandlerItemIndex)
+	http.Handle("/ws", requireLicense(websocket.Handler(newClientCb)))
+	http.Handle("/api/packet_log", requireLicense(http.HandlerFunc(httpHandlerPacketLog)))
+	http.Handle("/api/item-index", requireLicense(http.HandlerFunc(httpHandlerItemIndex)))
+	http.HandleFunc("/api/license/status", httpHandlerLicenseStatus)
+	http.HandleFunc("/api/license/activate", httpHandlerLicenseActivate)
 	http.HandleFunc("/res/", resourceHandler)
 
 	var staticFS = fs.FS(staticFiles)
