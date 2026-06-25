@@ -3,6 +3,7 @@ package license
 import (
 	"crypto/ed25519"
 	"crypto/hmac"
+	"strconv"
 	"time"
 )
 
@@ -37,18 +38,35 @@ func Activate(code string) error {
 	if MacKeyHex == "" {
 		return ErrInvalid
 	}
-	issuedAt, err := decodeCode(code)
+	info, err := decodeCode(code)
 	if err != nil {
 		return err
 	}
 	now := time.Now().Unix()
-	if now-issuedAt > int64(activationWindow.Seconds()) {
+	if now-info.IssuedAt > int64(activationWindow.Seconds()) {
 		return ErrExpired
 	}
-	if issuedAt-now > int64(clockSkew.Seconds()) {
+	if info.IssuedAt-now > int64(clockSkew.Seconds()) {
 		return ErrExpired // issuedAt is unreasonably far in the future
 	}
 	d := licenseData{Code: code, ActivatedAt: now, MachineID: currentMachineID()}
 	d.MAC = computeMAC(d)
 	return writeLicenseData(d)
+}
+
+// Identity returns the activated user's Discord ID (as a string, since 64-bit
+// IDs lose precision in JSON/JS) and display name. ok is false if not activated.
+func Identity() (userID string, displayName string, ok bool) {
+	if !Status() {
+		return "", "", false
+	}
+	d, err := readLicenseData()
+	if err != nil {
+		return "", "", false
+	}
+	info, err := decodeCode(d.Code)
+	if err != nil {
+		return "", "", false
+	}
+	return strconv.FormatUint(info.UserID, 10), info.DisplayName, true
 }

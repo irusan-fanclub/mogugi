@@ -18,7 +18,7 @@ func setupActivated(t *testing.T) (priv ed25519PrivAlias) {
 
 func TestActivateAndStatus(t *testing.T) {
 	priv := setupActivated(t)
-	if err := Activate(mintCode(t, priv, time.Now().Unix(), 7)); err != nil {
+	if err := Activate(mintCode(t, priv, time.Now().Unix(), 42, "u")); err != nil {
 		t.Fatalf("Activate: %v", err)
 	}
 	if !Status() {
@@ -29,7 +29,7 @@ func TestActivateAndStatus(t *testing.T) {
 func TestActivate_Expired(t *testing.T) {
 	priv := setupActivated(t)
 	old := time.Now().Add(-31 * time.Minute).Unix()
-	if err := Activate(mintCode(t, priv, old, 1)); !errors.Is(err, ErrExpired) {
+	if err := Activate(mintCode(t, priv, old, 42, "u")); !errors.Is(err, ErrExpired) {
 		t.Fatalf("err=%v want ErrExpired", err)
 	}
 }
@@ -39,14 +39,14 @@ func TestActivate_NoMacKey(t *testing.T) {
 	oldMac, oldPath := MacKeyHex, pathOverride
 	MacKeyHex, pathOverride = "", t.TempDir()
 	t.Cleanup(func() { MacKeyHex, pathOverride = oldMac, oldPath })
-	if err := Activate(mintCode(t, priv, time.Now().Unix(), 1)); !errors.Is(err, ErrInvalid) {
+	if err := Activate(mintCode(t, priv, time.Now().Unix(), 42, "u")); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("err=%v want ErrInvalid", err)
 	}
 }
 
 func TestStatus_TamperedMAC(t *testing.T) {
 	priv := setupActivated(t)
-	if err := Activate(mintCode(t, priv, time.Now().Unix(), 1)); err != nil {
+	if err := Activate(mintCode(t, priv, time.Now().Unix(), 42, "u")); err != nil {
 		t.Fatal(err)
 	}
 	d, _ := readLicenseData()
@@ -59,7 +59,7 @@ func TestStatus_TamperedMAC(t *testing.T) {
 
 func TestStatus_MachineMismatch(t *testing.T) {
 	priv := setupActivated(t)
-	if err := Activate(mintCode(t, priv, time.Now().Unix(), 1)); err != nil {
+	if err := Activate(mintCode(t, priv, time.Now().Unix(), 42, "u")); err != nil {
 		t.Fatal(err)
 	}
 	d, _ := readLicenseData()
@@ -73,7 +73,7 @@ func TestStatus_MachineMismatch(t *testing.T) {
 
 func TestStatus_OldCodeStillValidOnceStored(t *testing.T) {
 	priv := setupActivated(t)
-	oldCode := mintCode(t, priv, time.Now().Add(-48*time.Hour).Unix(), 1)
+	oldCode := mintCode(t, priv, time.Now().Add(-48*time.Hour).Unix(), 42, "u")
 	d := licenseData{Code: oldCode, ActivatedAt: time.Now().Unix(), MachineID: currentMachineID()}
 	d.MAC = computeMAC(d)
 	if err := writeLicenseData(d); err != nil {

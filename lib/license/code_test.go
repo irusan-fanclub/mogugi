@@ -12,11 +12,12 @@ import (
 )
 
 // mintCode mints a code using the test private key.
-func mintCode(t *testing.T, priv ed25519.PrivateKey, issuedAt int64, serial uint32) string {
+func mintCode(t *testing.T, priv ed25519.PrivateKey, issuedAt int64, userID uint64, name string) string {
 	t.Helper()
-	payload := make([]byte, 8)
+	payload := make([]byte, 12+len(name))
 	binary.BigEndian.PutUint32(payload[0:], uint32(issuedAt))
-	binary.BigEndian.PutUint32(payload[4:], serial)
+	binary.BigEndian.PutUint64(payload[4:], userID)
+	copy(payload[12:], name)
 	sig := ed25519.Sign(priv, payload)
 	return codePrefix + base64.RawURLEncoding.EncodeToString(append(payload, sig...))
 }
@@ -37,18 +38,18 @@ func setTestKey(t *testing.T) ed25519.PrivateKey {
 func TestDecodeCode_Valid(t *testing.T) {
 	priv := setTestKey(t)
 	now := time.Now().Unix()
-	got, err := decodeCode(mintCode(t, priv, now, 12345))
+	info, err := decodeCode(mintCode(t, priv, now, 123456789012345678, "Tester"))
 	if err != nil {
 		t.Fatalf("decodeCode: %v", err)
 	}
-	if got != now {
-		t.Fatalf("issuedAt=%d want %d", got, now)
+	if info.IssuedAt != now || info.UserID != 123456789012345678 || info.DisplayName != "Tester" {
+		t.Fatalf("got %+v", info)
 	}
 }
 
 func TestDecodeCode_Tampered(t *testing.T) {
 	priv := setTestKey(t)
-	code := mintCode(t, priv, time.Now().Unix(), 1)
+	code := mintCode(t, priv, time.Now().Unix(), 1, "x")
 	bad := code[:len(code)-1] + string(rune(code[len(code)-1]^1))
 	if _, err := decodeCode(bad); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("err=%v want ErrInvalid", err)

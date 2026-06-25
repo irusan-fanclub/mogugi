@@ -8,6 +8,7 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // ErrInvalid: code is malformed or the signature does not verify.
@@ -25,7 +26,7 @@ var PublicKeyHex = ""
 
 const (
 	codePrefix = "MOGU-"
-	payloadLen = 8 // issuedAt(uint32) + serial(uint32)
+	headerLen  = 12 // issuedAt(4)+userID(8)
 
 	// activationWindow: how long a freshly issued code may be activated for the first time.
 	activationWindow = 30 * time.Minute
@@ -33,29 +34,47 @@ const (
 	clockSkew = 5 * time.Minute
 )
 
-// decodeCode parses a MOGU code, verifies its signature against the embedded public key, and returns issuedAt (unix seconds).
-func decodeCode(code string) (int64, error) {
+// codeInfo is the verified content of a MOGU code.
+type codeInfo struct {
+	IssuedAt    int64  // unix seconds the code was signed
+	UserID      uint64 // Discord user ID
+	DisplayName string // snapshot of the user's display name at issue time
+}
+
+// decodeCode parses a MOGU code, verifies its signature against the embedded
+// public key, and returns its content.
+func decodeCode(code string) (codeInfo, error) {
 	pubHex := strings.TrimSpace(PublicKeyHex)
 	if pubHex == "" {
-		return 0, ErrInvalid
+		return codeInfo{}, ErrInvalid
 	}
 	pub, err := hex.DecodeString(pubHex)
 	if err != nil || len(pub) != ed25519.PublicKeySize {
-		return 0, ErrInvalid
+		return codeInfo{}, ErrInvalid
 	}
 
 	code = strings.TrimSpace(code)
 	if !strings.HasPrefix(code, codePrefix) {
-		return 0, ErrInvalid
+		return codeInfo{}, ErrInvalid
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(code[len(codePrefix):])
-	if err != nil || len(raw) != payloadLen+ed25519.SignatureSize {
-		return 0, ErrInvalid
+	if err != nil || len(raw) < headerLen+ed25519.SignatureSize {
+		return codeInfo{}, ErrInvalid
 	}
 
-	payload, sig := raw[:payloadLen], raw[payloadLen:]
+	sig := raw[len(raw)-ed25519.SignatureSize:]
+	payload := raw[:len(raw)-ed25519.SignatureSize]
 	if !ed25519.Verify(ed25519.PublicKey(pub), payload, sig) {
-		return 0, ErrInvalid
+		return codeInfo{}, ErrInvalid
 	}
-	return int64(binary.BigEndian.Uint32(payload[0:4])), nil
+
+	name := payload[headerLen:]
+	if !utf8.Valid(name) {
+		return codeInfo{}, ErrInvalid
+	}
+	return codeInfo{
+		IssuedAt:    int64(binary.BigEndian.Uint32(payload[0:4])),
+		UserID:      binary.BigEndian.Uint64(payload[4:12]),
+		DisplayName: string(name),
+	}, nil
 }
