@@ -27,8 +27,8 @@ const (
 	codePrefix = "MOGU-"
 	payloadLen = 8 // issuedAt(uint32) + serial(uint32)
 
-	// ActivationWindow: how long a freshly issued code may be activated for the first time.
-	ActivationWindow = 30 * time.Minute
+	// activationWindow: how long a freshly issued code may be activated for the first time.
+	activationWindow = 30 * time.Minute
 	// clockSkew: tolerance for issuedAt values that are slightly in the future.
 	clockSkew = 5 * time.Minute
 )

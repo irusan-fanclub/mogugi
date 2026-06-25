@@ -42,7 +42,7 @@ func Activate(code string) error {
 		return err
 	}
 	now := time.Now().Unix()
-	if now-issuedAt > int64(ActivationWindow.Seconds()) {
+	if now-issuedAt > int64(activationWindow.Seconds()) {
 		return ErrExpired
 	}
 	if issuedAt-now > int64(clockSkew.Seconds()) {
