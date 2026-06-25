@@ -3,7 +3,7 @@
   <template v-else>
     <v-sheet width="100vw" class="d-flex flex-wrap pl-1 pr-1">
         <v-sheet width="100svw" class="d-flex">
-            <span style="text-wrap-mode: nowrap;">dilmatulgi <span style="opacity:0.5; font-size:0.85em;">v{{ appVersion }}</span><template v-if="isStandalone">
+            <span style="text-wrap-mode: nowrap;">dilmatulgi <span style="opacity:0.5; font-size:0.85em;">v{{ appVersion }}</span><span v-if="licenseUser" style="opacity:0.6; font-size:0.85em;"> · {{ licenseUser }}</span><template v-if="isStandalone">
                 <v-icon icon="mdi-check" color="success" />standalone
             </template><template v-else>, api
                 <span v-if="socketConnected"><v-icon icon="mdi-check" color="success" />connected</span>
@@ -174,14 +174,19 @@ export default defineComponent({
         const isStandalone = __IS_STANDALONE__;
         // Show the activation code screen when not yet activated; standalone builds have no backend and need no verification.
         const licenseActivated = ref(isStandalone);
-        const onActivated = () => { licenseActivated.value = true; };
-        onMounted(async () => {
-            if (licenseActivated.value) return;
+        const licenseUser = ref('');
+        const fetchLicenseStatus = async () => {
             try {
                 const r = await fetch('/api/license/status');
                 const d = await r.json();
                 licenseActivated.value = !!d.activated;
+                licenseUser.value = d.displayName || '';
             } catch { /* keep locked if the backend is unreachable */ }
+        };
+        const onActivated = () => { licenseActivated.value = true; fetchLicenseStatus(); };
+        onMounted(() => {
+            if (licenseActivated.value) return;
+            fetchLicenseStatus();
         });
         const appVersion = __APP_VERSION__;
 
@@ -400,6 +405,7 @@ export default defineComponent({
             region,
             isStandalone,
             licenseActivated,
+            licenseUser,
             onActivated,
 
             socketConnected,

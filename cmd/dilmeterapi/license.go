@@ -20,7 +20,13 @@ func requireLicense(next http.Handler) http.Handler {
 }
 
 func httpHandlerLicenseStatus(w http.ResponseWriter, _ *http.Request) {
-	writeLicenseJSON(w, http.StatusOK, map[string]any{"activated": license.Status()})
+	if uid, name, ok := license.Identity(); ok {
+		writeLicenseJSON(w, http.StatusOK, map[string]any{
+			"activated": true, "userId": uid, "displayName": name,
+		})
+		return
+	}
+	writeLicenseJSON(w, http.StatusOK, map[string]any{"activated": false})
 }
 
 func httpHandlerLicenseActivate(w http.ResponseWriter, r *http.Request) {
