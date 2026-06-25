@@ -8,7 +8,7 @@ import (
 	"os"
 )
 
-// currentMachineID 在非 Windows 平台以 hostname 為指紋來源。
+// currentMachineID uses the hostname as the fingerprint source on non-Windows platforms.
 func currentMachineID() string {
 	host, _ := os.Hostname()
 	sum := sha256.Sum256([]byte("host:" + host))

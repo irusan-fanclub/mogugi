@@ -11,13 +11,13 @@ import (
 	"strings"
 )
 
-// MacKeyHex 為 build 時與 PublicKeyHex 一同注入的 HMAC 密鑰（hex）。
-// 用來提高手改 license.dat 繞過視窗的門檻（僅嚇阻；它內嵌於執行檔）。
+// MacKeyHex is the HMAC secret key (hex) injected at build time alongside PublicKeyHex.
+// It raises the bar for manually editing license.dat to bypass the window (deterrence only; it is embedded in the binary).
 var MacKeyHex = ""
 
 const licenseFileName = "license.dat"
 
-// pathOverride 非空時取代 exe 目錄解析；測試用。
+// pathOverride, when non-empty, replaces the executable-directory resolution; used in tests.
 var pathOverride string
 
 type licenseData struct {
@@ -37,7 +37,7 @@ func licenseFilePath() string {
 	return licenseFileName
 }
 
-// computeMAC 對 code|activatedAt|machineId 以 MacKeyHex 做 HMAC-SHA256。
+// computeMAC computes HMAC-SHA256 of code|activatedAt|machineId using MacKeyHex.
 func computeMAC(d licenseData) string {
 	key, _ := hex.DecodeString(strings.TrimSpace(MacKeyHex))
 	mac := hmac.New(sha256.New, key)

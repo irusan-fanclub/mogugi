@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// mintcode 以 MOGU_ED25519_PRIV 鑄一組碼（鏡像 bot 簽發邏輯），僅供本機測試。
+// mintcode mints a code using MOGU_ED25519_PRIV (mirrors the bot's signing logic), for local testing only.
 func main() {
 	seed, err := hex.DecodeString(os.Getenv("MOGU_ED25519_PRIV"))
 	if err != nil || len(seed) != ed25519.SeedSize {

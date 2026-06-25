@@ -6,11 +6,12 @@ import (
 	"time"
 )
 
-// ed25519PrivAlias 供測試 helper 標示回傳型別。
+// ed25519PrivAlias is used by test helpers to annotate the return type.
 type ed25519PrivAlias = ed25519.PrivateKey
 
-// Status 回報本安裝是否已啟用：存在 license.dat 且其碼簽章、MAC、
-// 機器指紋皆通過。此處「不」再檢查 30 分鐘視窗 → 已啟用者永久可用。
+// Status reports whether this installation is activated: license.dat must exist and its
+// code signature, MAC, and machine fingerprint must all pass. The 30-minute window is
+// NOT checked here — once activated, the license is permanently valid.
 func Status() bool {
 	if MacKeyHex == "" {
 		return false
@@ -28,8 +29,8 @@ func Status() bool {
 	return d.MachineID == currentMachineID()
 }
 
-// Activate 驗證新發的碼（簽章 + 30 分鐘視窗），成功則把碼綁定本機寫入
-// license.dat。失敗回 ErrInvalid 或 ErrExpired。
+// Activate validates a freshly issued code (signature + 30-minute window) and, on success,
+// binds it to this machine by writing license.dat. Returns ErrInvalid or ErrExpired on failure.
 func Activate(code string) error {
 	// Fail closed if the MAC key wasn't injected: otherwise we would write a
 	// license.dat that Status() can never accept (it requires MacKeyHex).
@@ -45,7 +46,7 @@ func Activate(code string) error {
 		return ErrExpired
 	}
 	if issuedAt-now > int64(clockSkew.Seconds()) {
-		return ErrExpired // issuedAt 落在不合理的未來
+		return ErrExpired // issuedAt is unreasonably far in the future
 	}
 	d := licenseData{Code: code, ActivatedAt: now, MachineID: currentMachineID()}
 	d.MAC = computeMAC(d)

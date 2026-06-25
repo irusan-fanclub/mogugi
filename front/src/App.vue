@@ -172,7 +172,7 @@ export default defineComponent({
         const resetSnackbarText = ref('');
 
         const isStandalone = __IS_STANDALONE__;
-        // 未啟用時顯示驗證碼輸入畫面；standalone build 無後端，不需驗證。
+        // Show the activation code screen when not yet activated; standalone builds have no backend and need no verification.
         const licenseActivated = ref(isStandalone);
         const onActivated = () => { licenseActivated.value = true; };
         onMounted(async () => {
@@ -181,7 +181,7 @@ export default defineComponent({
                 const r = await fetch('/api/license/status');
                 const d = await r.json();
                 licenseActivated.value = !!d.activated;
-            } catch { /* 連不到後端就維持上鎖 */ }
+            } catch { /* keep locked if the backend is unreachable */ }
         });
         const appVersion = __APP_VERSION__;
 

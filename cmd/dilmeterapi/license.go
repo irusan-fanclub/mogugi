@@ -8,7 +8,7 @@ import (
 	"github.com/irusan-fanclub/mabidilmeter/lib/license"
 )
 
-// requireLicense 包住資料端點：未啟用回 403。
+// requireLicense wraps data endpoints: returns 403 if the license is not activated.
 func requireLicense(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !license.Status() {

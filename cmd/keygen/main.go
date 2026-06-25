@@ -7,8 +7,8 @@ import (
 	"fmt"
 )
 
-// keygen 產生一組 Ed25519 金鑰對與一把 HMAC 密鑰。
-// 私鑰交給 Discord bot（環境變數），公鑰與 MAC 密鑰供 build 注入。
+// keygen generates an Ed25519 key pair and one HMAC secret key.
+// The private key goes to the Discord bot (environment variable); the public key and MAC key are injected at build time.
 func main() {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -19,9 +19,9 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Println("# SECRET — 交給 Discord bot，切勿進 git：")
+	fmt.Println("# SECRET — give to the Discord bot, never commit to git:")
 	fmt.Printf("MOGU_ED25519_PRIV=%s\n\n", hex.EncodeToString(priv.Seed()))
-	fmt.Println("# Build 注入（存進 license-build.txt）：")
+	fmt.Println("# Build injection values (store in license-build.txt):")
 	fmt.Printf("PublicKeyHex=%s\n", hex.EncodeToString(pub))
 	fmt.Printf("MacKeyHex=%s\n", hex.EncodeToString(macKey))
 }

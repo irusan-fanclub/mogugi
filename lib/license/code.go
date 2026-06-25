@@ -10,30 +10,30 @@ import (
 	"time"
 )
 
-// ErrInvalid：碼格式錯誤或簽章驗不過。
+// ErrInvalid: code is malformed or the signature does not verify.
 var ErrInvalid = errors.New("invalid")
 
-// ErrExpired：碼為真但已超出啟用視窗。
+// ErrExpired: code is authentic but the activation window has passed.
 var ErrExpired = errors.New("expired")
 
-// PublicKeyHex 為 build 時注入的 Ed25519 公鑰（hex）：
+// PublicKeyHex is the Ed25519 public key (hex) injected at build time:
 //
 //	-ldflags "-X github.com/irusan-fanclub/mabidilmeter/lib/license.PublicKeyHex=<hex>"
 //
-// 未注入（dev build）時一律拒絕（fail closed）。
+// If not injected (dev build), all codes are rejected (fail closed).
 var PublicKeyHex = ""
 
 const (
 	codePrefix = "MOGU-"
 	payloadLen = 8 // issuedAt(uint32) + serial(uint32)
 
-	// ActivationWindow：碼可被首次啟用的時間長度。
+	// ActivationWindow: how long a freshly issued code may be activated for the first time.
 	ActivationWindow = 30 * time.Minute
-	// clockSkew：容許 issuedAt 稍微落在未來的偏移量。
+	// clockSkew: tolerance for issuedAt values that are slightly in the future.
 	clockSkew = 5 * time.Minute
 )
 
-// decodeCode 解析 MOGU 碼、以內嵌公鑰驗簽，回傳 issuedAt（unix 秒）。
+// decodeCode parses a MOGU code, verifies its signature against the embedded public key, and returns issuedAt (unix seconds).
 func decodeCode(code string) (int64, error) {
 	pubHex := strings.TrimSpace(PublicKeyHex)
 	if pubHex == "" {

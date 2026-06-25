@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// setupActivated 注入測試金鑰與 MAC 密鑰，並把 license.dat 導到暫存目錄。
+// setupActivated injects the test key pair and MAC key, and redirects license.dat to a temp directory.
 func setupActivated(t *testing.T) (priv ed25519PrivAlias) {
 	t.Helper()
 	p := setTestKey(t)
@@ -64,7 +64,7 @@ func TestStatus_MachineMismatch(t *testing.T) {
 	}
 	d, _ := readLicenseData()
 	d.MachineID = "someoneelse"
-	d.MAC = computeMAC(*d) // 重算 MAC，隔離出機器指紋這一項
+	d.MAC = computeMAC(*d) // recompute MAC so the machine fingerprint is the only changed field
 	_ = writeLicenseData(*d)
 	if Status() {
 		t.Fatal("Status=true with mismatched machineId")
@@ -80,6 +80,6 @@ func TestStatus_OldCodeStillValidOnceStored(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !Status() {
-		t.Fatal("Status=false; 已儲存後不應再檢查視窗")
+		t.Fatal("Status=false; window should not be checked once the code is stored")
 	}
 }

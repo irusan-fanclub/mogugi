@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// mintCode 用測試私鑰鑄一組碼。
+// mintCode mints a code using the test private key.
 func mintCode(t *testing.T, priv ed25519.PrivateKey, issuedAt int64, serial uint32) string {
 	t.Helper()
 	payload := make([]byte, 8)
@@ -21,7 +21,7 @@ func mintCode(t *testing.T, priv ed25519.PrivateKey, issuedAt int64, serial uint
 	return codePrefix + base64.RawURLEncoding.EncodeToString(append(payload, sig...))
 }
 
-// setTestKey 產一組金鑰對並注入 PublicKeyHex，回傳私鑰。
+// setTestKey generates a key pair, injects the public key into PublicKeyHex, and returns the private key.
 func setTestKey(t *testing.T) ed25519.PrivateKey {
 	t.Helper()
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)

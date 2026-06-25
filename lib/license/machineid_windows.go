@@ -10,8 +10,8 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
-// currentMachineID 回傳穩定的本機指紋雜湊。Windows 取 OS MachineGuid；
-// 讀不到則退回 hostname。
+// currentMachineID returns a stable machine fingerprint hash. On Windows it reads the OS MachineGuid;
+// falls back to hostname if that is unavailable.
 func currentMachineID() string {
 	if guid, err := readMachineGUID(); err == nil && guid != "" {
 		return hashID("guid:" + guid)
