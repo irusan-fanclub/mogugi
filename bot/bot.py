@@ -1,4 +1,4 @@
-"""MOGUGI license bot — issues per-user dilmeter activation codes via /getkey.
+"""MOGUGI license bot — issues per-user mogugi activation codes via /getkey.
 
 The code format MUST match lib/license/code.go (decodeCode):
     payload = issuedAt(uint32 BE) + userID(uint64 BE) + displayName(UTF-8)
@@ -84,7 +84,7 @@ async def on_ready():
     log.info("logged in as %s (guild_sync=%s)", client.user, bool(GUILD_ID))
 
 
-@tree.command(name="getkey", description="取得 dilmeter 啟用驗證碼（30 分鐘內有效）")
+@tree.command(name="getkey", description="取得 mogugi 啟用驗證碼（30 分鐘內有效）")
 async def getkey(interaction: discord.Interaction):
     user = interaction.user
 
@@ -118,7 +118,7 @@ async def getkey(interaction: discord.Interaction):
     log.info("issued code to %s (%s) key_version=%d", user.id, display_name, KEY_VERSION)
 
     await interaction.response.send_message(
-        "你的 dilmeter 啟用驗證碼（**30 分鐘內**於 App 啟用畫面貼上）:\n"
+        "你的 mogugi 啟用驗證碼（**30 分鐘內**於 App 啟用畫面貼上）:\n"
         f"```\n{code}\n```\n"
         f"此碼綁定 **{display_name}**，逾時請重新 `/getkey`。",
         ephemeral=True,
