@@ -60,11 +60,19 @@ Create `.env` next to `bot.py` (it is gitignored):
 ```bash
 DISCORD_TOKEN=your_bot_token
 MOGUGI_ED25519_PRIV=priv_seed_from_keygen
-MOGUGI_GUILD_ID=your_server_id      # optional, instant command sync
-MOGUGI_COOLDOWN=10                  # seconds between issues per user
-MOGUGI_KEY_VERSION=1                # bump when you rotate the signing key
+# optional: instant slash-command sync
+MOGUGI_GUILD_ID=your_server_id
+# optional: seconds between issues per user (default 10)
+MOGUGI_COOLDOWN=10
+# optional: bump when you rotate the signing key (default 1)
+MOGUGI_KEY_VERSION=1
 # MOGUGI_DB is set by Docker/systemd below — leave it out here.
 ```
+
+> ⚠️ **Do NOT put inline `# comments` after a value.** Both Docker Compose's
+> `env_file` and systemd's `EnvironmentFile` treat everything after `=` as the
+> value — the `# ...` becomes part of it and will crash the bot (e.g.
+> `int('10  # ...')`). Put comments on their own lines, as above.
 
 | Var | Required | Purpose |
 |---|---|---|
