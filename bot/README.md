@@ -6,6 +6,10 @@ Ed25519 private key, and is valid for **30 minutes** (the App's activation windo
 
 The code format is verified byte-for-byte compatible with `lib/license` (Go).
 
+> **Just want to deploy?** See **[DEPLOY.md](DEPLOY.md)** for the full end-to-end
+> runbook (keygen → Discord setup → Docker/systemd hosting → how users get a code).
+> Docker quick start: put your `.env` here, then `docker compose up -d`.
+
 ## 1. Generate keys (once)
 
 In the Go repo root:
