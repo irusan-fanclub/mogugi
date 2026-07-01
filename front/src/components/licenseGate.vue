@@ -6,7 +6,7 @@
       請貼上從 Discord 機器人取得的驗證碼。每組驗證碼僅供本人使用，
       且需於取得後 30 分鐘內啟用。
     </p>
-    <v-text-field v-model="code" label="驗證碼 (MOGU-...)" variant="outlined"
+    <v-text-field v-model="code" label="驗證碼 (MOMETER-...)" variant="outlined"
       density="comfortable" class="w-100" :error-messages="errorMsg"
       @keyup.enter="activate" />
     <v-btn color="primary" block :loading="busy" @click="activate">啟用</v-btn>

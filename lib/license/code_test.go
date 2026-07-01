@@ -60,7 +60,7 @@ func TestDecodeCode_NoKey(t *testing.T) {
 	old := PublicKeyHex
 	PublicKeyHex = ""
 	t.Cleanup(func() { PublicKeyHex = old })
-	if _, err := decodeCode("MOGU-anything"); !errors.Is(err, ErrInvalid) {
+	if _, err := decodeCode("MOMETER-anything"); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("err=%v want ErrInvalid", err)
 	}
 }

@@ -25,7 +25,7 @@ var ErrExpired = errors.New("expired")
 var PublicKeyHex = ""
 
 const (
-	codePrefix = "MOGU-"
+	codePrefix = "MOMETER-"
 	headerLen  = 12 // issuedAt(4)+userID(8)
 
 	// activationWindow: how long a freshly issued code may be activated for the first time.
@@ -34,14 +34,14 @@ const (
 	clockSkew = 5 * time.Minute
 )
 
-// codeInfo is the verified content of a MOGU code.
+// codeInfo is the verified content of a MOMETER code.
 type codeInfo struct {
 	IssuedAt    int64  // unix seconds the code was signed
 	UserID      uint64 // Discord user ID
 	DisplayName string // snapshot of the user's display name at issue time
 }
 
-// decodeCode parses a MOGU code, verifies its signature against the embedded
+// decodeCode parses a MOMETER code, verifies its signature against the embedded
 // public key, and returns its content.
 func decodeCode(code string) (codeInfo, error) {
 	pubHex := strings.TrimSpace(PublicKeyHex)
