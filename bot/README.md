@@ -41,7 +41,6 @@ pip install -r requirements.txt
 | `DISCORD_TOKEN` | yes | Bot token (Discord Developer Portal) |
 | `MOGUGI_ED25519_PRIV` | yes | 32-byte seed hex from `cmd/keygen` — **secret** |
 | `MOGUGI_GUILD_ID` | no | A guild ID → instant slash-command sync (else global sync, ~1h) |
-| `MOGUGI_ROLE_ID` | no | Restrict `/getkey` to this role ID (unset = anyone) |
 | `MOGUGI_DB` | no | SQLite path (default `mogugi_keys.db`) |
 | `MOGUGI_COOLDOWN` | no | Seconds between issues per user (default `10`) |
 

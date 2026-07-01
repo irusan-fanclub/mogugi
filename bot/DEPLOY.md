@@ -61,7 +61,6 @@ Create `.env` next to `bot.py` (it is gitignored):
 DISCORD_TOKEN=your_bot_token
 MOGUGI_ED25519_PRIV=priv_seed_from_keygen
 MOGUGI_GUILD_ID=your_server_id      # optional, instant command sync
-MOGUGI_ROLE_ID=                     # optional, restrict /getkey to one role
 MOGUGI_COOLDOWN=10                  # seconds between issues per user
 MOGUGI_KEY_VERSION=1                # bump when you rotate the signing key
 # MOGUGI_DB is set by Docker/systemd below — leave it out here.
@@ -72,7 +71,6 @@ MOGUGI_KEY_VERSION=1                # bump when you rotate the signing key
 | `DISCORD_TOKEN` | yes | Bot token |
 | `MOGUGI_ED25519_PRIV` | yes | 32-byte seed hex from `cmd/keygen` — **secret** |
 | `MOGUGI_GUILD_ID` | no | Guild ID → instant slash-command sync |
-| `MOGUGI_ROLE_ID` | no | Only this role may `/getkey` (unset = anyone) |
 | `MOGUGI_DB` | no | SQLite path (Docker: `/data/...`; systemd: an abs path) |
 | `MOGUGI_COOLDOWN` | no | Seconds between issues per user (default `10`) |
 | `MOGUGI_KEY_VERSION` | no | Recorded per code for rotation tracking (default `1`) |
@@ -155,8 +153,8 @@ Notes:
   name in the toolbar after activation.
 - Codes expire in 30 min (anti-forwarding) — if it expires, just `/getkey` again.
 - New PC / reinstall → `/getkey` again for a fresh code.
-- With `MOGUGI_ROLE_ID` set, only members with that role can obtain a code — hand out
-  the role after purchase to gate access.
+- Anyone in the server can run `/getkey` — restrict who can see/use the command with
+  Discord's own **Server Settings → Integrations → mogugi → /getkey** permissions if needed.
 
 ---
 

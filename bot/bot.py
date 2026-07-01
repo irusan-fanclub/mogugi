@@ -26,7 +26,6 @@ log = logging.getLogger("mogugi-bot")
 TOKEN = os.environ["DISCORD_TOKEN"]
 PRIV_HEX = os.environ["MOGUGI_ED25519_PRIV"]  # 32-byte seed hex from `go run ./cmd/keygen`
 GUILD_ID = os.environ.get("MOGUGI_GUILD_ID")  # optional: instant per-guild command sync
-ROLE_ID = os.environ.get("MOGUGI_ROLE_ID")    # optional: restrict /getkey to one role
 DB_PATH = os.environ.get("MOGUGI_DB", "mogugi_keys.db")
 COOLDOWN_SEC = int(os.environ.get("MOGUGI_COOLDOWN", "10"))
 KEY_VERSION = int(os.environ.get("MOGUGI_KEY_VERSION", "1"))  # which signing key issued the code; bump on rotation
@@ -88,15 +87,6 @@ async def on_ready():
 @tree.command(name="getkey", description="取得 dilmeter 啟用驗證碼（30 分鐘內有效）")
 async def getkey(interaction: discord.Interaction):
     user = interaction.user
-
-    # Role gate (skipped if MOGUGI_ROLE_ID unset). DMs have no roles → blocked when gated.
-    if ROLE_ID:
-        role_ids = {r.id for r in getattr(user, "roles", [])}
-        if int(ROLE_ID) not in role_ids:
-            await interaction.response.send_message(
-                "你沒有領取驗證碼的權限。", ephemeral=True
-            )
-            return
 
     now = int(time.time())
     row = db.execute("SELECT issued_at FROM keys WHERE user_id=?", (user.id,)).fetchone()
