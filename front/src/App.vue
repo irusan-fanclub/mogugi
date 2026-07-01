@@ -3,7 +3,7 @@
   <template v-else>
     <v-sheet width="100vw" class="d-flex flex-wrap pl-1 pr-1">
         <v-sheet width="100svw" class="d-flex">
-            <span style="text-wrap-mode: nowrap;">dilmatulgi <span style="opacity:0.5; font-size:0.85em;">v{{ appVersion }}</span><span v-if="licenseUser" style="opacity:0.6; font-size:0.85em;"> · {{ licenseUser }}</span><template v-if="isStandalone">
+            <span style="text-wrap-mode: nowrap;">mogugi <span style="opacity:0.5; font-size:0.85em;">v{{ appVersion }}</span><span v-if="licenseUser" style="opacity:0.6; font-size:0.85em;"> · {{ licenseUser }}</span><template v-if="isStandalone">
                 <v-icon icon="mdi-check" color="success" />standalone
             </template><template v-else>, api
                 <span v-if="socketConnected"><v-icon icon="mdi-check" color="success" />connected</span>
@@ -62,6 +62,7 @@
         <v-tab value="applyDamageBySkill">Apply Damage (By Skill)</v-tab>
         <v-tab value="entityList">Characters</v-tab>
         <v-tab value="itemIndex">物品索引</v-tab>
+        <v-tab value="about">About</v-tab>
     </v-tabs>
 
     <v-tabs-window v-model="tab">
@@ -83,6 +84,14 @@
 
         <v-tabs-window-item value="itemIndex">
             <item-index />
+        </v-tabs-window-item>
+
+        <v-tabs-window-item value="about">
+            <v-sheet class="pa-6" style="max-width: 640px;">
+                <div class="text-h5 mb-3">mogugi <span style="opacity:0.5; font-size:0.7em;">v{{ appVersion }}</span></div>
+                <p class="mb-2">Fork from <strong>prilus</strong> 的 <strong>dilmatulgi</strong>。</p>
+                <p style="opacity:0.7; font-size:0.9em;">本專案基於 prilus 的 dilmatulgi 二次開發，特此致謝原作者。</p>
+            </v-sheet>
         </v-tabs-window-item>
     </v-tabs-window>
 

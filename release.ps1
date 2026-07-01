@@ -110,8 +110,8 @@ Write-Host "`n[4/4] Packaging..." -ForegroundColor Yellow
 $distDir = "dist"
 if (-not (Test-Path $distDir)) { New-Item -ItemType Directory -Path $distDir | Out-Null }
 
-$releaseExe = "$distDir/mometer_$Version.exe"
-$releaseZip = "$distDir/mometer_$Version.zip"
+$releaseExe = "$distDir/mogugi_$Version.exe"
+$releaseZip = "$distDir/mogugi_$Version.zip"
 if (Test-Path $releaseExe) { Remove-Item $releaseExe -Force }
 if (Test-Path $releaseZip) { Remove-Item $releaseZip -Force }
 

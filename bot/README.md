@@ -1,4 +1,4 @@
-# MOMETER license bot
+# MOGUGI license bot
 
 Discord bot that issues per-user dilmeter activation codes via `/getkey`. Each
 code embeds the requester's Discord user ID + display name, is signed with your
@@ -14,7 +14,7 @@ In the Go repo root:
 go run ./cmd/keygen
 ```
 
-- `MOMETER_ED25519_PRIV=...` → the bot's secret (this README, §3). **Never commit it.**
+- `MOGUGI_ED25519_PRIV=...` → the bot's secret (this README, §3). **Never commit it.**
 - `PublicKeyHex=...` / `MacKeyHex=...` → put into the repo's `license-build.txt`
   so the App build embeds them (see the main project's release/dev scripts).
 
@@ -35,11 +35,11 @@ pip install -r requirements.txt
 | Var | Required | Purpose |
 |---|---|---|
 | `DISCORD_TOKEN` | yes | Bot token (Discord Developer Portal) |
-| `MOMETER_ED25519_PRIV` | yes | 32-byte seed hex from `cmd/keygen` — **secret** |
-| `MOMETER_GUILD_ID` | no | A guild ID → instant slash-command sync (else global sync, ~1h) |
-| `MOMETER_ROLE_ID` | no | Restrict `/getkey` to this role ID (unset = anyone) |
-| `MOMETER_DB` | no | SQLite path (default `mometer_keys.db`) |
-| `MOMETER_COOLDOWN` | no | Seconds between issues per user (default `10`) |
+| `MOGUGI_ED25519_PRIV` | yes | 32-byte seed hex from `cmd/keygen` — **secret** |
+| `MOGUGI_GUILD_ID` | no | A guild ID → instant slash-command sync (else global sync, ~1h) |
+| `MOGUGI_ROLE_ID` | no | Restrict `/getkey` to this role ID (unset = anyone) |
+| `MOGUGI_DB` | no | SQLite path (default `mogugi_keys.db`) |
+| `MOGUGI_COOLDOWN` | no | Seconds between issues per user (default `10`) |
 
 Keep these in a `.env` file (gitignored) or systemd `EnvironmentFile`.
 
@@ -61,35 +61,35 @@ Paste it into the App's activation screen within 30 minutes.
 ## 6. Deploy (systemd, recommended)
 
 ```ini
-# /etc/systemd/system/mometer-bot.service
+# /etc/systemd/system/mogugi-bot.service
 [Unit]
-Description=MOMETER license bot
+Description=MOGUGI license bot
 After=network-online.target
 
 [Service]
-WorkingDirectory=/opt/mometer-bot
-ExecStart=/opt/mometer-bot/.venv/bin/python bot.py
-EnvironmentFile=/opt/mometer-bot/.env      # chmod 600; holds MOMETER_ED25519_PRIV + DISCORD_TOKEN
+WorkingDirectory=/opt/mogugi-bot
+ExecStart=/opt/mogugi-bot/.venv/bin/python bot.py
+EnvironmentFile=/opt/mogugi-bot/.env      # chmod 600; holds MOGUGI_ED25519_PRIV + DISCORD_TOKEN
 Restart=always
 RestartSec=5
-User=mometerbot
+User=mogugibot
 
 [Install]
 WantedBy=multi-user.target
 ```
 
 ```
-chmod 600 /opt/mometer-bot/.env
-systemctl enable --now mometer-bot
-journalctl -u mometer-bot -f
+chmod 600 /opt/mogugi-bot/.env
+systemctl enable --now mogugi-bot
+journalctl -u mogugi-bot -f
 ```
 
-The bot only connects out (Discord gateway) — no inbound ports. Back up `mometer_keys.db`.
+The bot only connects out (Discord gateway) — no inbound ports. Back up `mogugi_keys.db`.
 
 ## Notes
 
 - `/getkey` re-issues a **fresh** code each call (so it's never expired when handed out);
   the DB keeps one row per user (`issue_count`, latest `issued_at`/`code`) for tracking.
-- Leaking `MOMETER_ED25519_PRIV` lets anyone mint valid codes — protect it like a signing key.
-- Code format (must match `lib/license/code.go`): `MOMETER-` + base64url_nopad(
+- Leaking `MOGUGI_ED25519_PRIV` lets anyone mint valid codes — protect it like a signing key.
+- Code format (must match `lib/license/code.go`): `MOGUGI-` + base64url_nopad(
   `issuedAt(uint32 BE) ‖ userID(uint64 BE) ‖ displayName(UTF-8) ‖ ed25519_sig(64)` ).
