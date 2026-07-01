@@ -1,4 +1,4 @@
-# Dev wrapper for running dilmeterapi with license verification enabled.
+# Dev wrapper for running mogugi with license verification enabled.
 #
 # Reads PublicKeyHex/MacKeyHex from license-build.txt and injects them via
 # -ldflags so the app verifies activation codes the same way a release build does.
@@ -18,4 +18,4 @@ try {
     exit 1
 }
 
-go run -ldflags $lic.LDFlag ./cmd/dilmeterapi @args
+go run -ldflags $lic.LDFlag ./cmd/mogugi @args

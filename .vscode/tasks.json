@@ -91,9 +91,9 @@
             "problemMatcher": ["$go"]
         },
         {
-            "label": "Run dilmeterapi",
+            "label": "Run mogugi",
             "type": "shell",
-            "command": "${workspaceFolder}/bin/dilmeterapi.exe",
+            "command": "${workspaceFolder}/bin/mogugi.exe",
             "group": "none",
             "presentation": {
                 "reveal": "always",

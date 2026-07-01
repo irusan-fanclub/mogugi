@@ -34,7 +34,7 @@ const (
 //go:embed static
 var staticFiles embed.FS
 
-var logger = util.NewLogger("dilmeterapi")
+var logger = util.NewLogger("mogugi")
 var packetLogFilename = ""
 
 func main() {

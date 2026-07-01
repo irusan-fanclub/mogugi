@@ -2,7 +2,7 @@ log*.txt
 *.exe
 node_modules
 dist
-cmd/dilmeterapi/static
+cmd/mogugi/static
 bin
 
 # runtime artifacts

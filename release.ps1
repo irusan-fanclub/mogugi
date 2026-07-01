@@ -1,7 +1,7 @@
 # Release script for Mabidilmeter
 #
 # Builds frontend, backend (with version embedded via -ldflags),
-# and packages the result into dist/dilmeterapi-vX.Y.Z.zip.
+# and packages the result into dist/mogugi_<version>.zip.
 #
 # Usage:
 #   .\release.ps1                  # uses constants.go default version
@@ -68,7 +68,7 @@ if ($LASTEXITCODE -ne 0) { $ErrorActionPreference = $prevPref; Pop-Location; Wri
 $ErrorActionPreference = $prevPref
 
 # Copy to embed dir consumed by go:embed.
-$staticPath = "../cmd/dilmeterapi/static"
+$staticPath = "../cmd/mogugi/static"
 if (Test-Path $staticPath) {
     Get-ChildItem -Path $staticPath -Exclude ".keep" | Remove-Item -Recurse -Force
 } else {
@@ -97,10 +97,10 @@ $binDir = "bin"
 if (-not (Test-Path $binDir)) { New-Item -ItemType Directory -Path $binDir | Out-Null }
 
 $ldflags = "-s -w -X github.com/irusan-fanclub/mabidilmeter/lib/constants.Version=$Version $($lic.LDFlag)"
-$apiBin  = "$binDir/dilmeterapi.exe"
+$apiBin  = "$binDir/mogugi.exe"
 
-go build -ldflags $ldflags -trimpath -o $apiBin ./cmd/dilmeterapi
-if ($LASTEXITCODE -ne 0) { Write-Host "dilmeterapi build failed" -ForegroundColor Red; exit 1 }
+go build -ldflags $ldflags -trimpath -o $apiBin ./cmd/mogugi
+if ($LASTEXITCODE -ne 0) { Write-Host "mogugi build failed" -ForegroundColor Red; exit 1 }
 
 Write-Host "Built $apiBin" -ForegroundColor Green
 
