@@ -89,9 +89,9 @@
         <v-tabs-window-item value="about">
             <v-sheet class="pa-6" style="max-width: 640px;">
                 <div class="text-h5 mb-3">mogugi <span style="opacity:0.5; font-size:0.7em;">v{{ appVersion }}</span></div>
-                <p class="mb-1">Fork from <strong>prilus</strong>'s <strong>dilmatulgi</strong>.</p>
-                <p class="mb-3">Fork 自 <strong>prilus</strong> 的 <strong>dilmatulgi</strong>。</p>
-                <p style="opacity:0.7; font-size:0.9em;">This project is a derivative work of prilus's dilmatulgi. Thanks to the original author.</p>
+                <p class="mb-1">Fork from <strong>prilus/dilmatulgi</strong>.</p>
+                <p class="mb-3">Fork 自 <strong>prilus/dilmatulgi</strong>。</p>
+                <p style="opacity:0.7; font-size:0.9em;">This project is a derivative work of prilus/dilmatulgi. Thanks to the original author.</p>
                 <p style="opacity:0.7; font-size:0.9em;">本專案基於 prilus 的 dilmatulgi 二次開發，特此致謝原作者。</p>
             </v-sheet>
         </v-tabs-window-item>
