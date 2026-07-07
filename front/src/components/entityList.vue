@@ -19,7 +19,7 @@
                     v-for="item in Object.values(v.equipItemMap).sort((a, b) => a.PocketType - b.PocketType)"
                     v-bind:key="item.PocketType" class="d-flex mb-2">
                     <v-sheet width="48px" height="96px"
-                        :style='`background: url("/res/invimage/${region}/${item.ItemId}/${item.ItemId}.png") no-repeat; background-position: center;`' />
+                        :style='`background: url("/icons/item/${item.ItemId}.png") no-repeat; background-position: center;`' />
                     <v-sheet>
                         {{ itemNameMap[item.ItemId] }} {{ item.PocketType }}
                     </v-sheet>

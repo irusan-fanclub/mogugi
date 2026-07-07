@@ -1,5 +1,7 @@
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import vuetify from 'vite-plugin-vuetify';
@@ -11,6 +13,20 @@ const targetUrl = `http://localhost:${targetPort}`;
 
 const pkg = JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'utf8'));
 
+function buildDataPlugin() {
+    return {
+        name: 'build-data',
+        async buildStart() {
+            await new Promise((resolve, reject) => {
+                const script = path.resolve(__dirname, 'scripts/build-data.mjs');
+                const child = spawn(process.execPath, [script], { stdio: 'inherit' });
+                child.on('close', code => code === 0 ? resolve() : reject(new Error(`build-data exit ${code}`)));
+                child.on('error', reject);
+            });
+        },
+    };
+}
+
 // https://vitejs.dev/config/
 export default defineConfig({
     define: {
@@ -18,6 +34,7 @@ export default defineConfig({
         __APP_VERSION__: JSON.stringify(pkg.version),
     },
     plugins: [
+        buildDataPlugin(),
         vue(),
         vuetify(),
         checker({
@@ -33,10 +50,6 @@ export default defineConfig({
                 changeOrigin: true,
                 ws: true,
             },
-            '/res': {
-                target: targetUrl,
-                changeOrigin: true,
-            },
             '/api': {
                 target: targetUrl,
                 changeOrigin: true,
@@ -50,7 +63,7 @@ export default defineConfig({
     },
     optimizeDeps: {
         exclude: [
-            "brotli-dec-wasm",
+            "@sqlite.org/sqlite-wasm",
         ],
     },
     build: {

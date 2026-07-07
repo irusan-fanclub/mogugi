@@ -14,7 +14,7 @@
                     <v-list-item v-for="ccId in hiddenCCList" :key="ccId">
                         <template v-slot:prepend>
                             <img width="16" height="16"
-                                :src="`/res/characterconditionimage/${region}/${ccId}/${ccId}.png`" class="mr-2" />
+                                :src="`/icons/cc/${ccId}.png`" class="mr-2" />
                         </template>
                         <v-list-item-title>{{ condNameMap[ccId] ?? `CC ${ccId}` }}</v-list-item-title>
                         <template v-slot:append>
