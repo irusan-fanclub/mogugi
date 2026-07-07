@@ -39,15 +39,19 @@ export default defineComponent({
             return parts.join(' / ');
         };
 
-        // displayName: 帶賦予的物品仿遊戲顯示「魔力賦予卷軸 - 生命」——
-        // 物品名後接賦予名（接頭在前、接尾在後）。
+        // displayName: 仿遊戲命名——
+        //   卷軸/魔法粉（給予賦予）：「魔力賦予卷軸 - 生命」（物品名 - 賦予名）
+        //   裝備（已附加賦予）：「辛勤的 杜克獵人手套」（賦予名前置，接頭 接尾 物品名）
         const displayName = (h: Holder): string => {
             const label = (id: number) => enchantNameMap.value[id] ?? `${id}`;
             const parts: string[] = [];
             if (h.enchantPrefix) parts.push(label(h.enchantPrefix));
             if (h.enchantSuffix) parts.push(label(h.enchantSuffix));
             const base = itemName(h.id);
-            return parts.length ? `${base} - ${parts.join(' - ')}` : base;
+            if (!parts.length) return base;
+            return /卷軸|魔法粉/.test(base)
+                ? `${base} - ${parts.join(' - ')}`
+                : `${parts.join(' ')} ${base}`;
         };
 
         // nameToIds: 回傳 label 含查詢字串的所有 item id（模糊比對）。
