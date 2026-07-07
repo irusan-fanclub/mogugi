@@ -28,6 +28,14 @@ export default defineComponent({
             return label.replace(/\s*\d+$/, '');
         };
 
+        // enchantText: 有賦予時顯示 id（P=prefix / S=suffix），暫不做名稱對照。
+        const enchantText = (h: Holder): string => {
+            const parts: string[] = [];
+            if (h.enchantPrefix) parts.push(`P:${h.enchantPrefix}`);
+            if (h.enchantSuffix) parts.push(`S:${h.enchantSuffix}`);
+            return parts.join(' / ');
+        };
+
         // nameToIds: 回傳 label 含查詢字串的所有 item id（模糊比對）。
         const nameToIds = (name: string): number[] => {
             const n = name.trim().toLowerCase();
@@ -74,6 +82,7 @@ export default defineComponent({
             return holders.map(h => ({
                 item: itemName(h.id),
                 itemId: h.id,
+                enchant: enchantText(h),
                 entity: h.entity,
                 master: h.master,
                 container: h.container,
@@ -85,6 +94,7 @@ export default defineComponent({
         const headers = [
             { title: '物品', key: 'item' },
             { title: '物品ID', key: 'itemId' },
+            { title: '賦予', key: 'enchant' },
             { title: '角色', key: 'entity' },
             { title: 'Owner', key: 'master' },
             { title: '背包', key: 'container' },

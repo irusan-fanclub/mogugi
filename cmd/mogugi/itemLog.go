@@ -17,11 +17,13 @@ var itemsLogDirPath = "items_log"
 
 // IndexItem / IndexEntity 是 /api/item-index 的聚合模型。
 type IndexItem struct {
-	ID        uint32 `json:"id"`
-	Qty       uint32 `json:"qty"`
-	Container string `json:"container"`
-	X         uint32 `json:"x"`
-	Y         uint32 `json:"y"`
+	ID            uint32 `json:"id"`
+	Qty           uint32 `json:"qty"`
+	Container     string `json:"container"`
+	X             uint32 `json:"x"`
+	Y             uint32 `json:"y"`
+	EnchantPrefix uint32 `json:"enchantPrefix,omitempty"`
+	EnchantSuffix uint32 `json:"enchantSuffix,omitempty"`
 }
 
 type IndexEntity struct {
@@ -78,7 +80,7 @@ func writeEntityCSVTo(dir string, snap *packet.EntitySnapshot) error {
 
 	w := csv.NewWriter(tmp)
 	_ = w.Write([]string{"# master", snap.Master})
-	_ = w.Write([]string{"item_id", "qty", "container", "pos_x", "pos_y"})
+	_ = w.Write([]string{"item_id", "qty", "container", "pos_x", "pos_y", "enchant_prefix", "enchant_suffix"})
 	for _, it := range snap.Items {
 		_ = w.Write([]string{
 			strconv.FormatUint(uint64(it.ItemID), 10),
@@ -86,6 +88,8 @@ func writeEntityCSVTo(dir string, snap *packet.EntitySnapshot) error {
 			it.Container,
 			strconv.FormatUint(uint64(it.PosX), 10),
 			strconv.FormatUint(uint64(it.PosY), 10),
+			strconv.FormatUint(uint64(it.EnchantPrefix), 10),
+			strconv.FormatUint(uint64(it.EnchantSuffix), 10),
 		})
 	}
 	w.Flush()
@@ -156,9 +160,17 @@ func readOneEntityCSV(path string) (IndexEntity, error) {
 		qty, _ := strconv.ParseUint(row[1], 10, 32)
 		x, _ := strconv.ParseUint(row[3], 10, 32)
 		y, _ := strconv.ParseUint(row[4], 10, 32)
-		ent.Items = append(ent.Items, IndexItem{
+		item := IndexItem{
 			ID: uint32(id), Qty: uint32(qty), Container: row[2], X: uint32(x), Y: uint32(y),
-		})
+		}
+		// 賦予欄位為後加；舊 CSV 只有 5 欄，缺就當 0。
+		if len(row) >= 7 {
+			ep, _ := strconv.ParseUint(row[5], 10, 32)
+			es, _ := strconv.ParseUint(row[6], 10, 32)
+			item.EnchantPrefix = uint32(ep)
+			item.EnchantSuffix = uint32(es)
+		}
+		ent.Items = append(ent.Items, item)
 	}
 	return ent, nil
 }

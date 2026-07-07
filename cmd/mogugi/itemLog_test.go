@@ -54,6 +54,53 @@ func TestWriteAndReadItemIndex(t *testing.T) {
 	}
 }
 
+func TestWriteAndReadItemIndex_Enchant(t *testing.T) {
+	dir := t.TempDir()
+	snap := &packet.EntitySnapshot{
+		Name: "嫩煎雞小羊01",
+		Items: []packet.InventoryItem{
+			{ItemID: 62005, Qty: 1, Container: "main", EnchantPrefix: 21203, EnchantSuffix: 11107},
+			{ItemID: 16009, Qty: 1, Container: "main"}, // 無賦予
+		},
+	}
+	if err := writeEntityCSVTo(dir, snap); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	idx, err := readItemIndexFrom(dir)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if len(idx) != 1 || len(idx[0].Items) != 2 {
+		t.Fatalf("unexpected index: %+v", idx)
+	}
+	if idx[0].Items[0].EnchantPrefix != 21203 || idx[0].Items[0].EnchantSuffix != 11107 {
+		t.Errorf("item0 enchant=%d/%d want 21203/11107", idx[0].Items[0].EnchantPrefix, idx[0].Items[0].EnchantSuffix)
+	}
+	if idx[0].Items[1].EnchantPrefix != 0 || idx[0].Items[1].EnchantSuffix != 0 {
+		t.Errorf("item1 enchant=%d/%d want 0/0", idx[0].Items[1].EnchantPrefix, idx[0].Items[1].EnchantSuffix)
+	}
+}
+
+func TestReadItemIndex_LegacyCSV(t *testing.T) {
+	// 舊版 5 欄 CSV（無賦予欄）要能讀，賦予預設 0。
+	dir := t.TempDir()
+	legacy := "# master,someone\nitem_id,qty,container,pos_x,pos_y\n40026,1,main,3,0\n"
+	if err := os.WriteFile(filepath.Join(dir, "old.csv"), []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	idx, err := readItemIndexFrom(dir)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if len(idx) != 1 || len(idx[0].Items) != 1 {
+		t.Fatalf("unexpected: %+v", idx)
+	}
+	it := idx[0].Items[0]
+	if it.ID != 40026 || it.EnchantPrefix != 0 || it.EnchantSuffix != 0 {
+		t.Errorf("legacy row=%+v want id 40026 enchant 0/0", it)
+	}
+}
+
 func TestReadItemIndex_MissingDir(t *testing.T) {
 	idx, err := readItemIndexFrom(filepath.Join(t.TempDir(), "nope"))
 	if err != nil {

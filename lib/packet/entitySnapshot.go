@@ -17,7 +17,8 @@ const petPropsMarker = "PET_AI:"
 //   - Name：第一個 String element（段 A creature.Name）。
 //   - Master：含 petPropsMarker 的寵物屬性字串的前一個 String element。
 //   - Items：掃描連續 Long → Byte(2 Private) → Bin(>=80) 視為一筆 item entry，
-//     對其 Bin 套 parseItemInfo。
+//     對其 Bin 套 parseItemInfo。緊接的結構為 Bin(80) → Bin(144) → String
+//     （OptionInfo，含 ENPFIX/ENSFIX 賦予）；若存在則一併解析。
 func ParseEntitySnapshot(msg Message) (*EntitySnapshot, error) {
 	snap := &EntitySnapshot{Items: []InventoryItem{}}
 
@@ -61,6 +62,13 @@ func ParseEntitySnapshot(msg Message) (*EntitySnapshot, error) {
 		it, err := parseItemInfo(info)
 		if err != nil {
 			continue
+		}
+		// OptionInfo 字串在擴充 Bin 之後：Bin(80)@i+2 → Bin(144)@i+3 →
+		// String@i+4。型別/邊界都對才解析，否則視為無賦予。
+		if i+4 < len(msg) && msg[i+3].Type() == MessageElemTypeBin && msg[i+4].Type() == MessageElemTypeString {
+			if s, ok := msg[i+4].Data().(string); ok {
+				it.EnchantPrefix, it.EnchantSuffix = parseOptionInfo(s)
+			}
 		}
 		snap.Items = append(snap.Items, it)
 	}
