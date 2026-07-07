@@ -56,6 +56,61 @@ func TestParseOptionInfo(t *testing.T) {
 	}
 }
 
+func TestParseExtEnchants_RealGlove(t *testing.T) {
+	// 真實 Bin(144)：杜克獵人手套（item 16009, capture 1783460656），遊戲內
+	// 顯示「[接頭]可魔力賦予（空）、[接尾]辛勤的」→ prefix 0 / suffix 30105。
+	ext, err := hex.DecodeString(
+		"012dd44168100000ac02000000000000401f0000401f0000401f0000000000000000000000000000" +
+			"01000000000000000000000000000000000000000000997500002c4300000000ffffffff" +
+			"000000000000000000000000000004000000000000000000174f0100000000000000000000000000" +
+			"00000000000000000000000000000000000000000000000000000000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ext) != 144 {
+		t.Fatalf("fixture len=%d want 144", len(ext))
+	}
+	p, s := parseExtEnchants(ext)
+	if p != 0 || s != 30105 {
+		t.Fatalf("parseExtEnchants=(%d,%d) want (0,30105)", p, s)
+	}
+}
+
+func TestParseExtEnchants_ShortOrEmpty(t *testing.T) {
+	if p, s := parseExtEnchants(nil); p != 0 || s != 0 {
+		t.Fatalf("nil: (%d,%d)", p, s)
+	}
+	if p, s := parseExtEnchants(make([]byte, 40)); p != 0 || s != 0 {
+		t.Fatalf("short: (%d,%d)", p, s)
+	}
+	if p, s := parseExtEnchants(make([]byte, 144)); p != 0 || s != 0 {
+		t.Fatalf("zero: (%d,%d)", p, s)
+	}
+}
+
+func TestParseEntitySnapshot_EquipEnchantFromExtBin(t *testing.T) {
+	// 裝備：option 字串空，賦予在擴充 Bin 的 @60(接頭)/@62(接尾)。
+	ext := make([]byte, 144)
+	le.PutUint16(ext[60:], 20001) // prefix
+	le.PutUint16(ext[62:], 30105) // suffix
+	info := make([]byte, 80)
+	le.PutUint32(info[0:], 2)
+	le.PutUint32(info[4:], 16009)
+	msg := Message{
+		NewMessageElemString("嫩煎雞小羊01"),
+		NewMessageElemLong(0x1234), NewMessageElemByte(2),
+		NewMessageElemBin(info), NewMessageElemBin(ext),
+		NewMessageElemString(""), NewMessageElemString(""),
+	}
+	snap, err := ParseEntitySnapshot(msg)
+	if err != nil {
+		t.Fatalf("ParseEntitySnapshot: %v", err)
+	}
+	if len(snap.Items) != 1 || snap.Items[0].EnchantPrefix != 20001 || snap.Items[0].EnchantSuffix != 30105 {
+		t.Fatalf("items=%+v want prefix 20001 suffix 30105", snap.Items)
+	}
+}
+
 func TestParseEntitySnapshot_Enchant(t *testing.T) {
 	// 真實值取自 dilmeter_1783460656（嫩煎雞小羊01）：prefix 21203 / suffix 11107。
 	msg := Message{NewMessageElemString("嫩煎雞小羊01")}

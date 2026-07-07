@@ -19,9 +19,21 @@ type InventoryItem struct {
 	EnchantSuffix uint32
 }
 
+// parseExtEnchants 從 item 的擴充 Bin（Item.OptionInfo 結構，144 bytes）取
+// 已附加在裝備上的賦予：接頭 u16 @60、接尾 u16 @62（LE）。非裝備該區為 0。
+// 驗證樣本：杜克獵人手套（capture 1783460656）@60=0（接頭空）、
+// @62=30105=辛勤的，與遊戲內「[接尾] 辛勤的」一致。
+func parseExtEnchants(ext []byte) (prefix, suffix uint32) {
+	if len(ext) < 64 {
+		return 0, 0
+	}
+	return uint32(le.Uint16(ext[60:])), uint32(le.Uint16(ext[62:]))
+}
+
 // parseOptionInfo 解析 Mabinogi item 的 OptionInfo 字串，格式為
 // "KEY:type:value;KEY:type:value;..."，取出 prefix（ENPFIX）與 suffix
-// （ENSFIX）賦予 id。缺鍵回 0。
+// （ENSFIX）賦予 id。缺鍵回 0。卷軸走這裡；裝備上已附的賦予則在擴充 Bin
+// （見 parseExtEnchants），兩者由呼叫端合併。
 func parseOptionInfo(s string) (prefix, suffix uint32) {
 	for _, tok := range strings.Split(s, ";") {
 		if tok == "" {

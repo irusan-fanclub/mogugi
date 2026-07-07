@@ -63,11 +63,23 @@ func ParseEntitySnapshot(msg Message) (*EntitySnapshot, error) {
 		if err != nil {
 			continue
 		}
-		// OptionInfo 字串在擴充 Bin 之後：Bin(80)@i+2 → Bin(144)@i+3 →
-		// String@i+4。型別/邊界都對才解析，否則視為無賦予。
-		if i+4 < len(msg) && msg[i+3].Type() == MessageElemTypeBin && msg[i+4].Type() == MessageElemTypeString {
-			if s, ok := msg[i+4].Data().(string); ok {
-				it.EnchantPrefix, it.EnchantSuffix = parseOptionInfo(s)
+		// 賦予有兩個來源：擴充 Bin(144)@i+3 存「裝備上已附加」的賦予，
+		// OptionInfo 字串@i+4 存「卷軸將給予」的賦予（ENPFIX/ENSFIX）。
+		// 逐槽合併，字串優先。型別/邊界不符則視為無賦予。
+		if i+3 < len(msg) && msg[i+3].Type() == MessageElemTypeBin {
+			if ext, ok := msg[i+3].Data().([]byte); ok {
+				it.EnchantPrefix, it.EnchantSuffix = parseExtEnchants(ext)
+			}
+			if i+4 < len(msg) && msg[i+4].Type() == MessageElemTypeString {
+				if s, ok := msg[i+4].Data().(string); ok {
+					p, sfx := parseOptionInfo(s)
+					if p != 0 {
+						it.EnchantPrefix = p
+					}
+					if sfx != 0 {
+						it.EnchantSuffix = sfx
+					}
+				}
 			}
 		}
 		snap.Items = append(snap.Items, it)
