@@ -39,6 +39,17 @@ export default defineComponent({
             return parts.join(' / ');
         };
 
+        // displayName: 帶賦予的物品仿遊戲顯示「魔力賦予卷軸 - 生命」——
+        // 物品名後接賦予名（接頭在前、接尾在後）。
+        const displayName = (h: Holder): string => {
+            const label = (id: number) => enchantNameMap.value[id] ?? `${id}`;
+            const parts: string[] = [];
+            if (h.enchantPrefix) parts.push(label(h.enchantPrefix));
+            if (h.enchantSuffix) parts.push(label(h.enchantSuffix));
+            const base = itemName(h.id);
+            return parts.length ? `${base} - ${parts.join(' - ')}` : base;
+        };
+
         // nameToIds: 回傳 label 含查詢字串的所有 item id（模糊比對）。
         const nameToIds = (name: string): number[] => {
             const n = name.trim().toLowerCase();
@@ -83,7 +94,7 @@ export default defineComponent({
                     ? searchById(idx.value, Number(q))
                     : searchByName(idx.value, q, nameToIds);
             return holders.map(h => ({
-                item: itemName(h.id),
+                item: displayName(h),
                 itemId: h.id,
                 enchant: enchantText(h),
                 entity: h.entity,
