@@ -25,6 +25,8 @@ export const raceNameMap = ref<Record<number, string>>({});
 export const skillNameMap = ref<Record<number, string>>({});
 export const condNameMap = ref<Record<number, string>>({});
 export const itemNameMap = ref<Record<number, string>>({});
+// enchant (OptionSet) id -> plain localized name, e.g. 11107 -> 生命.
+export const enchantNameMap = ref<Record<number, string>>({});
 export const appEvent = ref(new EventTarget());
 
 export const dcManager = shallowRef(new DamageCollectorManager());

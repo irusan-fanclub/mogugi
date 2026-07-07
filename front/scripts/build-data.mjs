@@ -11,7 +11,7 @@ import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import Database from 'better-sqlite3';
 
-const BUILD_VERSION = 1;
+const BUILD_VERSION = 2;
 
 const REGION = 'tw';
 const VER = 'v154';
@@ -37,11 +37,14 @@ const ICON_SOURCES = [
     { kind: 'title', table: 'title', id: 'title_id' },
 ];
 
+// `optional: true` — table may be absent from older upstream sqlites (optionset
+// landed with mabitsequal schema user_version 4); emit an empty table then.
 const LIST_SOURCES = [
     { dst: 'race',                src: 'race',                id: 'race_id' },
     { dst: 'skill',               src: 'skill',               id: 'skill_id' },
     { dst: 'character_condition', src: 'character_condition', id: 'condition_id' },
     { dst: 'item',                src: 'item',                id: 'item_id' },
+    { dst: 'optionset',           src: 'optionset',           id: 'optionset_id', optional: true },
 ];
 
 async function exists(p) {
@@ -144,13 +147,22 @@ async function buildLeanDb(src) {
         CREATE TABLE skill (id INTEGER PRIMARY KEY, name TEXT);
         CREATE TABLE character_condition (id INTEGER PRIMARY KEY, name TEXT);
         CREATE TABLE item (id INTEGER PRIMARY KEY, name TEXT);
+        CREATE TABLE optionset (id INTEGER PRIMARY KEY, name TEXT);
     `);
 
     const metaRows = src.prepare('SELECT key, value FROM meta').all();
     const insertMeta = dst.prepare('INSERT INTO meta (key, value) VALUES (?, ?)');
     for (const m of metaRows) insertMeta.run(m.key, m.value);
 
-    for (const { dst: dstTable, src: srcTable, id } of LIST_SOURCES) {
+    const srcHasTable = dst0 => src.prepare(
+        `SELECT 1 FROM sqlite_master WHERE type='table' AND name=?`
+    ).get(dst0) !== undefined;
+
+    for (const { dst: dstTable, src: srcTable, id, optional } of LIST_SOURCES) {
+        if (optional && !srcHasTable(srcTable)) {
+            console.warn(`[build-data] source table '${srcTable}' missing upstream — emitted empty (needs a mabitsequal build with schema >= 4).`);
+            continue;
+        }
         const insert = dst.prepare(`INSERT INTO ${dstTable} (id, name) VALUES (?, ?)`);
         const rows = src.prepare(
             `SELECT ${id} AS id, COALESCE(local_name, english_name) AS name FROM ${srcTable}`

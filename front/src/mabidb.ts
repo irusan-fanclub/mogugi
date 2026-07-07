@@ -1,6 +1,6 @@
 import { openSqliteDb, query } from '@/lib/sqliteDb';
 
-export type ListKey = 'RaceList' | 'SkillList' | 'CharCondList' | 'ItemList';
+export type ListKey = 'RaceList' | 'SkillList' | 'CharCondList' | 'ItemList' | 'OptionSetList';
 
 export interface ListRow {
     Id: number;
@@ -8,10 +8,11 @@ export interface ListRow {
 }
 
 const TABLE_BY_KEY: Record<ListKey, string> = {
-    RaceList:     'race',
-    SkillList:    'skill',
-    CharCondList: 'character_condition',
-    ItemList:     'item',
+    RaceList:      'race',
+    SkillList:     'skill',
+    CharCondList:  'character_condition',
+    ItemList:      'item',
+    OptionSetList: 'optionset', // enchants: ENPFIX/ENSFIX ids -> names
 };
 
 let opened = false;

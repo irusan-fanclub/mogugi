@@ -17,6 +17,7 @@ import { buildItemIndex, searchById, searchByName, type IndexEntity, type Holder
 export default defineComponent({
     setup() {
         const itemNameMap = inject('itemNameMap') as Ref<Record<number, string>>;
+        const enchantNameMap = inject('enchantNameMap') as Ref<Record<number, string>>;
         const query = ref('');
         const loading = ref(false);
         const idx = ref(new Map<number, Holder[]>());
@@ -28,11 +29,13 @@ export default defineComponent({
             return label.replace(/\s*\d+$/, '');
         };
 
-        // enchantText: 有賦予時顯示 id（P=prefix / S=suffix），暫不做名稱對照。
+        // enchantText: 有賦予時顯示「接頭:名稱 / 接尾:名稱」；名稱表沒有該 id
+        // （內嵌 db 還沒帶 optionset）時退回顯示數字 id。
         const enchantText = (h: Holder): string => {
+            const label = (id: number) => enchantNameMap.value[id] ?? `${id}`;
             const parts: string[] = [];
-            if (h.enchantPrefix) parts.push(`P:${h.enchantPrefix}`);
-            if (h.enchantSuffix) parts.push(`S:${h.enchantSuffix}`);
+            if (h.enchantPrefix) parts.push(`接頭:${label(h.enchantPrefix)}`);
+            if (h.enchantSuffix) parts.push(`接尾:${label(h.enchantSuffix)}`);
             return parts.join(' / ');
         };
 

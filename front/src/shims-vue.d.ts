@@ -14,6 +14,7 @@ declare module '@vue/runtime-core' {
     function inject(key: 'skillNameMap'): Ref<Record<number, string>>;
     function inject(key: 'condNameMap'): Ref<Record<number, string>>;
     function inject(key: 'itemNameMap'): Ref<Record<number, string>>;
+    function inject(key: 'enchantNameMap'): Ref<Record<number, string>>;
     function inject(key: 'appEvent'): Ref<EventTarget>;
     function inject(key: 'actorManager'): Ref<ActorManager>;
     function inject(key: 'dcManager'): Ref<DamageCollectorManager>;

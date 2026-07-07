@@ -175,6 +175,7 @@ export default defineComponent({
         const skillNameMap = inject('skillNameMap');
         const condNameMap = inject('condNameMap');
         const itemNameMap = inject('itemNameMap');
+        const enchantNameMap = inject('enchantNameMap');
         const appEvent = inject('appEvent');
         const actorManager = inject('actorManager');
         const dcManager = inject('dcManager');
@@ -412,6 +413,18 @@ export default defineComponent({
                 for (const v of list) {
                     itemNameMap.value[v.Id] = `${db.value.getCurLangString(v.Name)} ${v.Id}`;
                 }
+            }
+            try {
+                // Enchant names (plain, no id suffix — used verbatim in the item
+                // index). Table may be absent/empty in dbs built from an upstream
+                // sqlite older than mabitsequal schema v4 → ids stay as fallback.
+                const list = await db.value.getSortedListData('OptionSetList');
+
+                for (const v of list) {
+                    enchantNameMap.value[v.Id] = db.value.getCurLangString(v.Name);
+                }
+            } catch (e) {
+                console.warn('optionset list unavailable (old bundled db?)', e);
             }
 
             if (!isStandalone) {
