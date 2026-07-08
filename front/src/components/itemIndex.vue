@@ -111,8 +111,15 @@ export default defineComponent({
             };
             pushEnchant('接頭', h.enchantPrefix);
             pushEnchant('接尾', h.enchantSuffix);
-            // 賦予效果的逐件浮動值（封包 kind-1 記錄）。
-            const rolls = (h.enchantRolls ?? []).map(r => r.value);
+            // 賦予效果的逐件浮動值（封包 kind-1 記錄）：依序內嵌到效果文字的
+            // 範圍處，仿遊戲「暴擊率增加 1 (1~3)%」。對不上的才留獨立行。
+            const rollQueue = (h.enchantRolls ?? []).map(r => r.value);
+            for (const e of enchants) {
+                if (!e.desc || !rollQueue.length) continue;
+                e.desc = e.desc.replace(/\d+(?:\.\d+)?\s*~\s*\d+(?:\.\d+)?/g,
+                    m => rollQueue.length ? `${rollQueue.shift()} (${m})` : m);
+            }
+            const rolls = rollQueue;
 
             // 細緻工匠：顯示值 = (init + (level-1) × per) × standard，
             // IsFloat 補兩位小數，後綴 SubDesc（"m 增加" / "% 增加"）。
