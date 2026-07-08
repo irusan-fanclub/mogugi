@@ -1,8 +1,14 @@
 <template>
     <div class="pa-2">
-        <div class="d-flex align-center mb-2" style="gap: 8px">
+        <div class="d-flex align-center flex-wrap mb-2" style="gap: 8px">
             <v-text-field v-model="query" label="物品名稱或 ID" hide-details density="compact" clearable
-                style="max-width: 360px" />
+                style="max-width: 300px" />
+            <v-autocomplete v-model="entityFilter" :items="entityOptions" label="角色" hide-details
+                density="compact" clearable multiple chips closable-chips style="min-width: 200px; max-width: 320px" />
+            <v-autocomplete v-model="masterFilter" :items="masterOptions" label="Owner" hide-details
+                density="compact" clearable multiple chips closable-chips style="min-width: 180px; max-width: 300px" />
+            <v-select v-model="containerFilter" :items="containerOptions" label="背包" hide-details
+                density="compact" clearable style="min-width: 140px; max-width: 180px" />
             <v-btn :loading="loading" @click="reload">重新整理</v-btn>
             <span class="text-caption text-medium-emphasis">{{ entityCount }} 個實體 / {{ itemKindCount }} 種物品</span>
         </div>
@@ -66,6 +72,11 @@ export default defineComponent({
         const query = ref('');
         const loading = ref(false);
         const idx = ref(new Map<number, Holder[]>());
+
+        // 欄位過濾：角色 / Owner 可複選，背包單選；與文字搜尋 AND 疊加。
+        const entityFilter = ref<string[]>([]);
+        const masterFilter = ref<string[]>([]);
+        const containerFilter = ref<string | null>(null);
 
         // itemNameMap 的值格式為「名稱 id」，這裡去掉結尾的 id 只留名稱。
         const itemName = (id: number): string => {
@@ -178,13 +189,37 @@ export default defineComponent({
             return out;
         };
 
+        // 過濾選項：從目前索引取 distinct 值（排序）。
+        const distinct = (pick: (h: Holder) => string): string[] => {
+            const set = new Set<string>();
+            for (const holders of idx.value.values()) {
+                for (const h of holders) {
+                    const v = pick(h);
+                    if (v) set.add(v);
+                }
+            }
+            return [...set].sort((a, b) => a.localeCompare(b, 'zh-Hant'));
+        };
+        const entityOptions = computed(() => distinct(h => h.entity));
+        const masterOptions = computed(() => distinct(h => h.master));
+        const containerOptions = computed(() => distinct(h => h.container));
+
         const rows = computed(() => {
             const q = query.value?.trim();
-            const holders = !q
+            let holders = !q
                 ? allHolders()
                 : /^\d+$/.test(q)
                     ? searchById(idx.value, Number(q))
                     : searchByName(idx.value, q, nameToIds);
+            if (entityFilter.value.length) {
+                holders = holders.filter(h => entityFilter.value.includes(h.entity));
+            }
+            if (masterFilter.value.length) {
+                holders = holders.filter(h => masterFilter.value.includes(h.master));
+            }
+            if (containerFilter.value) {
+                holders = holders.filter(h => h.container === containerFilter.value);
+            }
             return holders.map(h => ({
                 item: displayName(h),
                 itemId: h.id,
@@ -208,7 +243,11 @@ export default defineComponent({
         ];
 
         onMounted(reload);
-        return { query, loading, reload, rows, headers, entityCount, itemKindCount };
+        return {
+            query, loading, reload, rows, headers, entityCount, itemKindCount,
+            entityFilter, masterFilter, containerFilter,
+            entityOptions, masterOptions, containerOptions,
+        };
     },
 });
 </script>
