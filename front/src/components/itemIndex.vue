@@ -163,8 +163,12 @@ export default defineComponent({
             }
             if (meta.OWNER) props.push(`${meta.OWNER} 專用物品`);
 
-            // 刻印（IMRBV=加成值，範圍/類型資訊不在封包，先顯示值）。
-            const imprint = meta.IMRBV ? `刻印加成 +${meta.IMRBV}%` : null;
+            // 裝備等級（大師）加成：IMRBT=類型（4=衣物 最大生命力、6=武器
+            // 額外傷害值，皆已對照遊戲 tooltip 驗證）、IMRBV=實際 %。
+            const IMRB_TYPES: Record<string, string> = { 4: '最大生命力增加', 6: '額外傷害值增加' };
+            const imprint = meta.IMRBV
+                ? `${IMRB_TYPES[meta.IMRBT] ?? '裝備等級加成'} ${meta.IMRBV}%`
+                : null;
 
             const enchants: TipEnchant[] = [];
             const pushEnchant = (slot: string, id?: number) => {
