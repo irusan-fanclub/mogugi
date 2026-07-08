@@ -179,6 +179,7 @@ export default defineComponent({
         const enchantInfoMap = inject('enchantInfoMap');
         const metalwareMap = inject('metalwareMap');
         const manualFormMap = inject('manualFormMap');
+        const itemUpgradeMap = inject('itemUpgradeMap');
         const appEvent = inject('appEvent');
         const actorManager = inject('actorManager');
         const dcManager = inject('dcManager');
@@ -456,6 +457,16 @@ export default defineComponent({
                 }
             } catch (e) {
                 console.warn('manual form list unavailable (old bundled db?)', e);
+            }
+            try {
+                // 改造名稱表（UPR upgrade_id → 名稱）。
+                const list = await db.value.getItemUpgrades();
+
+                for (const v of list) {
+                    itemUpgradeMap.value[v.Id] = { name: v.Name, desc: v.Description };
+                }
+            } catch (e) {
+                console.warn('item upgrade list unavailable (old bundled db?)', e);
             }
 
             if (!isStandalone) {

@@ -22,6 +22,12 @@ export interface ManualFormRow {
     Level: number | null;
 }
 
+export interface ItemUpgradeRow {
+    Id: number;
+    Name: string;
+    Description: string | null;
+}
+
 export interface MetalwareAbilityRow {
     Id: number;
     Name: string;
@@ -76,6 +82,12 @@ export class MabiDB {
         await this.tryOpen();
         return query<ManualFormRow>(
             'SELECT id AS Id, name AS Name, product_item_id AS ProductItemId, manual_item_id AS ManualItemId, level AS Level FROM manual_form');
+    }
+
+    // 改造（ItemUpgrade）：UPR 記錄的 upgrade_id → 名稱/描述。
+    public async getItemUpgrades(): Promise<ItemUpgradeRow[]> {
+        await this.tryOpen();
+        return query<ItemUpgradeRow>('SELECT id AS Id, name AS Name, description AS Description FROM item_upgrade');
     }
 
     // 細緻工匠能力列（tooltip 用）：value = InitialValue + (level-1) * ValuePerLevel。

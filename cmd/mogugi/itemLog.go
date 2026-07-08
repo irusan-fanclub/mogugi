@@ -44,6 +44,10 @@ type IndexItem struct {
 	Defense       uint32           `json:"defense,omitempty"`
 	AttackMin     uint32           `json:"attackMin,omitempty"`
 	Protection    uint32               `json:"protection,omitempty"`
+	InjuryMin     uint32               `json:"injuryMin,omitempty"`
+	InjuryMax     uint32               `json:"injuryMax,omitempty"`
+	Balance       uint32               `json:"balance,omitempty"`
+	Critical      uint32               `json:"critical,omitempty"`
 	AttackMax     uint32               `json:"attackMax,omitempty"`
 	Metalware     []IndexMetalware     `json:"metalware,omitempty"`
 	PrefixEffects []IndexEnchantEffect `json:"prefixEffects,omitempty"`
@@ -200,7 +204,7 @@ func writeEntityCSVTo(dir string, snap *packet.EntitySnapshot) error {
 	_ = w.Write([]string{"# master", snap.Master})
 	_ = w.Write([]string{"item_id", "qty", "container", "pos_x", "pos_y", "enchant_prefix", "enchant_suffix",
 		"durability", "durability_max", "defense", "attack_min", "attack_max", "metalware", "suffix_effects",
-		"prefix_effects", "bless_effects", "protection", "colors", "metadata"})
+		"prefix_effects", "bless_effects", "protection", "colors", "metadata", "injury_min", "injury_max", "balance", "critical"})
 	for _, it := range snap.Items {
 		_ = w.Write([]string{
 			strconv.FormatUint(uint64(it.ItemID), 10),
@@ -222,6 +226,10 @@ func writeEntityCSVTo(dir string, snap *packet.EntitySnapshot) error {
 			strconv.FormatUint(uint64(it.Protection), 10),
 			encodeColors(it.Colors),
 			it.Metadata,
+			strconv.FormatUint(uint64(it.InjuryMin), 10),
+			strconv.FormatUint(uint64(it.InjuryMax), 10),
+			strconv.FormatUint(uint64(it.Balance), 10),
+			strconv.FormatUint(uint64(it.Critical), 10),
 		})
 	}
 	w.Flush()
@@ -325,6 +333,16 @@ func readOneEntityCSV(path string) (IndexEntity, error) {
 			item.Protection = uint32(prot)
 			item.Colors = decodeColors(row[17])
 			item.Metadata = row[18]
+		}
+		if len(row) >= 23 {
+			imin, _ := strconv.ParseUint(row[19], 10, 32)
+			imax, _ := strconv.ParseUint(row[20], 10, 32)
+			bal, _ := strconv.ParseUint(row[21], 10, 32)
+			crit, _ := strconv.ParseUint(row[22], 10, 32)
+			item.InjuryMin = uint32(imin)
+			item.InjuryMax = uint32(imax)
+			item.Balance = uint32(bal)
+			item.Critical = uint32(crit)
 		}
 		ent.Items = append(ent.Items, item)
 	}

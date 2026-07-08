@@ -44,6 +44,10 @@ type InventoryItem struct {
 	Protection    uint32
 	AttackMin     uint32
 	AttackMax     uint32
+	InjuryMin     uint32
+	InjuryMax     uint32
+	Balance       uint32
+	Critical      uint32
 	// Colors 是六個染色部位 A-F（Bin80 @8/12/16/24/28/32，低 24 bit =
 	// 0xRRGGBB；日月之神服裝六色與 tooltip RGB 逐一對上）。
 	Colors [6]uint32
@@ -71,9 +75,11 @@ func parseExtEnchants(ext []byte) (prefix, suffix uint32) {
 }
 
 // parseExtStats 從擴充 Bin 取道具屬性：耐久 u32@16、耐久上限 u32@20（皆
-// ×1000）、攻擊小/大傷 u16@28/@30、防禦 u32@40、保護 u32@44。
-// 驗證樣本：杜克獵人手套 耐久 8000/8000（遊戲顯示 8/8）、防禦 1、保護 0；
-// 堅固鐮刀（capture 1783467845）攻擊 1~7；日月之神服裝 防禦 27 保護 19。
+// ×1000）、攻擊小/大傷 u16@28/@30、負傷率小/大 u16@32/@34、平衡 u8@36、
+// 暴擊率 u8@37、防禦 u32@40、保護 u32@44。
+// 驗證樣本：杜克獵人手套 耐久 8/8、防禦 1、保護 0；堅固鐮刀 攻擊 1~7；
+// 日月之神服裝 防禦 27 保護 19；靈魂解放者單手劍 攻擊 201~255（+聚能25=
+// 遊戲顯示 226~280）、負傷率 20~35%、平衡 69、暴擊 28。
 func parseExtStats(ext []byte, it *InventoryItem) {
 	if len(ext) < 48 {
 		return
@@ -82,6 +88,10 @@ func parseExtStats(ext []byte, it *InventoryItem) {
 	it.DurabilityMax = le.Uint32(ext[20:])
 	it.AttackMin = uint32(le.Uint16(ext[28:]))
 	it.AttackMax = uint32(le.Uint16(ext[30:]))
+	it.InjuryMin = uint32(le.Uint16(ext[32:]))
+	it.InjuryMax = uint32(le.Uint16(ext[34:]))
+	it.Balance = uint32(ext[36])
+	it.Critical = uint32(ext[37])
 	it.Defense = le.Uint32(ext[40:])
 	it.Protection = le.Uint32(ext[44:])
 }

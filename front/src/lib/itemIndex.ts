@@ -4,6 +4,7 @@ interface ItemExtra {
     enchantPrefix?: number; enchantSuffix?: number;
     durability?: number; durabilityMax?: number; defense?: number; protection?: number;
     attackMin?: number; attackMax?: number;
+    injuryMin?: number; injuryMax?: number; balance?: number; critical?: number;
     metalware?: IndexMetalware[];
     prefixEffects?: IndexEnchantEffect[];
     suffixEffects?: IndexEnchantEffect[];

@@ -53,6 +53,15 @@
                                 實際數值：{{ item.tip.rolls.map(v => `+${v}`).join('、') }}
                             </div>
                         </template>
+                        <template v-if="item.tip.upgrades.length || item.tip.special">
+                            <div class="tip-section">改造</div>
+                            <div v-for="(u, i) in item.tip.upgrades" :key="`u${i}`" class="tip-line tip-mw">{{ u }}</div>
+                            <div v-if="item.tip.special" class="tip-line tip-roll">{{ item.tip.special }}</div>
+                        </template>
+                        <template v-if="item.tip.energy">
+                            <div class="tip-section">聚能</div>
+                            <div class="tip-line tip-mw">{{ item.tip.energy }}</div>
+                        </template>
                         <template v-if="item.tip.metalware.length">
                             <div class="tip-section">細緻工匠</div>
                             <template v-for="(m, i) in item.tip.metalware" :key="`m${i}`">
@@ -79,7 +88,7 @@
 <script lang="ts">
 import { defineComponent, ref, computed, inject, onMounted, watch, type Ref } from 'vue';
 import { buildItemIndex, parseItemMetadata, type IndexEntity, type Holder, type IndexEnchantEffect } from '@/lib/itemIndex';
-import type { EnchantInfo, ManualForm, MetalwareAbility } from '@/store';
+import type { EnchantInfo, ItemUpgrade, ManualForm, MetalwareAbility } from '@/store';
 
 // 賦予等級 → 遊戲位階字母（level 1=F … 6=A, 7=9, 8=8 …15=1）。
 const RANKS = ['F', 'E', 'D', 'C', 'B', 'A', '9', '8', '7', '6', '5', '4', '3', '2', '1'];
@@ -98,6 +107,9 @@ interface Tip {
     enchants: TipEnchant[];
     rolls: number[];
     bless: string[];
+    upgrades: string[];
+    special: string | null;
+    energy: string | null;
     metalware: TipMetalware[];
     colors: string[];
 }
@@ -109,6 +121,7 @@ export default defineComponent({
         const enchantInfoMap = inject('enchantInfoMap') as Ref<Record<number, EnchantInfo>>;
         const metalwareMap = inject('metalwareMap') as Ref<Record<number, MetalwareAbility>>;
         const manualFormMap = inject('manualFormMap') as Ref<Record<number, ManualForm>>;
+        const itemUpgradeMap = inject('itemUpgradeMap') as Ref<Record<number, ItemUpgrade>>;
         const query = ref('');
         const loading = ref(false);
         const idx = ref(new Map<number, Holder[]>());
@@ -151,6 +164,9 @@ export default defineComponent({
 
             const props: string[] = [];
             if (h.attackMax) props.push(`攻擊 ${h.attackMin ?? 0}~${h.attackMax}`);
+            if (h.injuryMax) props.push(`負傷率 ${h.injuryMin ?? 0}~${h.injuryMax}%`);
+            if (h.critical) props.push(`暴擊率 ${h.critical}%`);
+            if (h.balance) props.push(`平衡性 ${h.balance}%`);
             if (h.defense) props.push(`防禦力 ${h.defense}`);
             if (h.protection) props.push(`保護 ${h.protection}`);
             if (meta.MDEF) props.push(`魔法防禦力 ${meta.MDEF}`);
@@ -162,6 +178,7 @@ export default defineComponent({
                     : `耐久度 ${Math.floor((h.durability ?? 0) / 1000)}/${Math.floor(h.durabilityMax / 1000)}`);
             }
             if (meta.OWNER) props.push(`${meta.OWNER} 專用物品`);
+            if (meta.SICID) props.push(`外型變更道具：${itemName(Number(meta.SICID))}`);
 
             // 裝備等級（大師）加成：IMRBT=類型（4=衣物 最大生命力、6=武器
             // 額外傷害值，皆已對照遊戲 tooltip 驗證）、IMRBV=實際 %。
@@ -207,6 +224,24 @@ export default defineComponent({
             const bless = (h.blessEffects ?? []).map(e =>
                 `${PARAM_NAMES[e.code] ?? `#${e.code}`} ${e.value > 0 ? '+' : ''}${e.value}`);
 
+            // 改造（UPR1..n）："upgrade_id,effect_id,v1,v2,..." → 名稱＋該次數值。
+            const upgrades: string[] = [];
+            for (let i = 1; i <= 9; i++) {
+                const raw = meta[`UPR${i}`];
+                if (!raw) continue;
+                const f = raw.split(',');
+                const upId = Number(f[0]);
+                const vals = f.slice(2).map(v => (Number(v) > 0 ? `+${v}` : v)).join(', ');
+                upgrades.push(`${itemUpgradeMap.value[upId]?.name ?? `改造#${upId}`}（${vals}）`);
+            }
+            // 特殊改造（EHTY 1024=R / 512=S 🟡，EHLV=階段）與聚能（IMEEL/IMEEML）。
+            const special = meta.EHLV
+                ? `特殊改造 ${meta.EHTY === '1024' ? 'R' : meta.EHTY === '512' ? 'S' : ''} (${meta.EHLV}階段)`
+                : null;
+            const energy = meta.IMEEL
+                ? `聚能 等級 ${meta.IMEEL}/${meta.IMEEML ?? '?'}`
+                : null;
+
             // 道具顏色（部位 A-F）。
             const colors = h.colors ?? [];
 
@@ -227,8 +262,9 @@ export default defineComponent({
                 };
             });
 
-            if (!props.length && !enchants.length && !metalware.length && !bless.length && !imprint) return null;
-            return { props, imprint, enchants, rolls, bless, metalware, colors };
+            if (!props.length && !enchants.length && !metalware.length && !bless.length
+                && !imprint && !upgrades.length && !special && !energy) return null;
+            return { props, imprint, enchants, rolls, bless, upgrades, special, energy, metalware, colors };
         };
 
         // metalwareText: 細工欄摘要（能力名 等級，以「 / 」串接）。

@@ -31,6 +31,8 @@ export const enchantNameMap = ref<Record<number, string>>({});
 // tooltip 資料：賦予完整資訊與細緻工匠能力表。
 export interface EnchantInfo { name: string; level: number | null; desc: string | null }
 export const enchantInfoMap = ref<Record<number, EnchantInfo>>({});
+export interface ItemUpgrade { name: string; desc: string | null }
+export const itemUpgradeMap = ref<Record<number, ItemUpgrade>>({});
 export interface ManualForm { name: string; productItemId: number | null; level: number | null }
 export const manualFormMap = ref<Record<number, ManualForm>>({});
 export interface MetalwareAbility {
