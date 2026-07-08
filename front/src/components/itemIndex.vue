@@ -69,9 +69,9 @@
                                 <div v-if="m.value != null" class="tip-line tip-desc">L {{ m.value }}</div>
                             </template>
                         </template>
-                        <template v-if="item.tip.colors.length">
-                            <div class="tip-section">道具顏色</div>
-                            <div v-for="(c, i) in item.tip.colors" :key="`c${i}`" class="tip-line">
+                        <template v-for="(g, gi) in item.tip.colorGroups" :key="`g${gi}`">
+                            <div class="tip-section">{{ g.label }}</div>
+                            <div v-for="(c, i) in g.colors" :key="`c${gi}-${i}`" class="tip-line">
                                 <span class="tip-swatch" :style="{ background: `#${c}` }" />
                                 部位 {{ 'ABCDEF'[i] }}
                                 <span class="tip-desc" style="padding-left:6px">#{{ c.toUpperCase() }}</span>
@@ -111,7 +111,7 @@ interface Tip {
     special: string | null;
     energy: string | null;
     metalware: TipMetalware[];
-    colors: string[];
+    colorGroups: { label: string; colors: string[] }[];
 }
 
 export default defineComponent({
@@ -242,8 +242,22 @@ export default defineComponent({
                 ? `聚能 等級 ${meta.IMEEL}/${meta.IMEEML ?? '?'}`
                 : null;
 
-            // 道具顏色（部位 A-F）。
-            const colors = h.colors ?? [];
+            // 染色有兩組：Bin80 六色 = 目前顯示的顏色（套用外型時為外型的
+            // 顏色）；metadata OIC1..6 = 原始物品顏色（-1 = 未染 = #FFFFFF）。
+            const colorGroups: { label: string; colors: string[] }[] = [];
+            if (h.colors?.length) {
+                colorGroups.push({ label: meta.SICID ? '道具顏色（外型）' : '道具顏色', colors: h.colors });
+            }
+            const oic: string[] = [];
+            for (let i = 1; i <= 6; i++) {
+                const raw = meta[`OIC${i}`];
+                if (raw === undefined) continue;
+                const v = Number(raw);
+                oic.push((v >>> 0 & 0xffffff).toString(16).padStart(6, '0'));
+            }
+            if (meta.SICID && oic.length) {
+                colorGroups.push({ label: '道具顏色（原始）', colors: oic });
+            }
 
             // 細緻工匠：顯示值 = (init + (level-1) × per) × standard，
             // IsFloat 補兩位小數，後綴 SubDesc（"m 增加" / "% 增加"）。
@@ -264,7 +278,7 @@ export default defineComponent({
 
             if (!props.length && !enchants.length && !metalware.length && !bless.length
                 && !imprint && !upgrades.length && !special && !energy) return null;
-            return { props, imprint, enchants, rolls, bless, upgrades, special, energy, metalware, colors };
+            return { props, imprint, enchants, rolls, bless, upgrades, special, energy, metalware, colorGroups };
         };
 
         // metalwareText: 細工欄摘要（能力名 等級，以「 / 」串接）。
