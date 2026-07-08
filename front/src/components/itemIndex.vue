@@ -79,7 +79,7 @@
 <script lang="ts">
 import { defineComponent, ref, computed, inject, onMounted, watch, type Ref } from 'vue';
 import { buildItemIndex, parseItemMetadata, type IndexEntity, type Holder, type IndexEnchantEffect } from '@/lib/itemIndex';
-import type { EnchantInfo, MetalwareAbility } from '@/store';
+import type { EnchantInfo, ManualForm, MetalwareAbility } from '@/store';
 
 // 賦予等級 → 遊戲位階字母（level 1=F … 6=A, 7=9, 8=8 …15=1）。
 const RANKS = ['F', 'E', 'D', 'C', 'B', 'A', '9', '8', '7', '6', '5', '4', '3', '2', '1'];
@@ -108,6 +108,7 @@ export default defineComponent({
         const enchantNameMap = inject('enchantNameMap') as Ref<Record<number, string>>;
         const enchantInfoMap = inject('enchantInfoMap') as Ref<Record<number, EnchantInfo>>;
         const metalwareMap = inject('metalwareMap') as Ref<Record<number, MetalwareAbility>>;
+        const manualFormMap = inject('manualFormMap') as Ref<Record<number, ManualForm>>;
         const query = ref('');
         const loading = ref(false);
         const idx = ref(new Map<number, Holder[]>());
@@ -127,6 +128,12 @@ export default defineComponent({
         //   卷軸/魔法粉（給予賦予）：「魔力賦予卷軸 - 生命」（物品名 - 賦予名）
         //   裝備（已附加賦予）：「辛勤的 杜克獵人手套」（賦予名前置，接頭 接尾 物品名）
         const displayName = (h: Holder): string => {
+            // 衣服樣本/設計圖：FORMID 直接對到完整名「衣服樣本 - X」。
+            const formId = Number(parseItemMetadata(h.metadata).FORMID);
+            if (formId) {
+                const mf = manualFormMap.value[formId];
+                if (mf) return mf.name;
+            }
             const label = (id: number) => enchantNameMap.value[id] ?? `${id}`;
             const parts: string[] = [];
             if (h.enchantPrefix) parts.push(label(h.enchantPrefix));
@@ -149,7 +156,10 @@ export default defineComponent({
             if (meta.MDEF) props.push(`魔法防禦力 ${meta.MDEF}`);
             if (meta.MPROT) props.push(`魔法保護 ${meta.MPROT}`);
             if (h.durabilityMax) {
-                props.push(`耐久度 ${Math.floor((h.durability ?? 0) / 1000)}/${Math.floor(h.durabilityMax / 1000)}`);
+                // 衣服樣本/設計圖的「耐久」欄位其實是剩餘使用次數。
+                props.push(meta.FORMID
+                    ? `剩餘使用次數 ${Math.floor((h.durability ?? 0) / 1000)}`
+                    : `耐久度 ${Math.floor((h.durability ?? 0) / 1000)}/${Math.floor(h.durabilityMax / 1000)}`);
             }
             if (meta.OWNER) props.push(`${meta.OWNER} 專用物品`);
 
@@ -164,7 +174,8 @@ export default defineComponent({
                     slot,
                     name: info?.name ?? `${id}`,
                     rank: info?.level ? (RANKS[info.level - 1] ?? `${info.level}`) : null,
-                    desc: info?.desc ?? null,
+                    // 描述含字面兩字元 "\n"（XML 逸出），轉真換行由 CSS pre-line 呈現。
+                    desc: info?.desc ? info.desc.replaceAll('\\n', '\n') : null,
                 });
             };
             pushEnchant('接頭', h.enchantPrefix);
@@ -380,6 +391,7 @@ export default defineComponent({
 .item-tip .tip-desc {
     color: #aaa;
     padding-left: 10px;
+    white-space: pre-line;
 }
 
 .item-tip .tip-roll {

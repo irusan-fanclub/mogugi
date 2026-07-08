@@ -3,7 +3,7 @@ import { ComputedRef, Ref } from 'vue';
 import { MabiDB } from '@/mabidb';
 import { ActorManager } from '@/eventActor';
 import { DamageCollectorManager } from '@/actionCollector';
-import { EnchantInfo, MetalwareAbility } from '@/store';
+import { EnchantInfo, ManualForm, MetalwareAbility } from '@/store';
 
 declare module '@vue/runtime-core' {
     function inject(key: 'isLoading'): ComputedRef<boolean>;
@@ -18,6 +18,7 @@ declare module '@vue/runtime-core' {
     function inject(key: 'enchantNameMap'): Ref<Record<number, string>>;
     function inject(key: 'enchantInfoMap'): Ref<Record<number, EnchantInfo>>;
     function inject(key: 'metalwareMap'): Ref<Record<number, MetalwareAbility>>;
+    function inject(key: 'manualFormMap'): Ref<Record<number, ManualForm>>;
     function inject(key: 'appEvent'): Ref<EventTarget>;
     function inject(key: 'actorManager'): Ref<ActorManager>;
     function inject(key: 'dcManager'): Ref<DamageCollectorManager>;

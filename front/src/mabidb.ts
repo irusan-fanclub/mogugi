@@ -14,6 +14,14 @@ export interface OptionSetRow {
     Description: string | null;
 }
 
+export interface ManualFormRow {
+    Id: number;            // FormID（封包 MetaData1 的 FORMID）
+    Name: string;          // 完整顯示名「衣服樣本 - X」
+    ProductItemId: number | null;
+    ManualItemId: number | null;
+    Level: number | null;
+}
+
 export interface MetalwareAbilityRow {
     Id: number;
     Name: string;
@@ -61,6 +69,13 @@ export class MabiDB {
     public async getOptionSets(): Promise<OptionSetRow[]> {
         await this.tryOpen();
         return query<OptionSetRow>('SELECT id AS Id, name AS Name, level AS Level, description AS Description FROM optionset');
+    }
+
+    // 衣服樣本/設計圖（ManualForm）：FORMID → 完整名稱等。
+    public async getManualForms(): Promise<ManualFormRow[]> {
+        await this.tryOpen();
+        return query<ManualFormRow>(
+            'SELECT id AS Id, name AS Name, product_item_id AS ProductItemId, manual_item_id AS ManualItemId, level AS Level FROM manual_form');
     }
 
     // 細緻工匠能力列（tooltip 用）：value = InitialValue + (level-1) * ValuePerLevel。

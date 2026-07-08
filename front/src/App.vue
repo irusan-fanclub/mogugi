@@ -178,6 +178,7 @@ export default defineComponent({
         const enchantNameMap = inject('enchantNameMap');
         const enchantInfoMap = inject('enchantInfoMap');
         const metalwareMap = inject('metalwareMap');
+        const manualFormMap = inject('manualFormMap');
         const appEvent = inject('appEvent');
         const actorManager = inject('actorManager');
         const dcManager = inject('dcManager');
@@ -443,6 +444,18 @@ export default defineComponent({
                 }
             } catch (e) {
                 console.warn('metalware ability list unavailable (old bundled db?)', e);
+            }
+            try {
+                // 衣服樣本/設計圖名稱表（FORMID → 完整名）。
+                const list = await db.value.getManualForms();
+
+                for (const v of list) {
+                    manualFormMap.value[v.Id] = {
+                        name: v.Name, productItemId: v.ProductItemId, level: v.Level,
+                    };
+                }
+            } catch (e) {
+                console.warn('manual form list unavailable (old bundled db?)', e);
             }
 
             if (!isStandalone) {

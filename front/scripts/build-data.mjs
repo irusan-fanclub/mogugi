@@ -11,7 +11,7 @@ import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import Database from 'better-sqlite3';
 
-const BUILD_VERSION = 4;
+const BUILD_VERSION = 5;
 
 const REGION = 'tw';
 const VER = 'v154';
@@ -51,6 +51,9 @@ const LIST_SOURCES = [
       nameExpr: 'name',
       extra: { initial_value: 'REAL', value_per_level: 'REAL', base_max_level: 'INTEGER',
                standard: 'REAL', is_float: 'INTEGER', sub_desc: 'TEXT' } },
+    { dst: 'manual_form',         src: 'manual_form',         id: 'form_id',      optional: true,
+      nameExpr: 'name',
+      extra: { product_item_id: 'INTEGER', manual_item_id: 'INTEGER', level: 'INTEGER' } },
 ];
 
 async function exists(p) {
