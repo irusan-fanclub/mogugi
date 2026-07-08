@@ -40,6 +40,7 @@ type eventPublisher struct {
 	lastRegion      uint32 // 目前地圖 region id（26009），0=未知
 	lastMission     string // 最近的副本任務代碼（22007 enter_<code>），如 mrd
 	lastMissionID   uint32 // 最近的副本任務 id（45004），查 dungeonNames
+	lastBGM         string // 目前播放的 BGM（43302），Boss_* 表示王戰中
 }
 
 type eventClient struct {
@@ -352,6 +353,9 @@ func (t *eventPublisher) handlePacket(p *packet.GamePacket) {
 
 	case packet.OpcodeMissionStart:
 		t.handleMissionStart(p)
+
+	case packet.OpcodeBGMPlay:
+		t.handleBGMPlay(p)
 
 	case packet.OpcodeSetLocation:
 		t.handleSetLocation(p)
@@ -887,6 +891,38 @@ func (t *eventPublisher) handleMissionStart(p *packet.GamePacket) {
 	t.Lock()
 	t.lastMissionID = id
 	t.Unlock()
+}
+
+// bossBGMNames：王戰 BGM 檔名 → 王名。縮寫對照 DungeonCheckPoint（布里萊赫：
+// BT=布倫塔納斯、LM=雷楠的米勒）；VT 為一王（名稱待實測確認）。
+var bossBGMNames = map[string]string{
+	"Boss_BT.mp3": "布倫塔納斯",
+	"Boss_LM.mp3": "雷楠的米勒",
+}
+
+// handleBGMPlay 以 BGM 切換偵測王戰開始/結束：切到 Boss_*.mp3 = 開打，
+// 從 Boss_* 切回其他曲子 = 結束。
+func (t *eventPublisher) handleBGMPlay(p *packet.GamePacket) {
+	if len(p.Msg) < 1 || p.Msg[0].Type() != packet.MessageElemTypeString {
+		return
+	}
+	bgm, _ := p.Msg[0].Data().(string)
+	t.Lock()
+	prev := t.lastBGM
+	t.lastBGM = bgm
+	t.Unlock()
+	if bgm == prev {
+		return
+	}
+	if strings.HasPrefix(bgm, "Boss_") {
+		name := bossBGMNames[bgm]
+		if name == "" {
+			name = bgm
+		}
+		logger.Printf("boss fight start: %s", name)
+	} else if strings.HasPrefix(prev, "Boss_") {
+		logger.Printf("boss fight end (bgm -> %s)", bgm)
+	}
 }
 
 // regionName 回傳地圖名；>=35000 為動態副本實例（每次進入配發新 id），

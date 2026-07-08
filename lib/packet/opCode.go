@@ -26,6 +26,7 @@ const (
 	OpcodeItemDurabilityUpdate  OpCode = 23509 // 0x5bd5
 	OpcodeMissionState          OpCode = 22007 // (byte, long, string "enter_<code>", string) — mission enter, precedes the dynamic-region 26009
 	OpcodeMissionStart          OpCode = 45004 // (int missionId, int) — broadcast at dynamic-instance start, 2ms before 26009; id resolves via DungeonGuide
+	OpcodeBGMPlay               OpCode = 43302 // (string "Xxx.mp3", int) — play BGM; Boss_*.mp3 marks a boss-fight start (43303 = preload list)
 	OpcodeSetLocation           OpCode = 26009 // 0x6599 own warp/spawn: (byte 1, region, x, y) — sent on map change & channel-in
 	OpcodeForceWalk             OpCode = 25995 // 0x659b
 	OpcodeFlying                OpCode = 26031 // 0x65af
