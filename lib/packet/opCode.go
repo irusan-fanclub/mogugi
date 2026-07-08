@@ -24,6 +24,7 @@ const (
 	OpcodeEquipmentChanged      OpCode = 23014 // 0x59e6
 	OpcodeUnequipment           OpCode = 23015 // 0x59e7
 	OpcodeItemDurabilityUpdate  OpCode = 23509 // 0x5bd5
+	OpcodeSetLocation           OpCode = 26009 // 0x6599 own warp/spawn: (byte 1, region, x, y) — sent on map change & channel-in
 	OpcodeForceWalk             OpCode = 25995 // 0x659b
 	OpcodeFlying                OpCode = 26031 // 0x65af
 	OpcodeChangeStanceRes       OpCode = 28201 // 0x6e29

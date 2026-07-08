@@ -36,6 +36,7 @@ type eventPublisher struct {
 	pendingEvents   []event.IEvent
 	lastSentAt      time.Time
 	lastPacketAt    time.Time
+	lastRegion      uint32 // 目前地圖 region id（26009），0=未知
 }
 
 type eventClient struct {
@@ -342,6 +343,9 @@ func (t *eventPublisher) handlePacket(p *packet.GamePacket) {
 
 	case packet.OpcodeStatUpdatePublic:
 		t.handleStatUpdate(p)
+
+	case packet.OpcodeSetLocation:
+		t.handleSetLocation(p)
 
 	case packet.OpcodeChangeStance, packet.OpcodeChangeStanceRes:
 		t.handleChangeStance(p)
@@ -820,6 +824,29 @@ func (t *eventPublisher) handleStatUpdate(p *packet.GamePacket) {
 		},
 		Data: append([]byte(nil), data...),
 	})
+}
+
+// handleSetLocation logs a map change. 26009 carries (byte, region, x, y)
+// for the owner — sent on warp (moongate etc.) and on channel-in. Verified:
+// capture 1783536131, moongate ceoisland→tirchonaill = region 35011.
+func (t *eventPublisher) handleSetLocation(p *packet.GamePacket) {
+	if len(p.Msg) < 4 ||
+		p.Msg[1].Type() != packet.MessageElemTypeInt ||
+		p.Msg[2].Type() != packet.MessageElemTypeInt ||
+		p.Msg[3].Type() != packet.MessageElemTypeInt {
+		return
+	}
+	region := p.Msg[1].Data().(uint32)
+	x := p.Msg[2].Data().(uint32)
+	y := p.Msg[3].Data().(uint32)
+
+	t.Lock()
+	changed := region != t.lastRegion
+	t.lastRegion = region
+	t.Unlock()
+	if changed {
+		logger.Printf("map change: region=%d pos=(%d,%d)", region, x, y)
+	}
 }
 
 func (t *eventPublisher) handleChangeStance(p *packet.GamePacket) {
