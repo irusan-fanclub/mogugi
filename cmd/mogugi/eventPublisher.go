@@ -845,8 +845,20 @@ func (t *eventPublisher) handleSetLocation(p *packet.GamePacket) {
 	t.lastRegion = region
 	t.Unlock()
 	if changed {
-		logger.Printf("map change: region=%d pos=(%d,%d)", region, x, y)
+		logger.Printf("map change: %s (region=%d) pos=(%d,%d)", regionName(region), region, x, y)
 	}
+}
+
+// regionName 回傳地圖名；>=35000 為動態副本實例（每次進入配發新 id），
+// 不在靜態表中。
+func regionName(region uint32) string {
+	if n, ok := regionNames[region]; ok {
+		return n
+	}
+	if region >= 35000 {
+		return "副本(動態區域)"
+	}
+	return "未知地圖"
 }
 
 func (t *eventPublisher) handleChangeStance(p *packet.GamePacket) {
