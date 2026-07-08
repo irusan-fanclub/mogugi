@@ -12,6 +12,10 @@ import (
 )
 
 func main() {
+	if len(os.Args) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: itemdump <capture.pcapng>")
+		os.Exit(2)
+	}
 	file := os.Args[1]
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

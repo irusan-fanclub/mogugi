@@ -196,7 +196,10 @@ async function buildLeanDb(src) {
 
 async function main() {
     const { sha } = await ensureSourceSqlite();
-    const outputKey = `${sha}-v${BUILD_VERSION}`;
+    // Hash this script into the key too, so a schema/extraction change that
+    // forgets to bump BUILD_VERSION still invalidates the cached outputs.
+    const scriptSha = (await sha256File(new URL(import.meta.url))).slice(0, 12);
+    const outputKey = `${sha}-v${BUILD_VERSION}-${scriptSha}`;
 
     const meta = await loadMeta();
     if (
