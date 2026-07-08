@@ -1,6 +1,4 @@
 <template>
-  <!-- 卡片式排版：欄位/按鈕不放在會拉伸子元素的 100vh flex-column 裡
-       （Vuetify .v-input 有 flex:1 1 auto，直排時會被撐到吃滿剩餘高度）。 -->
   <v-container class="d-flex align-center justify-center" style="min-height: 100vh;">
     <v-card max-width="440" width="100%" class="pa-8" elevation="8" rounded="lg">
       <h2 class="text-h5 text-center mb-2">啟用 mogugi</h2>
