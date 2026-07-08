@@ -12,7 +12,8 @@ func setupActivated(t *testing.T) (priv ed25519PrivAlias) {
 	p := setTestKey(t)
 	oldMac, oldPath := MacKeyHex, pathOverride
 	MacKeyHex, pathOverride = "00112233445566778899aabbccddeeff", t.TempDir()
-	t.Cleanup(func() { MacKeyHex, pathOverride = oldMac, oldPath })
+	resetIdentityCache()
+	t.Cleanup(func() { MacKeyHex, pathOverride = oldMac, oldPath; resetIdentityCache() })
 	return p
 }
 
@@ -68,6 +69,79 @@ func TestStatus_MachineMismatch(t *testing.T) {
 	_ = writeLicenseData(*d)
 	if Status() {
 		t.Fatal("Status=true with mismatched machineId")
+	}
+}
+
+func TestActivate_FutureBeyondClockSkew(t *testing.T) {
+	priv := setupActivated(t)
+	// issuedAt is further in the future than clockSkew tolerance allows.
+	future := time.Now().Add(clockSkew + time.Minute).Unix()
+	if err := Activate(mintCode(t, priv, future, 42, "u")); !errors.Is(err, ErrExpired) {
+		t.Fatalf("err=%v want ErrExpired", err)
+	}
+}
+
+func TestActivate_FutureWithinClockSkew(t *testing.T) {
+	priv := setupActivated(t)
+	// issuedAt slightly in the future but within tolerance is accepted.
+	future := time.Now().Add(clockSkew - time.Minute).Unix()
+	if err := Activate(mintCode(t, priv, future, 42, "u")); err != nil {
+		t.Fatalf("Activate: %v want nil (within clock skew)", err)
+	}
+}
+
+func TestIdentity_HappyPath(t *testing.T) {
+	priv := setupActivated(t)
+	const uid uint64 = 123456789012345678
+	const name = "DisplayName"
+	if err := Activate(mintCode(t, priv, time.Now().Unix(), uid, name)); err != nil {
+		t.Fatalf("Activate: %v", err)
+	}
+	gotID, gotName, ok := Identity()
+	if !ok {
+		t.Fatal("Identity ok=false after Activate")
+	}
+	if gotID != "123456789012345678" || gotName != name {
+		t.Fatalf("Identity=(%q,%q) want (%q,%q)", gotID, gotName, "123456789012345678", name)
+	}
+}
+
+func TestIdentity_NotActivated(t *testing.T) {
+	setupActivated(t) // key+path set up, but no license.dat written
+	if _, _, ok := Identity(); ok {
+		t.Fatal("Identity ok=true with no license")
+	}
+}
+
+func TestIdentity_CachedAcrossCalls(t *testing.T) {
+	priv := setupActivated(t)
+	if err := Activate(mintCode(t, priv, time.Now().Unix(), 7, "n")); err != nil {
+		t.Fatal(err)
+	}
+	id1, n1, ok1 := Identity()
+	id2, n2, ok2 := Identity() // second call served from cache; must be identical
+	if id1 != id2 || n1 != n2 || ok1 != ok2 || !ok1 {
+		t.Fatalf("Identity not stable across calls: (%q,%q,%v) vs (%q,%q,%v)", id1, n1, ok1, id2, n2, ok2)
+	}
+}
+
+func TestStatus_MalformedMacKeyFailsClosed(t *testing.T) {
+	priv := setupActivated(t)
+	if err := Activate(mintCode(t, priv, time.Now().Unix(), 42, "u")); err != nil {
+		t.Fatal(err)
+	}
+	if !Status() {
+		t.Fatal("precondition: Status=false after Activate")
+	}
+	// Inject a non-hex MAC key: verification must fail closed, not degrade.
+	oldMac := MacKeyHex
+	MacKeyHex = "zznothex"
+	t.Cleanup(func() { MacKeyHex = oldMac })
+	if Status() {
+		t.Fatal("Status=true with malformed MacKeyHex; should fail closed")
+	}
+	if _, _, ok := Identity(); ok {
+		t.Fatal("Identity ok=true with malformed MacKeyHex; should fail closed")
 	}
 }
 

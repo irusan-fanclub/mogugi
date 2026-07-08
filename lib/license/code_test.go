@@ -56,6 +56,20 @@ func TestDecodeCode_Tampered(t *testing.T) {
 	}
 }
 
+func TestDecodeCode_InvalidUTF8Name(t *testing.T) {
+	priv := setTestKey(t)
+	// Build a signed payload whose displayName bytes are not valid UTF-8.
+	payload := make([]byte, 12+2)
+	binary.BigEndian.PutUint32(payload[0:], uint32(time.Now().Unix()))
+	binary.BigEndian.PutUint64(payload[4:], 1)
+	payload[12], payload[13] = 0xff, 0xfe // invalid UTF-8 sequence
+	sig := ed25519.Sign(priv, payload)
+	code := codePrefix + base64.RawURLEncoding.EncodeToString(append(payload, sig...))
+	if _, err := decodeCode(code); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("err=%v want ErrInvalid for non-UTF-8 name", err)
+	}
+}
+
 func TestDecodeCode_NoKey(t *testing.T) {
 	old := PublicKeyHex
 	PublicKeyHex = ""

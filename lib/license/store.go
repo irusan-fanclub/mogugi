@@ -37,9 +37,31 @@ func licenseFilePath() string {
 	return licenseFileName
 }
 
+// macKey decodes the build-injected MacKeyHex. ok is false when the key is
+// missing or malformed, so callers can fail closed rather than silently
+// degrading to an HMAC over an empty/partial key (which would weaken tamper
+// detection). Note: MacKeyHex=="" is the "not built with a key" case, which
+// Status/Activate already treat as fail-closed before reaching here.
+func macKey() (key []byte, ok bool) {
+	h := strings.TrimSpace(MacKeyHex)
+	if h == "" {
+		return nil, false
+	}
+	key, err := hex.DecodeString(h)
+	if err != nil || len(key) == 0 {
+		return nil, false
+	}
+	return key, true
+}
+
 // computeMAC computes HMAC-SHA256 of code|activatedAt|machineId using MacKeyHex.
+// If the key is malformed it returns "", which never equals a real MAC, so a
+// caller comparing against it fails closed.
 func computeMAC(d licenseData) string {
-	key, _ := hex.DecodeString(strings.TrimSpace(MacKeyHex))
+	key, ok := macKey()
+	if !ok {
+		return ""
+	}
 	mac := hmac.New(sha256.New, key)
 	mac.Write([]byte(d.Code + "|" + strconv.FormatInt(d.ActivatedAt, 10) + "|" + d.MachineID))
 	return hex.EncodeToString(mac.Sum(nil))
