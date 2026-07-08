@@ -281,6 +281,20 @@ export default defineComponent({
             return { props, imprint, enchants, rolls, bless, upgrades, special, energy, metalware, colorGroups };
         };
 
+        // 已確認的系統 pocket 名稱（無對應包包物品，靠實測命名）。
+        const POCKET_NAMES: Record<number, string> = {
+            56: '釣魚桶',     // 亞布內亞鯉魚 實測（固定 pocket，桶自身 @12=0）
+            61: '點數包包',   // 三劍客的護手禮劍放置架 實測
+        };
+        // containerText: 背包欄顯示 — 包包名 > 已知系統空間名 > 分類 > 未知空間#pocket。
+        const containerText = (h: Holder): string => {
+            if (h.bagItemId) return itemName(h.bagItemId);
+            if (h.pocket && POCKET_NAMES[h.pocket]) return POCKET_NAMES[h.pocket];
+            if (h.container === 'quest') return '任務';
+            if (h.container === 'bag') return `未知空間#${h.pocket ?? '?'}`;
+            return h.container;
+        };
+
         // metalwareText: 細工欄摘要（能力名 等級，以「 / 」串接）。
         const metalwareText = (h: Holder): string => {
             return (h.metalware ?? [])
@@ -350,9 +364,7 @@ export default defineComponent({
                 itemId: h.id,
                 entity: h.entity,
                 master: h.master,
-                container: h.bagItemId
-                    ? itemName(h.bagItemId)
-                    : h.container === 'bag' ? `未知空間#${h.pocket ?? '?'}` : h.container,
+                container: containerText(h),
                 qty: h.qty,
                 pos: `(${h.x},${h.y})`,
                 metalware: metalwareText(h),
