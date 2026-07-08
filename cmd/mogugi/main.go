@@ -50,7 +50,7 @@ func main() {
 		mode = os.Args[1]
 	}
 
-	logger.Printf("* dilmatulgi v%s %s", constants.Version, mode)
+	logger.Printf("* mogugi v%s %s (fork from dilmatulgi)", constants.Version, mode)
 
 	switch mode {
 	case "list":
@@ -94,7 +94,6 @@ func runFile(ctx context.Context, fileName string, realtime bool) {
 		Realtime: realtime,
 	})
 	if err != nil {
-		messagebox(fmt.Sprintf("NewGameServerPacketReader failed: %v", err))
 		logger.Fatalln("NewGameServerPacketReader failed:", err)
 	}
 
@@ -114,7 +113,6 @@ func serve(pub *eventPublisher) {
 func listNics() {
 	nics, err := pcap.FindAllDevs()
 	if err != nil {
-		messagebox(fmt.Sprintf("FindAllDevs failed: %v", err))
 		logger.Fatalln("FindAllDevs failed:", err)
 	}
 
@@ -127,9 +125,7 @@ func listNics() {
 		fmt.Fprintln(&sb, "* nic", i, "name:", nic.Name, "ip:", ipStr)
 	}
 
-	s := sb.String()
-	messagebox(s)
-	logger.Println(s)
+	logger.Println(sb.String())
 }
 
 func runPacketWriter(ctx context.Context, pub *eventPublisher) {
@@ -207,8 +203,7 @@ func startWebsocketServer(newClientCb func(*websocket.Conn)) {
 	go func() {
 		err := http.ListenAndServe(fmt.Sprintf("127.0.0.1:%d", port), nil)
 		if err != nil {
-			messagebox(fmt.Sprintf("ListenAndServe failed: %v", err))
-			logger.Fatalln(err)
+			logger.Fatalf("ListenAndServe failed: %v", err)
 		}
 	}()
 

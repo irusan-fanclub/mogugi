@@ -1,7 +1,7 @@
 <template>
   <v-container class="d-flex flex-column align-center justify-center"
     style="min-height: 100vh; max-width: 520px;">
-    <h2 class="mb-2">啟用 dilmatulgi</h2>
+    <h2 class="mb-2">啟用 mogugi</h2>
     <p class="text-medium-emphasis mb-4" style="text-align: center;">
       請貼上從 Discord 機器人取得的驗證碼。每組驗證碼僅供本人使用，
       且需於取得後 30 分鐘內啟用。
