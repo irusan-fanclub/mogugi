@@ -10,8 +10,8 @@ import (
 
 func TestSanitizeEntityName(t *testing.T) {
 	cases := map[string]string{
-		"小雞七號":    "小雞七號",
-		"a/b\\c":   "a_b_c",
+		"小雞七號":      "小雞七號",
+		"a/b\\c":    "a_b_c",
 		"name:1*2?": "name_1_2_",
 		"  trim  ":  "trim",
 		"":          "_unnamed",
@@ -104,6 +104,81 @@ func TestWriteAndReadItemIndex_MetalwareAndStats(t *testing.T) {
 	}
 	if len(it.Metalware) != 2 || it.Metalware[0] != (IndexMetalware{4300106, 8}) || it.Metalware[1] != (IndexMetalware{3501002, 13}) {
 		t.Fatalf("metalware=%+v", it.Metalware)
+	}
+}
+
+func TestWriteAndReadItemIndex_AllColumns(t *testing.T) {
+	dir := t.TempDir()
+	snap := &packet.EntitySnapshot{
+		Name: "全欄位測試",
+		Items: []packet.InventoryItem{{
+			ItemID: 40026, Qty: 1, Container: "bag", PosX: 2, PosY: 5,
+			Protection: 3, InjuryMin: 10, InjuryMax: 20, Balance: 55, Critical: 12,
+			BagItemID: 999, Pocket: 34,
+			PrefixEffects: []packet.EnchantEffect{{Code: 16, Value: 5}},
+			SuffixEffects: []packet.EnchantEffect{{Code: 1, Value: -3, CondSkill: 20001, CondRank: 6}},
+			BlessEffects:  []packet.EnchantEffect{{Code: 20, Value: 2}},
+			RelicEffects:  []packet.EnchantEffect{{Code: 2558, Value: 400}},
+			Colors:        [6]uint32{0xffffff, 0x112233, 0, 0, 0, 0xaabbcc},
+			Metadata:      "IMROM:4:73003;OWNER:s:地域磨菇;",
+		}},
+	}
+	if err := writeEntityCSVTo(dir, snap); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	idx, err := readItemIndexFrom(dir)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	it := idx[0].Items[0]
+	if it.Protection != 3 || it.InjuryMin != 10 || it.InjuryMax != 20 || it.Balance != 55 || it.Critical != 12 {
+		t.Errorf("stats round-trip=%+v", it)
+	}
+	if it.BagItemID != 999 || it.Pocket != 34 {
+		t.Errorf("bag/pocket=%d/%d want 999/34", it.BagItemID, it.Pocket)
+	}
+	if len(it.PrefixEffects) != 1 || it.PrefixEffects[0] != (IndexEnchantEffect{Code: 16, Value: 5}) {
+		t.Errorf("prefix=%+v", it.PrefixEffects)
+	}
+	if len(it.SuffixEffects) != 1 || it.SuffixEffects[0] != (IndexEnchantEffect{Code: 1, Value: -3, CondSkill: 20001, CondRank: 6}) {
+		t.Errorf("suffix (negative value + cond)=%+v", it.SuffixEffects)
+	}
+	if len(it.BlessEffects) != 1 || it.BlessEffects[0].Code != 20 {
+		t.Errorf("bless=%+v", it.BlessEffects)
+	}
+	if len(it.RelicEffects) != 1 || it.RelicEffects[0] != (IndexEnchantEffect{Code: 2558, Value: 400}) {
+		t.Errorf("relic=%+v", it.RelicEffects)
+	}
+	if len(it.Colors) != 6 || it.Colors[0] != "ffffff" || it.Colors[1] != "112233" || it.Colors[5] != "aabbcc" {
+		t.Errorf("colors=%+v", it.Colors)
+	}
+	if it.Metadata != "IMROM:4:73003;OWNER:s:地域磨菇;" {
+		t.Errorf("metadata=%q", it.Metadata)
+	}
+}
+
+func TestWriteEntity_SameNameDifferentMaster(t *testing.T) {
+	// 兩隻同名寵物、不同主人：不可互相覆蓋（各自一個檔）。
+	dir := t.TempDir()
+	a := &packet.EntitySnapshot{Name: "小雞", Master: "甲", Items: []packet.InventoryItem{{ItemID: 1}}}
+	b := &packet.EntitySnapshot{Name: "小雞", Master: "乙", Items: []packet.InventoryItem{{ItemID: 2}}}
+	if err := writeEntityCSVTo(dir, a); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeEntityCSVTo(dir, b); err != nil {
+		t.Fatal(err)
+	}
+	idx, err := readItemIndexFrom(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(idx) != 2 {
+		t.Fatalf("want 2 distinct entities, got %d: %+v", len(idx), idx)
+	}
+	for _, e := range idx {
+		if e.Entity != "小雞" {
+			t.Errorf("entity display name should stay 小雞, got %q", e.Entity)
+		}
 	}
 }
 

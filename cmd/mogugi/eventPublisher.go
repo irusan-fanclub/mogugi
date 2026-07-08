@@ -180,7 +180,15 @@ drainLoop:
 func (t *eventPublisher) ResetSession(reason string) {
 	t.Lock()
 	t.lastPacketAt = time.Now()
+	r := t.r
 	t.Unlock()
+
+	// Clear the reader's partial parse buffer: the kept reader is now seeing
+	// a brand-new TCP stream, and leftover bytes from the old one would
+	// corrupt the first packets (including the 0x5209 snapshot).
+	if r != nil {
+		r.ResetParseState()
+	}
 
 	drained := 0
 	for {

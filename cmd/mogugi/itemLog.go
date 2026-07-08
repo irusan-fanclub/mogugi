@@ -32,17 +32,17 @@ type IndexEnchantEffect struct {
 }
 
 type IndexItem struct {
-	ID            uint32           `json:"id"`
-	Qty           uint32           `json:"qty"`
-	Container     string           `json:"container"`
-	X             uint32           `json:"x"`
-	Y             uint32           `json:"y"`
-	EnchantPrefix uint32           `json:"enchantPrefix,omitempty"`
-	EnchantSuffix uint32           `json:"enchantSuffix,omitempty"`
-	Durability    uint32           `json:"durability,omitempty"`
-	DurabilityMax uint32           `json:"durabilityMax,omitempty"`
-	Defense       uint32           `json:"defense,omitempty"`
-	AttackMin     uint32           `json:"attackMin,omitempty"`
+	ID            uint32               `json:"id"`
+	Qty           uint32               `json:"qty"`
+	Container     string               `json:"container"`
+	X             uint32               `json:"x"`
+	Y             uint32               `json:"y"`
+	EnchantPrefix uint32               `json:"enchantPrefix,omitempty"`
+	EnchantSuffix uint32               `json:"enchantSuffix,omitempty"`
+	Durability    uint32               `json:"durability,omitempty"`
+	DurabilityMax uint32               `json:"durabilityMax,omitempty"`
+	Defense       uint32               `json:"defense,omitempty"`
+	AttackMin     uint32               `json:"attackMin,omitempty"`
 	Protection    uint32               `json:"protection,omitempty"`
 	InjuryMin     uint32               `json:"injuryMin,omitempty"`
 	InjuryMax     uint32               `json:"injuryMax,omitempty"`
@@ -157,7 +157,17 @@ type IndexEntity struct {
 	Items  []IndexItem `json:"items"`
 }
 
-// sanitizeEntityName 把實體名稱轉成安全檔名（保留中文，移除非法字元，trim 空白）。
+// windowsReserved 是 Windows 保留的裝置名，當作檔名（不分大小寫）會失敗。
+var windowsReserved = map[string]bool{
+	"con": true, "prn": true, "aux": true, "nul": true,
+	"com1": true, "com2": true, "com3": true, "com4": true, "com5": true,
+	"com6": true, "com7": true, "com8": true, "com9": true,
+	"lpt1": true, "lpt2": true, "lpt3": true, "lpt4": true, "lpt5": true,
+	"lpt6": true, "lpt7": true, "lpt8": true, "lpt9": true,
+}
+
+// sanitizeEntityName 把實體名稱轉成安全檔名（保留中文，移除非法字元，trim 空白，
+// 去尾端點號，避開 Windows 保留裝置名）。
 func sanitizeEntityName(name string) string {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -172,7 +182,24 @@ func sanitizeEntityName(name string) string {
 			b.WriteRune(r)
 		}
 	}
-	return strings.TrimSpace(b.String())
+	// Windows 會忽略檔名尾端的 '.' 與空白，去掉以免對不上。
+	out := strings.TrimRight(strings.TrimSpace(b.String()), ". ")
+	if out == "" {
+		return "_unnamed"
+	}
+	if windowsReserved[strings.ToLower(out)] {
+		out = "_" + out
+	}
+	return out
+}
+
+// entityFileBase 產生實體檔名基底：主人名不同的同名寵物不會互相覆蓋。
+func entityFileBase(name, master string) string {
+	base := sanitizeEntityName(name)
+	if m := strings.TrimSpace(master); m != "" && m != strings.TrimSpace(name) {
+		base += "__" + sanitizeEntityName(master)
+	}
+	return base
 }
 
 // itemsLogDir 回傳物品索引輸出目錄（與 logs/ 同層）。
@@ -195,7 +222,7 @@ func writeEntityCSVTo(dir string, snap *packet.EntitySnapshot) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	final := filepath.Join(dir, sanitizeEntityName(snap.Name)+".csv")
+	final := filepath.Join(dir, entityFileBase(snap.Name, snap.Master)+".csv")
 	tmp, err := os.CreateTemp(dir, ".tmp-*.csv")
 	if err != nil {
 		return err
@@ -204,7 +231,9 @@ func writeEntityCSVTo(dir string, snap *packet.EntitySnapshot) error {
 	defer os.Remove(tmpName)
 
 	w := csv.NewWriter(tmp)
-	_ = w.Write([]string{"# master", snap.Master})
+	// # meta 列同時帶實體名與主人名，讓顯示名與檔名脫鉤（檔名含主人名以避免
+	// 同名寵物互相覆蓋，但顯示名應是實體本名）。
+	_ = w.Write([]string{"# meta", snap.Name, snap.Master})
 	_ = w.Write([]string{"item_id", "qty", "container", "pos_x", "pos_y", "enchant_prefix", "enchant_suffix",
 		"durability", "durability_max", "defense", "attack_min", "attack_max", "metalware", "suffix_effects",
 		"prefix_effects", "bless_effects", "protection", "colors", "metadata", "injury_min", "injury_max", "balance", "critical", "bag_item_id", "pocket", "relic_effects"})
@@ -292,6 +321,12 @@ func readOneEntityCSV(path string) (IndexEntity, error) {
 		Items:  []IndexItem{},
 	}
 	for _, row := range rows {
+		// 新格式：# meta,<entity>,<master>；舊格式：# master,<master>（名字來自檔名）。
+		if len(row) >= 3 && row[0] == "# meta" {
+			ent.Entity = row[1]
+			ent.Master = row[2]
+			continue
+		}
 		if len(row) == 2 && row[0] == "# master" {
 			ent.Master = row[1]
 			continue

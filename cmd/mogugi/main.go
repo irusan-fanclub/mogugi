@@ -129,8 +129,11 @@ func listNics() {
 }
 
 func runPacketWriter(ctx context.Context, pub *eventPublisher) {
+	// Deliberately never close ch: the publisher (flushNow) may send to it
+	// from another goroutine, and closing while it's still registered would
+	// panic. The client is dropped when its ctx is cancelled or the channel
+	// backs up; an abandoned channel is just GC'd.
 	ch := make(chan []event.IEvent, 10000)
-	defer close(ch)
 
 	pub.addClient(ctx, ch)
 	if err := startPacketWriter(ctx, ch); err != nil {
@@ -145,8 +148,10 @@ func websocketHandler(pub *eventPublisher) func(*websocket.Conn) {
 		defer wsCtxCancel()
 
 		// Generous buffer: WS send drains slower than the publisher emits under load.
+		// Never closed: flushNow sends from another goroutine, and close()
+		// racing that send would panic. wsCtxCancel unregisters the client
+		// (flushNow drops it on ctx.Done); the channel is then GC'd.
 		ch := make(chan []event.IEvent, 10000)
-		defer close(ch)
 
 		go pub.addClient(wsCtx, ch)
 		go drainIncoming(ws, wsCtx, wsCtxCancel)
@@ -286,7 +291,7 @@ func startConnectionWatchdog(ctx context.Context, pub *eventPublisher) {
 			}
 			if constants.ServerIP == "" {
 				// Empty triple = first-ever discovery, not a real switch.
-				go swap("initial")
+				swap("initial")
 				continue
 			}
 
@@ -308,7 +313,7 @@ func startConnectionWatchdog(ctx context.Context, pub *eventPublisher) {
 			}
 
 			logger.Printf("watchdog: current connection gone, %d candidate(s); switching", len(conns))
-			go swap("channel_switch")
+			swap("channel_switch")
 
 		case <-idleTicker.C:
 			if time.Since(pub.LastPacketAt()) <= 60*time.Second {
@@ -319,7 +324,7 @@ func startConnectionWatchdog(ctx context.Context, pub *eventPublisher) {
 				continue
 			}
 			logger.Println("watchdog: idle 60s, fallback re-discover")
-			go swap("idle_fallback")
+			swap("idle_fallback")
 		}
 	}
 }
