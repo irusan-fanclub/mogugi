@@ -132,13 +132,20 @@ func TestParseEntitySnapshot_MetalwareAndStats(t *testing.T) {
 		le.PutUint32(b[36:], aid)
 		return b
 	}
+	// kind=1 賦予浮動值：鏡像真實手套記錄（Crit +1，條件 分解(10030) rank A(6)）。
+	roll := make([]byte, 40)
+	le.PutUint32(roll[0:], 1)
+	le.PutUint16(roll[12:], 19)    // Code: Crit
+	le.PutUint16(roll[14:], 1)     // rolled value
+	le.PutUint16(roll[36:], 10030) // cond skill
+	roll[39] = 6                   // cond rank A（u8 @39，鏡像真實 "2e 27 00 06"）
 	msg := Message{
 		NewMessageElemString("嫩煎雞小羊01"),
 		NewMessageElemLong(0x1234), NewMessageElemByte(2),
 		NewMessageElemBin(info), NewMessageElemBin(ext),
 		NewMessageElemString(""), NewMessageElemString(""),
 		NewMessageElemByte(4),
-		NewMessageElemBin(mw(1, 99, 99)), // kind=1 非細工，忽略
+		NewMessageElemBin(roll),
 		NewMessageElemBin(mw(7, 4300106, 8)),
 		NewMessageElemBin(mw(7, 3500403, 17)),
 		NewMessageElemBin(mw(7, 3501002, 13)),
@@ -165,6 +172,9 @@ func TestParseEntitySnapshot_MetalwareAndStats(t *testing.T) {
 	}
 	if it.EnchantSuffix != 30105 {
 		t.Fatalf("suffix=%d", it.EnchantSuffix)
+	}
+	if len(it.EnchantRolls) != 1 || it.EnchantRolls[0] != (EnchantRoll{Code: 19, Value: 1, CondSkill: 10030, CondRank: 6}) {
+		t.Fatalf("rolls=%+v", it.EnchantRolls)
 	}
 }
 

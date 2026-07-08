@@ -1,10 +1,12 @@
 export interface IndexMetalware { id: number; level: number }
+export interface IndexEnchantRoll { code: number; value: number; condSkill?: number; condRank?: number }
 export interface IndexItem {
     id: number; qty: number; container: string; x: number; y: number;
     enchantPrefix?: number; enchantSuffix?: number;
     durability?: number; durabilityMax?: number; defense?: number;
     attackMin?: number; attackMax?: number;
     metalware?: IndexMetalware[];
+    enchantRolls?: IndexEnchantRoll[];
 }
 export interface IndexEntity { entity: string; master: string; items: IndexItem[] }
 export interface Holder {
@@ -13,6 +15,7 @@ export interface Holder {
     durability?: number; durabilityMax?: number; defense?: number;
     attackMin?: number; attackMax?: number;
     metalware?: IndexMetalware[];
+    enchantRolls?: IndexEnchantRoll[];
 }
 
 // buildItemIndex 把 /api/item-index 的聚合資料轉成 item id → 持有者清單。
@@ -28,6 +31,7 @@ export function buildItemIndex(data: IndexEntity[]): Map<number, Holder[]> {
                 durability: it.durability, durabilityMax: it.durabilityMax,
                 defense: it.defense, attackMin: it.attackMin, attackMax: it.attackMax,
                 metalware: it.metalware,
+                enchantRolls: it.enchantRolls,
             });
             idx.set(it.id, arr);
         }

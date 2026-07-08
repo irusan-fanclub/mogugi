@@ -82,8 +82,8 @@ func ParseEntitySnapshot(msg Message) (*EntitySnapshot, error) {
 					}
 				}
 			}
-			// 兩個字串之後是 Byte(count) + count × Bin(40)，其中 kind=7
-			// 的是細緻工匠能力（等級 + ability id）。
+			// 兩個字串之後是 Byte(count) + count × Bin(40)：kind=7 是
+			// 細緻工匠能力（等級 + ability id），kind=1 是賦予效果浮動值。
 			if i+6 < len(msg) && msg[i+5].Type() == MessageElemTypeString && msg[i+6].Type() == MessageElemTypeByte {
 				if cnt, ok := msg[i+6].Data().(uint8); ok {
 					for k := 0; k < int(cnt) && i+7+k < len(msg); k++ {
@@ -96,6 +96,8 @@ func ParseEntitySnapshot(msg Message) (*EntitySnapshot, error) {
 						}
 						if mw, ok := parseMetalwareBin(b); ok {
 							it.Metalware = append(it.Metalware, mw)
+						} else if roll, ok := parseEnchantRollBin(b); ok {
+							it.EnchantRolls = append(it.EnchantRolls, roll)
 						}
 					}
 				}

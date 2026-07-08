@@ -26,12 +26,15 @@
                                 </div>
                                 <div v-if="e.desc" class="tip-line tip-desc">{{ e.desc }}</div>
                             </template>
+                            <div v-if="item.tip.rolls.length" class="tip-line tip-roll">
+                                實際數值：{{ item.tip.rolls.map(v => `+${v}`).join('、') }}
+                            </div>
                         </template>
                         <template v-if="item.tip.metalware.length">
                             <div class="tip-section">細緻工匠</div>
                             <template v-for="(m, i) in item.tip.metalware" :key="`m${i}`">
                                 <div class="tip-line tip-mw">{{ m.name }} ({{ m.level }}/{{ m.max }}等級)</div>
-                                <div v-if="m.value != null" class="tip-line tip-desc">L {{ m.value }} 增加</div>
+                                <div v-if="m.value != null" class="tip-line tip-desc">L {{ m.value }}</div>
                             </template>
                         </template>
                     </div>
@@ -51,8 +54,8 @@ import type { EnchantInfo, MetalwareAbility } from '@/store';
 const RANKS = ['F', 'E', 'D', 'C', 'B', 'A', '9', '8', '7', '6', '5', '4', '3', '2', '1'];
 
 interface TipEnchant { slot: string; name: string; rank: string | null; desc: string | null }
-interface TipMetalware { name: string; level: number; max: number; value: number | null }
-interface Tip { props: string[]; enchants: TipEnchant[]; metalware: TipMetalware[] }
+interface TipMetalware { name: string; level: number; max: number; value: string | null }
+interface Tip { props: string[]; enchants: TipEnchant[]; rolls: number[]; metalware: TipMetalware[] }
 
 export default defineComponent({
     setup() {
@@ -108,20 +111,28 @@ export default defineComponent({
             };
             pushEnchant('接頭', h.enchantPrefix);
             pushEnchant('接尾', h.enchantSuffix);
+            // 賦予效果的逐件浮動值（封包 kind-1 記錄）。
+            const rolls = (h.enchantRolls ?? []).map(r => r.value);
 
-            // 細緻工匠：數值 = InitialValue + (level-1) × ValuePerLevel。
+            // 細緻工匠：顯示值 = (init + (level-1) × per) × standard，
+            // IsFloat 補兩位小數，後綴 SubDesc（"m 增加" / "% 增加"）。
             const metalware: TipMetalware[] = (h.metalware ?? []).map(m => {
                 const a = metalwareMap.value[m.id];
+                let text: string | null = null;
+                if (a) {
+                    const v = (a.init + (m.level - 1) * a.per) * (a.standard || 1);
+                    text = `${a.isFloat ? v.toFixed(2) : Math.round(v)} ${a.subDesc}`;
+                }
                 return {
                     name: a?.name ?? `#${m.id}`,
                     level: m.level,
                     max: a?.max || 20,
-                    value: a ? Number((a.init + (m.level - 1) * a.per).toFixed(2)) : null,
+                    value: text,
                 };
             });
 
             if (!props.length && !enchants.length && !metalware.length) return null;
-            return { props, enchants, metalware };
+            return { props, enchants, rolls, metalware };
         };
 
         // nameToIds: 回傳 label 含查詢字串的所有 item id（模糊比對）。
@@ -241,6 +252,11 @@ export default defineComponent({
 
 .item-tip .tip-desc {
     color: #aaa;
+    padding-left: 10px;
+}
+
+.item-tip .tip-roll {
+    color: #ffe08a;
     padding-left: 10px;
 }
 

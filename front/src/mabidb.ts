@@ -20,6 +20,9 @@ export interface MetalwareAbilityRow {
     InitialValue: number | null;
     ValuePerLevel: number | null;
     BaseMaxLevel: number | null;
+    Standard: number | null;    // 顯示倍率（如 0.01: 425 → 4.25）
+    IsFloat: number | null;     // 1 = 顯示兩位小數
+    SubDesc: string | null;     // 效果行單位後綴（"m 增加" / "% 增加"）
 }
 
 const TABLE_BY_KEY: Record<ListKey, string> = {
@@ -64,7 +67,9 @@ export class MabiDB {
     public async getMetalwareAbilities(): Promise<MetalwareAbilityRow[]> {
         await this.tryOpen();
         return query<MetalwareAbilityRow>(
-            'SELECT id AS Id, name AS Name, initial_value AS InitialValue, value_per_level AS ValuePerLevel, base_max_level AS BaseMaxLevel FROM metalware_ability');
+            'SELECT id AS Id, name AS Name, initial_value AS InitialValue, value_per_level AS ValuePerLevel, '
+            + 'base_max_level AS BaseMaxLevel, standard AS Standard, is_float AS IsFloat, sub_desc AS SubDesc '
+            + 'FROM metalware_ability');
     }
 
     // mabitsequal bakes localized names into entity rows, so no separate string

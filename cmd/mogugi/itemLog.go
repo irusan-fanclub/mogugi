@@ -23,6 +23,14 @@ type IndexMetalware struct {
 	Level uint32 `json:"level"`
 }
 
+// IndexEnchantRoll 是一條賦予效果浮動值（JSON 用）。
+type IndexEnchantRoll struct {
+	Code      uint32 `json:"code"`
+	Value     uint32 `json:"value"`
+	CondSkill uint32 `json:"condSkill,omitempty"`
+	CondRank  uint32 `json:"condRank,omitempty"`
+}
+
 type IndexItem struct {
 	ID            uint32           `json:"id"`
 	Qty           uint32           `json:"qty"`
@@ -35,8 +43,9 @@ type IndexItem struct {
 	DurabilityMax uint32           `json:"durabilityMax,omitempty"`
 	Defense       uint32           `json:"defense,omitempty"`
 	AttackMin     uint32           `json:"attackMin,omitempty"`
-	AttackMax     uint32           `json:"attackMax,omitempty"`
-	Metalware     []IndexMetalware `json:"metalware,omitempty"`
+	AttackMax     uint32             `json:"attackMax,omitempty"`
+	Metalware     []IndexMetalware   `json:"metalware,omitempty"`
+	EnchantRolls  []IndexEnchantRoll `json:"enchantRolls,omitempty"`
 }
 
 // encodeMetalware / decodeMetalware 以 "id:lv|id:lv" 存入 CSV 單欄。
@@ -64,6 +73,47 @@ func decodeMetalware(s string) []IndexMetalware {
 			continue
 		}
 		out = append(out, IndexMetalware{ID: uint32(idU), Level: uint32(lvU)})
+	}
+	return out
+}
+
+// encodeEnchantRolls / decodeEnchantRolls 以 "code:value:condSkill:condRank|…"
+// 存入 CSV 單欄。
+func encodeEnchantRolls(list []packet.EnchantRoll) string {
+	parts := make([]string, 0, len(list))
+	for _, r := range list {
+		parts = append(parts, fmt.Sprintf("%d:%d:%d:%d", r.Code, r.Value, r.CondSkill, r.CondRank))
+	}
+	return strings.Join(parts, "|")
+}
+
+func decodeEnchantRolls(s string) []IndexEnchantRoll {
+	if s == "" {
+		return nil
+	}
+	var out []IndexEnchantRoll
+	for _, part := range strings.Split(s, "|") {
+		f := strings.Split(part, ":")
+		if len(f) != 4 {
+			continue
+		}
+		var v [4]uint64
+		bad := false
+		for i, fs := range f {
+			u, err := strconv.ParseUint(fs, 10, 32)
+			if err != nil {
+				bad = true
+				break
+			}
+			v[i] = u
+		}
+		if bad {
+			continue
+		}
+		out = append(out, IndexEnchantRoll{
+			Code: uint32(v[0]), Value: uint32(v[1]),
+			CondSkill: uint32(v[2]), CondRank: uint32(v[3]),
+		})
 	}
 	return out
 }
@@ -123,7 +173,7 @@ func writeEntityCSVTo(dir string, snap *packet.EntitySnapshot) error {
 	w := csv.NewWriter(tmp)
 	_ = w.Write([]string{"# master", snap.Master})
 	_ = w.Write([]string{"item_id", "qty", "container", "pos_x", "pos_y", "enchant_prefix", "enchant_suffix",
-		"durability", "durability_max", "defense", "attack_min", "attack_max", "metalware"})
+		"durability", "durability_max", "defense", "attack_min", "attack_max", "metalware", "enchant_rolls"})
 	for _, it := range snap.Items {
 		_ = w.Write([]string{
 			strconv.FormatUint(uint64(it.ItemID), 10),
@@ -139,6 +189,7 @@ func writeEntityCSVTo(dir string, snap *packet.EntitySnapshot) error {
 			strconv.FormatUint(uint64(it.AttackMin), 10),
 			strconv.FormatUint(uint64(it.AttackMax), 10),
 			encodeMetalware(it.Metalware),
+			encodeEnchantRolls(it.EnchantRolls),
 		})
 	}
 	w.Flush()
@@ -231,6 +282,9 @@ func readOneEntityCSV(path string) (IndexEntity, error) {
 			item.AttackMin = uint32(aMin)
 			item.AttackMax = uint32(aMax)
 			item.Metalware = decodeMetalware(row[12])
+		}
+		if len(row) >= 14 {
+			item.EnchantRolls = decodeEnchantRolls(row[13])
 		}
 		ent.Items = append(ent.Items, item)
 	}

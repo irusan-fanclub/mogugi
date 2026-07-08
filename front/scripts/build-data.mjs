@@ -11,7 +11,7 @@ import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import Database from 'better-sqlite3';
 
-const BUILD_VERSION = 3;
+const BUILD_VERSION = 4;
 
 const REGION = 'tw';
 const VER = 'v154';
@@ -49,7 +49,8 @@ const LIST_SOURCES = [
       extra: { level: 'INTEGER', description: 'TEXT' } },
     { dst: 'metalware_ability',   src: 'metalware_ability',   id: 'ability_id',   optional: true,
       nameExpr: 'name',
-      extra: { initial_value: 'REAL', value_per_level: 'REAL', base_max_level: 'INTEGER' } },
+      extra: { initial_value: 'REAL', value_per_level: 'REAL', base_max_level: 'INTEGER',
+               standard: 'REAL', is_float: 'INTEGER', sub_desc: 'TEXT' } },
 ];
 
 async function exists(p) {

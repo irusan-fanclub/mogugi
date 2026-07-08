@@ -12,6 +12,18 @@ type MetalwareEntry struct {
 	Level     uint32
 }
 
+// EnchantRoll 是一條賦予效果的逐件浮動值（kind-1 40-byte 記錄）。
+// 驗證樣本：杜克獵人手套（辛勤的，OptionList
+// ":IsGreaterEqualSkillLv(10030,6) : SetParamOnEquip(Crit, +(1~3));"）
+// → {Code:19(Crit), Value:1, CondSkill:10030, CondRank:6}，與遊戲
+// tooltip「分解 等級A以上時 暴擊率 1 增加(1~3)」一致。
+type EnchantRoll struct {
+	Code      uint32 // 參數碼（19=Crit …）
+	Value     uint32 // 抽到的實際值
+	CondSkill uint32 // 條件技能 id（0=無）
+	CondRank  uint32 // 條件技能等級（6=A …）
+}
+
 // InventoryItem 是從 0x5209 inventory 抽出的單件物品。
 type InventoryItem struct {
 	ItemID    uint32
@@ -31,6 +43,8 @@ type InventoryItem struct {
 	AttackMax     uint32
 	// Metalware 是細緻工匠能力清單（kind-7 的 40-byte 記錄）。
 	Metalware []MetalwareEntry
+	// EnchantRolls 是賦予效果的浮動值清單（kind-1 的 40-byte 記錄）。
+	EnchantRolls []EnchantRoll
 }
 
 // parseExtEnchants 從 item 的擴充 Bin（Item.OptionInfo 結構，144 bytes）取
@@ -70,6 +84,21 @@ func parseMetalwareBin(b []byte) (MetalwareEntry, bool) {
 	return MetalwareEntry{
 		AbilityID: le.Uint32(b[36:]),
 		Level:     uint32(le.Uint16(b[14:])),
+	}, true
+}
+
+// parseEnchantRollBin 解析 kind=1 的 40-byte 記錄：賦予效果的浮動值。
+// 參數碼 u16@12、實際值 u16@14、條件技能 u16@36、條件等級 u8@39
+// （真實資料 @36..39 = "2e 27 00 06" → 技能 10030、等級 6=A）。
+func parseEnchantRollBin(b []byte) (EnchantRoll, bool) {
+	if len(b) < 40 || le.Uint32(b[0:]) != 1 {
+		return EnchantRoll{}, false
+	}
+	return EnchantRoll{
+		Code:      uint32(le.Uint16(b[12:])),
+		Value:     uint32(le.Uint16(b[14:])),
+		CondSkill: uint32(le.Uint16(b[36:])),
+		CondRank:  uint32(b[39]),
 	}, true
 }
 

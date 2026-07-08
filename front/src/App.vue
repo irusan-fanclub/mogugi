@@ -437,6 +437,8 @@ export default defineComponent({
                     metalwareMap.value[v.Id] = {
                         name: v.Name, init: v.InitialValue ?? 0,
                         per: v.ValuePerLevel ?? 0, max: v.BaseMaxLevel ?? 0,
+                        standard: v.Standard ?? 1, isFloat: v.IsFloat === 1,
+                        subDesc: v.SubDesc ?? '增加',
                     };
                 }
             } catch (e) {
