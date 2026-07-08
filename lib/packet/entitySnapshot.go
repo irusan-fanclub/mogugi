@@ -73,6 +73,7 @@ func ParseEntitySnapshot(msg Message) (*EntitySnapshot, error) {
 			}
 			if i+4 < len(msg) && msg[i+4].Type() == MessageElemTypeString {
 				if s, ok := msg[i+4].Data().(string); ok {
+					it.Metadata = s
 					p, sfx := parseOptionInfo(s)
 					if p != 0 {
 						it.EnchantPrefix = p
@@ -82,8 +83,9 @@ func ParseEntitySnapshot(msg Message) (*EntitySnapshot, error) {
 					}
 				}
 			}
-			// 兩個字串之後是 Byte(count) + count × Bin(40)：kind=7 是
-			// 細緻工匠能力（等級 + ability id），kind=1 是賦予效果浮動值。
+			// 兩個字串之後是 Byte(count) + count × Bin(40)（Aura 的
+			// upgradeEffect）：kind=7 細緻工匠、kind=0 接頭賦予效果行、
+			// kind=1 接尾賦予效果行、kind=10 聖水效果。
 			if i+6 < len(msg) && msg[i+5].Type() == MessageElemTypeString && msg[i+6].Type() == MessageElemTypeByte {
 				if cnt, ok := msg[i+6].Data().(uint8); ok {
 					for k := 0; k < int(cnt) && i+7+k < len(msg); k++ {
@@ -96,8 +98,17 @@ func ParseEntitySnapshot(msg Message) (*EntitySnapshot, error) {
 						}
 						if mw, ok := parseMetalwareBin(b); ok {
 							it.Metalware = append(it.Metalware, mw)
-						} else if roll, ok := parseEnchantRollBin(b); ok {
-							it.EnchantRolls = append(it.EnchantRolls, roll)
+							continue
+						}
+						if kind, eff, ok := parseEffectBin(b); ok {
+							switch kind {
+							case 0:
+								it.PrefixEffects = append(it.PrefixEffects, eff)
+							case 1:
+								it.SuffixEffects = append(it.SuffixEffects, eff)
+							case 10:
+								it.BlessEffects = append(it.BlessEffects, eff)
+							}
 						}
 					}
 				}

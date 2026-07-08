@@ -29,9 +29,17 @@
                     </template>
                     <div class="item-tip">
                         <div class="tip-title">{{ item.item }}</div>
+                        <template v-if="item.tip.imprint">
+                            <div class="tip-section">等級</div>
+                            <div class="tip-line tip-roll">{{ item.tip.imprint }}</div>
+                        </template>
                         <template v-if="item.tip.props.length">
                             <div class="tip-section">道具屬性</div>
                             <div v-for="(l, i) in item.tip.props" :key="`p${i}`" class="tip-line">{{ l }}</div>
+                        </template>
+                        <template v-if="item.tip.bless.length">
+                            <div class="tip-section">聖水效果</div>
+                            <div v-for="(l, i) in item.tip.bless" :key="`b${i}`" class="tip-line tip-mw">{{ l }}</div>
                         </template>
                         <template v-if="item.tip.enchants.length">
                             <div class="tip-section">魔力賦予</div>
@@ -52,6 +60,14 @@
                                 <div v-if="m.value != null" class="tip-line tip-desc">L {{ m.value }}</div>
                             </template>
                         </template>
+                        <template v-if="item.tip.colors.length">
+                            <div class="tip-section">道具顏色</div>
+                            <div v-for="(c, i) in item.tip.colors" :key="`c${i}`" class="tip-line">
+                                <span class="tip-swatch" :style="{ background: `#${c}` }" />
+                                部位 {{ 'ABCDEF'[i] }}
+                                <span class="tip-desc" style="padding-left:6px">#{{ c.toUpperCase() }}</span>
+                            </div>
+                        </template>
                     </div>
                 </v-tooltip>
                 <span v-else>{{ item.item }}</span>
@@ -62,15 +78,29 @@
 
 <script lang="ts">
 import { defineComponent, ref, computed, inject, onMounted, watch, type Ref } from 'vue';
-import { buildItemIndex, type IndexEntity, type Holder } from '@/lib/itemIndex';
+import { buildItemIndex, parseItemMetadata, type IndexEntity, type Holder, type IndexEnchantEffect } from '@/lib/itemIndex';
 import type { EnchantInfo, MetalwareAbility } from '@/store';
 
 // 賦予等級 → 遊戲位階字母（level 1=F … 6=A, 7=9, 8=8 …15=1）。
 const RANKS = ['F', 'E', 'D', 'C', 'B', 'A', '9', '8', '7', '6', '5', '4', '3', '2', '1'];
 
+// 效果行參數碼 → 顯示名（由 OptionList SetParamOnEquip 逐行對照驗證）。
+const PARAM_NAMES: Record<number, string> = {
+    1: '最大生命值', 3: '最大魔法值', 16: '最大傷害', 19: '暴擊率',
+    20: '保護', 22: '平衡性', 53: '魔法攻擊力', 54: '魔法保護', 178: '人偶最大傷害',
+};
+
 interface TipEnchant { slot: string; name: string; rank: string | null; desc: string | null }
 interface TipMetalware { name: string; level: number; max: number; value: string | null }
-interface Tip { props: string[]; enchants: TipEnchant[]; rolls: number[]; metalware: TipMetalware[] }
+interface Tip {
+    props: string[];
+    imprint: string | null;
+    enchants: TipEnchant[];
+    rolls: number[];
+    bless: string[];
+    metalware: TipMetalware[];
+    colors: string[];
+}
 
 export default defineComponent({
     setup() {
@@ -108,14 +138,23 @@ export default defineComponent({
                 : `${parts.join(' ')} ${base}`;
         };
 
-        // buildTip: 組出遊戲風格 tooltip 的三個區塊；全空回 null（不掛 tooltip）。
+        // buildTip: 組出遊戲風格 tooltip 的各區塊；全空回 null（不掛 tooltip）。
         const buildTip = (h: Holder): Tip | null => {
+            const meta = parseItemMetadata(h.metadata);
+
             const props: string[] = [];
             if (h.attackMax) props.push(`攻擊 ${h.attackMin ?? 0}~${h.attackMax}`);
             if (h.defense) props.push(`防禦力 ${h.defense}`);
+            if (h.protection) props.push(`保護 ${h.protection}`);
+            if (meta.MDEF) props.push(`魔法防禦力 ${meta.MDEF}`);
+            if (meta.MPROT) props.push(`魔法保護 ${meta.MPROT}`);
             if (h.durabilityMax) {
                 props.push(`耐久度 ${Math.floor((h.durability ?? 0) / 1000)}/${Math.floor(h.durabilityMax / 1000)}`);
             }
+            if (meta.OWNER) props.push(`${meta.OWNER} 專用物品`);
+
+            // 刻印（IMRBV=加成值，範圍/類型資訊不在封包，先顯示值）。
+            const imprint = meta.IMRBV ? `刻印加成 +${meta.IMRBV}%` : null;
 
             const enchants: TipEnchant[] = [];
             const pushEnchant = (slot: string, id?: number) => {
@@ -130,15 +169,31 @@ export default defineComponent({
             };
             pushEnchant('接頭', h.enchantPrefix);
             pushEnchant('接尾', h.enchantSuffix);
-            // 賦予效果的逐件浮動值（封包 kind-1 記錄）：依序內嵌到效果文字的
-            // 範圍處，仿遊戲「暴擊率增加 1 (1~3)%」。對不上的才留獨立行。
-            const rollQueue = (h.enchantRolls ?? []).map(r => r.value);
-            for (const e of enchants) {
-                if (!e.desc || !rollQueue.length) continue;
-                e.desc = e.desc.replace(/\d+(?:\.\d+)?\s*~\s*\d+(?:\.\d+)?/g,
-                    m => rollQueue.length ? `${rollQueue.shift()} (${m})` : m);
-            }
-            const rolls = rollQueue;
+
+            // 賦予效果的逐件實際值（kind-0=接頭 / kind-1=接尾）：依槽內嵌到該槽
+            // 效果文字的範圍處，仿遊戲「最大傷害 55 增加(50~55)」。剩餘的留獨立行。
+            // 有範圍的效果行（如 +(50~55)）才有浮動值可嵌；固定值行（保護+3）
+            // 的實際值與文字相同，不另顯示。範圍行以「值落在範圍內」配對。
+            const rolls: number[] = [];
+            const inline = (slot: string, effects?: IndexEnchantEffect[]) => {
+                const e = enchants.find(x => x.slot === slot);
+                const queue = (effects ?? []).map(r => r.value);
+                if (!e?.desc || !queue.length) return;
+                e.desc = e.desc.replace(/\d+(?:\.\d+)?\s*~\s*\d+(?:\.\d+)?/g, m => {
+                    const [lo, hi] = m.split('~').map(Number);
+                    const i = queue.findIndex(v => v >= lo && v <= hi);
+                    return i >= 0 ? `${queue.splice(i, 1)[0]} (${m})` : m;
+                });
+            };
+            inline('接頭', h.prefixEffects);
+            inline('接尾', h.suffixEffects);
+
+            // 聖水（祝福）效果。
+            const bless = (h.blessEffects ?? []).map(e =>
+                `${PARAM_NAMES[e.code] ?? `#${e.code}`} ${e.value > 0 ? '+' : ''}${e.value}`);
+
+            // 道具顏色（部位 A-F）。
+            const colors = h.colors ?? [];
 
             // 細緻工匠：顯示值 = (init + (level-1) × per) × standard，
             // IsFloat 補兩位小數，後綴 SubDesc（"m 增加" / "% 增加"）。
@@ -157,8 +212,8 @@ export default defineComponent({
                 };
             });
 
-            if (!props.length && !enchants.length && !metalware.length) return null;
-            return { props, enchants, rolls, metalware };
+            if (!props.length && !enchants.length && !metalware.length && !bless.length && !imprint) return null;
+            return { props, imprint, enchants, rolls, bless, metalware, colors };
         };
 
         // metalwareText: 細工欄摘要（能力名 等級，以「 / 」串接）。
@@ -335,5 +390,13 @@ export default defineComponent({
 .item-name-hover {
     cursor: help;
     border-bottom: 1px dotted #777;
+}
+
+.item-tip .tip-swatch {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border: 1px solid #666;
+    margin-right: 4px;
 }
 </style>

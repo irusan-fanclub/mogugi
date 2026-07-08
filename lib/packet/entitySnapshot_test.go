@@ -132,11 +132,16 @@ func TestParseEntitySnapshot_MetalwareAndStats(t *testing.T) {
 		le.PutUint32(b[36:], aid)
 		return b
 	}
-	// kind=1 賦予浮動值：鏡像真實手套記錄（Crit +1，條件 分解(10030) rank A(6)）。
-	roll := make([]byte, 40)
-	le.PutUint32(roll[0:], 1)
-	le.PutUint16(roll[12:], 19)    // Code: Crit
-	le.PutUint16(roll[14:], 1)     // rolled value
+	// 效果行記錄：kind=1 接尾（鏡像真實手套 Crit +1、條件 分解(10030) rank A）、
+	// kind=0 接頭（負值，鏡像日月服裝 魔攻 -20）、kind=10 聖水（最大傷害 +29）。
+	eff := func(kind uint32, code uint16, value int16) []byte {
+		b := make([]byte, 40)
+		le.PutUint32(b[0:], kind)
+		le.PutUint16(b[12:], code)
+		le.PutUint16(b[14:], uint16(value))
+		return b
+	}
+	roll := eff(1, 19, 1)
 	le.PutUint16(roll[36:], 10030) // cond skill
 	roll[39] = 6                   // cond rank A（u8 @39，鏡像真實 "2e 27 00 06"）
 	msg := Message{
@@ -144,8 +149,10 @@ func TestParseEntitySnapshot_MetalwareAndStats(t *testing.T) {
 		NewMessageElemLong(0x1234), NewMessageElemByte(2),
 		NewMessageElemBin(info), NewMessageElemBin(ext),
 		NewMessageElemString(""), NewMessageElemString(""),
-		NewMessageElemByte(4),
+		NewMessageElemByte(6),
 		NewMessageElemBin(roll),
+		NewMessageElemBin(eff(0, 53, -20)),
+		NewMessageElemBin(eff(10, 16, 29)),
 		NewMessageElemBin(mw(7, 4300106, 8)),
 		NewMessageElemBin(mw(7, 3500403, 17)),
 		NewMessageElemBin(mw(7, 3501002, 13)),
@@ -173,8 +180,14 @@ func TestParseEntitySnapshot_MetalwareAndStats(t *testing.T) {
 	if it.EnchantSuffix != 30105 {
 		t.Fatalf("suffix=%d", it.EnchantSuffix)
 	}
-	if len(it.EnchantRolls) != 1 || it.EnchantRolls[0] != (EnchantRoll{Code: 19, Value: 1, CondSkill: 10030, CondRank: 6}) {
-		t.Fatalf("rolls=%+v", it.EnchantRolls)
+	if len(it.SuffixEffects) != 1 || it.SuffixEffects[0] != (EnchantEffect{Code: 19, Value: 1, CondSkill: 10030, CondRank: 6}) {
+		t.Fatalf("suffix effects=%+v", it.SuffixEffects)
+	}
+	if len(it.PrefixEffects) != 1 || it.PrefixEffects[0] != (EnchantEffect{Code: 53, Value: -20}) {
+		t.Fatalf("prefix effects=%+v", it.PrefixEffects)
+	}
+	if len(it.BlessEffects) != 1 || it.BlessEffects[0] != (EnchantEffect{Code: 16, Value: 29}) {
+		t.Fatalf("bless effects=%+v", it.BlessEffects)
 	}
 }
 

@@ -12,14 +12,16 @@ type MetalwareEntry struct {
 	Level     uint32
 }
 
-// EnchantRoll 是一條賦予效果的逐件浮動值（kind-1 40-byte 記錄）。
-// 驗證樣本：杜克獵人手套（辛勤的，OptionList
-// ":IsGreaterEqualSkillLv(10030,6) : SetParamOnEquip(Crit, +(1~3));"）
-// → {Code:19(Crit), Value:1, CondSkill:10030, CondRank:6}，與遊戲
-// tooltip「分解 等級A以上時 暴擊率 1 增加(1~3)」一致。
-type EnchantRoll struct {
-	Code      uint32 // 參數碼（19=Crit …）
-	Value     uint32 // 抽到的實際值
+// EnchantEffect 是一條裝備效果行的逐件實際值（40-byte 記錄，依 kind 分類：
+// 0=接頭賦予、1=接尾賦予、10=聖水/祝福）。範圍效果（如 +(50~55)）存的是
+// 抽到的實際值；可為負（如 魔法攻擊力 -20）。
+// 驗證樣本：日月之神服裝（capture 1783476479）接頭 消失的/接尾 軌跡 的
+// 每一行 OptionList 與 kind-0/kind-1 記錄逐條對應；杜克獵人手套接尾
+// 辛勤的 → kind-1 {Code:19(Crit), Value:1, CondSkill:10030(分解),
+// CondRank:6(A)} = tooltip「分解 等級A以上時 暴擊率 1 增加(1~3)」。
+type EnchantEffect struct {
+	Code      uint32 // 參數碼（1=LifeMax,3=ManaMax,16=AttMax,19=Crit,20=Prot,22=平衡,53=魔攻,54=魔保,178=人偶傷害…）
+	Value     int32  // 實際值（i16，可負）
 	CondSkill uint32 // 條件技能 id（0=無）
 	CondRank  uint32 // 條件技能等級（6=A …）
 }
@@ -35,16 +37,26 @@ type InventoryItem struct {
 	// ENSFIX），0 表示無。名稱對照留待後續，先原樣帶 id。
 	EnchantPrefix uint32
 	EnchantSuffix uint32
-	// 道具屬性（來自擴充 Bin(144)）：耐久 ×1000、防禦、攻擊小/大傷。
+	// 道具屬性（來自擴充 Bin(144)）：耐久 ×1000、防禦、保護、攻擊小/大傷。
 	Durability    uint32
 	DurabilityMax uint32
 	Defense       uint32
+	Protection    uint32
 	AttackMin     uint32
 	AttackMax     uint32
+	// Colors 是六個染色部位 A-F（Bin80 @8/12/16/24/28/32，低 24 bit =
+	// 0xRRGGBB；日月之神服裝六色與 tooltip RGB 逐一對上）。
+	Colors [6]uint32
 	// Metalware 是細緻工匠能力清單（kind-7 的 40-byte 記錄）。
 	Metalware []MetalwareEntry
-	// EnchantRolls 是賦予效果的浮動值清單（kind-1 的 40-byte 記錄）。
-	EnchantRolls []EnchantRoll
+	// 效果行實際值（40-byte 記錄）：kind-0 接頭賦予 / kind-1 接尾賦予 /
+	// kind-10 聖水（祝福）。
+	PrefixEffects []EnchantEffect
+	SuffixEffects []EnchantEffect
+	BlessEffects  []EnchantEffect
+	// Metadata 是 MetaData1 原始 KV 字串（MDEF/MPROT/OWNER/IMRBV/HOWA…），
+	// 由前端解讀已知 key，保持前向相容。
+	Metadata string
 }
 
 // parseExtEnchants 從 item 的擴充 Bin（Item.OptionInfo 結構，144 bytes）取
@@ -59,11 +71,11 @@ func parseExtEnchants(ext []byte) (prefix, suffix uint32) {
 }
 
 // parseExtStats 從擴充 Bin 取道具屬性：耐久 u32@16、耐久上限 u32@20（皆
-// ×1000）、攻擊小/大傷 u16@28/@30、防禦 u32@40。
-// 驗證樣本：杜克獵人手套 耐久 8000/8000（遊戲顯示 8/8）、防禦 1；
-// 堅固鐮刀（capture 1783467845）攻擊 1~7。
+// ×1000）、攻擊小/大傷 u16@28/@30、防禦 u32@40、保護 u32@44。
+// 驗證樣本：杜克獵人手套 耐久 8000/8000（遊戲顯示 8/8）、防禦 1、保護 0；
+// 堅固鐮刀（capture 1783467845）攻擊 1~7；日月之神服裝 防禦 27 保護 19。
 func parseExtStats(ext []byte, it *InventoryItem) {
-	if len(ext) < 44 {
+	if len(ext) < 48 {
 		return
 	}
 	it.Durability = le.Uint32(ext[16:])
@@ -71,6 +83,7 @@ func parseExtStats(ext []byte, it *InventoryItem) {
 	it.AttackMin = uint32(le.Uint16(ext[28:]))
 	it.AttackMax = uint32(le.Uint16(ext[30:]))
 	it.Defense = le.Uint32(ext[40:])
+	it.Protection = le.Uint32(ext[44:])
 }
 
 // parseMetalwareBin 解析一筆物品尾隨的 40-byte 記錄；kind（u32@0）為 7 時是
@@ -87,19 +100,29 @@ func parseMetalwareBin(b []byte) (MetalwareEntry, bool) {
 	}, true
 }
 
-// parseEnchantRollBin 解析 kind=1 的 40-byte 記錄：賦予效果的浮動值。
-// 參數碼 u16@12、實際值 u16@14、條件技能 u16@36、條件等級 u8@39
+// parseEffectBin 解析 kind=0/1/10 的 40-byte 記錄（裝備效果行實際值）。
+// 參數碼 u16@12、實際值 i16@14、條件技能 u16@36、條件等級 u8@39
 // （真實資料 @36..39 = "2e 27 00 06" → 技能 10030、等級 6=A）。
-func parseEnchantRollBin(b []byte) (EnchantRoll, bool) {
-	if len(b) < 40 || le.Uint32(b[0:]) != 1 {
-		return EnchantRoll{}, false
+// 回傳 kind 供呼叫端分路（0=接頭、1=接尾、10=聖水）。
+func parseEffectBin(b []byte) (kind uint32, e EnchantEffect, ok bool) {
+	if len(b) < 40 {
+		return 0, EnchantEffect{}, false
 	}
-	return EnchantRoll{
+	kind = le.Uint32(b[0:])
+	if kind != 0 && kind != 1 && kind != 10 {
+		return kind, EnchantEffect{}, false
+	}
+	e = EnchantEffect{
 		Code:      uint32(le.Uint16(b[12:])),
-		Value:     uint32(le.Uint16(b[14:])),
+		Value:     int32(int16(le.Uint16(b[14:]))),
 		CondSkill: uint32(le.Uint16(b[36:])),
 		CondRank:  uint32(b[39]),
-	}, true
+	}
+	// 全零記錄（padding / 未知）不當效果行。
+	if e.Code == 0 && e.Value == 0 && e.CondSkill == 0 {
+		return kind, EnchantEffect{}, false
+	}
+	return kind, e, true
 }
 
 // parseOptionInfo 解析 Mabinogi item 的 OptionInfo 字串，格式為
@@ -129,33 +152,44 @@ func parseOptionInfo(s string) (prefix, suffix uint32) {
 	return
 }
 
-// containerFromRecType 把 Item.Info 的 rec_type 對應到容器類別。
+// containerFromRecType 把 Item.Info @0 的 pocket id 對應到容器類別。
+// 角色本體快照（2582 件，capture 1783476479）顯示這不是小 enum 而是
+// pocket/袋子 id：2=主背包、個位數小值=穿戴中的裝備欄（5=衣服…）、
+// 大值=各個袋子（每個袋子一個 id）。寵物快照的 20/86/100/101 沿用舊名。
 func containerFromRecType(rec uint32) string {
-	switch rec {
-	case 2:
+	switch {
+	case rec == 2:
 		return "main"
-	case 20:
+	case rec == 20:
 		return "pet_equip"
-	case 86:
+	case rec == 86:
 		return "pet_bag"
-	case 100, 101:
+	case rec == 100 || rec == 101:
 		return "pet_subbag"
+	case rec >= 3 && rec <= 40:
+		return "equip" // 穿戴中裝備欄位
 	default:
-		return "unknown"
+		return "bag" // 擴充袋（pocket id 每袋不同）
 	}
 }
 
-// parseItemInfo 解析 80-byte Item.Info：rec_type@0, ItemId@4, Qty@36,
-// PosX@44, PosY@48（皆 uint32 LE）。
+// parseItemInfo 解析 80-byte Item.Info：pocket@0, ItemId@4, Qty@36,
+// PosX@44, PosY@48（皆 uint32 LE），染色部位 A-F @8/12/16/24/28/32
+// （日月之神服裝六色與 tooltip 道具顏色逐一對上；高位 byte 為染色 flag，
+// 取低 24 bit = 0xBBGGRR）。
 func parseItemInfo(info []byte) (InventoryItem, error) {
 	if len(info) < 52 {
 		return InventoryItem{}, fmt.Errorf("item info too short: %d", len(info))
 	}
-	return InventoryItem{
+	it := InventoryItem{
 		ItemID:    le.Uint32(info[4:]),
 		Qty:       le.Uint32(info[36:]),
 		Container: containerFromRecType(le.Uint32(info[0:])),
 		PosX:      le.Uint32(info[44:]),
 		PosY:      le.Uint32(info[48:]),
-	}, nil
+	}
+	for i, off := range [6]int{8, 12, 16, 24, 28, 32} {
+		it.Colors[i] = le.Uint32(info[off:]) & 0x00ffffff
+	}
+	return it, nil
 }

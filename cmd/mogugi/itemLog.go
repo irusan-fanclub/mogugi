@@ -23,10 +23,10 @@ type IndexMetalware struct {
 	Level uint32 `json:"level"`
 }
 
-// IndexEnchantRoll 是一條賦予效果浮動值（JSON 用）。
-type IndexEnchantRoll struct {
+// IndexEnchantEffect 是一條效果行實際值（JSON 用）。
+type IndexEnchantEffect struct {
 	Code      uint32 `json:"code"`
-	Value     uint32 `json:"value"`
+	Value     int32  `json:"value"`
 	CondSkill uint32 `json:"condSkill,omitempty"`
 	CondRank  uint32 `json:"condRank,omitempty"`
 }
@@ -43,9 +43,14 @@ type IndexItem struct {
 	DurabilityMax uint32           `json:"durabilityMax,omitempty"`
 	Defense       uint32           `json:"defense,omitempty"`
 	AttackMin     uint32           `json:"attackMin,omitempty"`
-	AttackMax     uint32             `json:"attackMax,omitempty"`
-	Metalware     []IndexMetalware   `json:"metalware,omitempty"`
-	EnchantRolls  []IndexEnchantRoll `json:"enchantRolls,omitempty"`
+	Protection    uint32               `json:"protection,omitempty"`
+	AttackMax     uint32               `json:"attackMax,omitempty"`
+	Metalware     []IndexMetalware     `json:"metalware,omitempty"`
+	PrefixEffects []IndexEnchantEffect `json:"prefixEffects,omitempty"`
+	SuffixEffects []IndexEnchantEffect `json:"suffixEffects,omitempty"`
+	BlessEffects  []IndexEnchantEffect `json:"blessEffects,omitempty"`
+	Colors        []string             `json:"colors,omitempty"`   // 六色 0xRRGGBB hex（全 0 略）
+	Metadata      string               `json:"metadata,omitempty"` // MetaData1 原始 KV
 }
 
 // encodeMetalware / decodeMetalware 以 "id:lv|id:lv" 存入 CSV 單欄。
@@ -77,9 +82,9 @@ func decodeMetalware(s string) []IndexMetalware {
 	return out
 }
 
-// encodeEnchantRolls / decodeEnchantRolls 以 "code:value:condSkill:condRank|…"
-// 存入 CSV 單欄。
-func encodeEnchantRolls(list []packet.EnchantRoll) string {
+// encodeEffects / decodeEffects 以 "code:value:condSkill:condRank|…" 存入
+// CSV 單欄（value 可為負）。
+func encodeEffects(list []packet.EnchantEffect) string {
 	parts := make([]string, 0, len(list))
 	for _, r := range list {
 		parts = append(parts, fmt.Sprintf("%d:%d:%d:%d", r.Code, r.Value, r.CondSkill, r.CondRank))
@@ -87,35 +92,56 @@ func encodeEnchantRolls(list []packet.EnchantRoll) string {
 	return strings.Join(parts, "|")
 }
 
-func decodeEnchantRolls(s string) []IndexEnchantRoll {
+func decodeEffects(s string) []IndexEnchantEffect {
 	if s == "" {
 		return nil
 	}
-	var out []IndexEnchantRoll
+	var out []IndexEnchantEffect
 	for _, part := range strings.Split(s, "|") {
 		f := strings.Split(part, ":")
 		if len(f) != 4 {
 			continue
 		}
-		var v [4]uint64
-		bad := false
-		for i, fs := range f {
-			u, err := strconv.ParseUint(fs, 10, 32)
-			if err != nil {
-				bad = true
-				break
-			}
-			v[i] = u
-		}
-		if bad {
+		code, err1 := strconv.ParseUint(f[0], 10, 32)
+		val, err2 := strconv.ParseInt(f[1], 10, 32)
+		skill, err3 := strconv.ParseUint(f[2], 10, 32)
+		rank, err4 := strconv.ParseUint(f[3], 10, 32)
+		if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
 			continue
 		}
-		out = append(out, IndexEnchantRoll{
-			Code: uint32(v[0]), Value: uint32(v[1]),
-			CondSkill: uint32(v[2]), CondRank: uint32(v[3]),
+		out = append(out, IndexEnchantEffect{
+			Code: uint32(code), Value: int32(val),
+			CondSkill: uint32(skill), CondRank: uint32(rank),
 		})
 	}
 	return out
+}
+
+// encodeColors / decodeColors 以 "rrggbb|…"（6 段 hex）存入 CSV 單欄；
+// 全 0（無染色資料）回空字串。
+func encodeColors(c [6]uint32) string {
+	any := false
+	for _, v := range c {
+		if v != 0 {
+			any = true
+			break
+		}
+	}
+	if !any {
+		return ""
+	}
+	parts := make([]string, 6)
+	for i, v := range c {
+		parts[i] = fmt.Sprintf("%06x", v)
+	}
+	return strings.Join(parts, "|")
+}
+
+func decodeColors(s string) []string {
+	if s == "" {
+		return nil
+	}
+	return strings.Split(s, "|")
 }
 
 type IndexEntity struct {
@@ -173,7 +199,8 @@ func writeEntityCSVTo(dir string, snap *packet.EntitySnapshot) error {
 	w := csv.NewWriter(tmp)
 	_ = w.Write([]string{"# master", snap.Master})
 	_ = w.Write([]string{"item_id", "qty", "container", "pos_x", "pos_y", "enchant_prefix", "enchant_suffix",
-		"durability", "durability_max", "defense", "attack_min", "attack_max", "metalware", "enchant_rolls"})
+		"durability", "durability_max", "defense", "attack_min", "attack_max", "metalware", "suffix_effects",
+		"prefix_effects", "bless_effects", "protection", "colors", "metadata"})
 	for _, it := range snap.Items {
 		_ = w.Write([]string{
 			strconv.FormatUint(uint64(it.ItemID), 10),
@@ -189,7 +216,12 @@ func writeEntityCSVTo(dir string, snap *packet.EntitySnapshot) error {
 			strconv.FormatUint(uint64(it.AttackMin), 10),
 			strconv.FormatUint(uint64(it.AttackMax), 10),
 			encodeMetalware(it.Metalware),
-			encodeEnchantRolls(it.EnchantRolls),
+			encodeEffects(it.SuffixEffects),
+			encodeEffects(it.PrefixEffects),
+			encodeEffects(it.BlessEffects),
+			strconv.FormatUint(uint64(it.Protection), 10),
+			encodeColors(it.Colors),
+			it.Metadata,
 		})
 	}
 	w.Flush()
@@ -284,7 +316,15 @@ func readOneEntityCSV(path string) (IndexEntity, error) {
 			item.Metalware = decodeMetalware(row[12])
 		}
 		if len(row) >= 14 {
-			item.EnchantRolls = decodeEnchantRolls(row[13])
+			item.SuffixEffects = decodeEffects(row[13])
+		}
+		if len(row) >= 19 {
+			item.PrefixEffects = decodeEffects(row[14])
+			item.BlessEffects = decodeEffects(row[15])
+			prot, _ := strconv.ParseUint(row[16], 10, 32)
+			item.Protection = uint32(prot)
+			item.Colors = decodeColors(row[17])
+			item.Metadata = row[18]
 		}
 		ent.Items = append(ent.Items, item)
 	}
