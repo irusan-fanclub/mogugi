@@ -1,7 +1,7 @@
 <template>
     <div class="pa-2">
         <div class="d-flex align-center flex-wrap mb-2" style="gap: 8px">
-            <v-text-field v-model="query" label="物品名稱或 ID" hide-details density="compact" clearable
+            <v-text-field v-model="query" label="搜尋（名稱 / 賦予 / 細工 / ID）" hide-details density="compact" clearable
                 style="max-width: 300px" />
             <v-autocomplete v-model="entityFilter" :items="entityOptions" label="角色" hide-details
                 density="compact" clearable multiple chips closable-chips style="min-width: 200px; max-width: 320px" />
@@ -10,6 +10,17 @@
             <v-select v-model="containerFilter" :items="containerOptions" label="背包" hide-details
                 density="compact" clearable style="min-width: 140px; max-width: 180px" />
             <v-btn :loading="loading" @click="reload">重新整理</v-btn>
+            <v-menu :close-on-content-click="false">
+                <template #activator="{ props }">
+                    <v-btn v-bind="props" icon="mdi-view-column" size="small" variant="text" title="顯示欄位" />
+                </template>
+                <v-list density="compact">
+                    <v-list-item v-for="h in allHeaders" :key="h.key" class="py-0">
+                        <v-checkbox v-model="visibleCols" :label="h.title" :value="h.key"
+                            hide-details density="compact" />
+                    </v-list-item>
+                </v-list>
+            </v-menu>
             <span class="text-caption text-medium-emphasis">{{ entityCount }} 個實體 / {{ itemKindCount }} 種物品</span>
         </div>
         <v-data-table :headers="headers" :items="rows" density="compact" :items-per-page="50">
@@ -52,8 +63,8 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, ref, computed, inject, onMounted, type Ref } from 'vue';
-import { buildItemIndex, searchById, searchByName, type IndexEntity, type Holder } from '@/lib/itemIndex';
+import { defineComponent, ref, computed, inject, onMounted, watch, type Ref } from 'vue';
+import { buildItemIndex, type IndexEntity, type Holder } from '@/lib/itemIndex';
 import type { EnchantInfo, MetalwareAbility } from '@/store';
 
 // 賦予等級 → 遊戲位階字母（level 1=F … 6=A, 7=9, 8=8 …15=1）。
@@ -153,16 +164,16 @@ export default defineComponent({
             return { props, enchants, rolls, metalware };
         };
 
-        // nameToIds: 回傳 label 含查詢字串的所有 item id（模糊比對）。
-        const nameToIds = (name: string): number[] => {
-            const n = name.trim().toLowerCase();
-            if (!n) return [];
-            const ids: number[] = [];
-            for (const [id, label] of Object.entries(itemNameMap.value)) {
-                if ((label ?? '').toLowerCase().includes(n)) ids.push(Number(id));
-            }
-            return ids;
+        // metalwareText: 細工欄摘要（能力名 等級，以「 / 」串接）。
+        const metalwareText = (h: Holder): string => {
+            return (h.metalware ?? [])
+                .map(m => `${metalwareMap.value[m.id]?.name ?? `#${m.id}`} ${m.level}`)
+                .join(' / ');
         };
+
+        // searchText: 文字搜尋的比對範圍 = 顯示名稱（含賦予名）+ 細工能力名。
+        const searchText = (h: Holder): string =>
+            `${displayName(h)} ${metalwareText(h)}`.toLowerCase();
 
         const reload = async () => {
             loading.value = true;
@@ -205,12 +216,13 @@ export default defineComponent({
         const containerOptions = computed(() => distinct(h => h.container));
 
         const rows = computed(() => {
-            const q = query.value?.trim();
-            let holders = !q
-                ? allHolders()
-                : /^\d+$/.test(q)
-                    ? searchById(idx.value, Number(q))
-                    : searchByName(idx.value, q, nameToIds);
+            const q = (query.value ?? '').trim().toLowerCase();
+            let holders = allHolders();
+            if (q) {
+                holders = /^\d+$/.test(q)
+                    ? holders.filter(h => h.id === Number(q))
+                    : holders.filter(h => searchText(h).includes(q));
+            }
             if (entityFilter.value.length) {
                 holders = holders.filter(h => entityFilter.value.includes(h.entity));
             }
@@ -228,23 +240,44 @@ export default defineComponent({
                 container: h.container,
                 qty: h.qty,
                 pos: `(${h.x},${h.y})`,
+                metalware: metalwareText(h),
                 tip: buildTip(h),
             }));
         });
 
-        const headers = [
+        // 欄位顯示開關：勾選狀態存 localStorage；細工欄預設隱藏。
+        const allHeaders = [
             { title: '物品', key: 'item' },
             { title: '物品ID', key: 'itemId' },
+            { title: '細工', key: 'metalware' },
             { title: '角色', key: 'entity' },
             { title: 'Owner', key: 'master' },
             { title: '背包', key: 'container' },
             { title: '數量', key: 'qty' },
             { title: '座標', key: 'pos' },
         ];
+        const COLS_STORAGE_KEY = 'itemIndexCols';
+        const defaultCols = allHeaders.map(h => h.key).filter(k => k !== 'metalware');
+        const loadCols = (): string[] => {
+            try {
+                const raw = localStorage.getItem(COLS_STORAGE_KEY);
+                if (raw) {
+                    const saved = JSON.parse(raw) as string[];
+                    // 只保留仍存在的欄位 key；全部失效就回預設。
+                    const valid = saved.filter(k => allHeaders.some(h => h.key === k));
+                    if (valid.length) return valid;
+                }
+            } catch { /* ignore */ }
+            return [...defaultCols];
+        };
+        const visibleCols = ref<string[]>(loadCols());
+        watch(visibleCols, v => localStorage.setItem(COLS_STORAGE_KEY, JSON.stringify(v)), { deep: true });
+        const headers = computed(() => allHeaders.filter(h => visibleCols.value.includes(h.key)));
 
         onMounted(reload);
         return {
-            query, loading, reload, rows, headers, entityCount, itemKindCount,
+            query, loading, reload, rows, headers, allHeaders, visibleCols,
+            entityCount, itemKindCount,
             entityFilter, masterFilter, containerFilter,
             entityOptions, masterOptions, containerOptions,
         };
