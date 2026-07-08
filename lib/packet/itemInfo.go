@@ -213,7 +213,7 @@ func containerFromRecType(rec uint32) string {
 // parseItemInfo 解析 80-byte Item.Info：pocket@0, ItemId@4, Qty@36,
 // PosX@44, PosY@48（皆 uint32 LE），染色部位 A-F @8/12/16/24/28/32
 // （日月之神服裝六色與 tooltip 道具顏色逐一對上；高位 byte 為染色 flag，
-// 取低 24 bit = 0xBBGGRR）。
+// 取低 24 bit = 0xRRGGBB）。
 func parseItemInfo(info []byte) (InventoryItem, error) {
 	if len(info) < 52 {
 		return InventoryItem{}, fmt.Errorf("item info too short: %d", len(info))

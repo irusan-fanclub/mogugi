@@ -1,4 +1,4 @@
-﻿package packet
+package packet
 
 import (
 	"bytes"
@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/gopacket/gopacket"
@@ -30,6 +31,11 @@ type GameServerPacketReader struct {
 	// mutable
 	handle *pcap.Handle
 	fd     *os.File
+
+	closeOnce sync.Once
+	// resetCh signals packetLoop to drop its partial parse buffer after a
+	// same-net channel switch (stale bytes from the old stream).
+	resetCh chan struct{}
 
 	logHandle *pcapgo.NgWriter
 	logFd     *os.File
@@ -75,7 +81,7 @@ const packetQueueSize = 100
 
 var ErrTooShortPacket = errors.New("too short packet")
 
-func NewGameServerPacketReader(opt *GameServerPacketReaderOpt) (*GameServerPacketReader, error) {
+func NewGameServerPacketReader(opt *GameServerPacketReaderOpt) (_ *GameServerPacketReader, retErr error) {
 	if opt == nil {
 		return nil, errors.New("opt is nil")
 	}
@@ -106,7 +112,16 @@ func NewGameServerPacketReader(opt *GameServerPacketReaderOpt) (*GameServerPacke
 		quiet:     opt.Quiet,
 		realtime:  opt.Realtime,
 		linkType:  layers.LinkTypeNull, // default, will be updated when opening
+		resetCh:   make(chan struct{}, 1),
 	}
+
+	// Any failure after a handle/fd is opened must close it — the returned
+	// nil object can't be Closed by the caller, so it would leak otherwise.
+	defer func() {
+		if retErr != nil {
+			v.Close()
+		}
+	}()
 
 	var payloadCh chan gamePacketPayload
 	err := error(nil)
@@ -214,6 +229,14 @@ func (t *GameServerPacketReader) packetLoop(payloadCh <-chan gamePacketPayload) 
 			}
 			return
 
+		case <-t.resetCh:
+			// Same-net channel switch: discard the old stream's partial
+			// packet so new-stream bytes parse cleanly from the start.
+			buffer.Reset()
+			payloads = payloads[:0]
+			lastRelSeq = 0
+			continue
+
 		case payloadData := <-payloadCh:
 			t.payloadCount++
 			pushPayload(payloadData)
@@ -236,7 +259,11 @@ func (t *GameServerPacketReader) packetLoop(payloadCh <-chan gamePacketPayload) 
 			if msg != nil {
 				buffer.Next(consumed)
 				t.parsedCount++
-				t.packetCh <- msg
+				select {
+				case t.packetCh <- msg:
+				case <-t.ctx.Done():
+					return
+				}
 				skipPayload(consumed)
 			}
 		}
@@ -309,15 +336,24 @@ func (t *GameServerPacketReader) openLog() error {
 	}
 	// 換線會建立新 reader；若沿用同名檔 O_TRUNC 會把先前捕獲（含 0x5209
 	// 快照）整個洗掉——曾造成 capture 無法回放（session 1783517744）。
-	// 檔名已存在就輪替（加當下秒），每個 reader 一個檔。
-	fileName := filepath.Join(logDir, fmt.Sprintf("packet_capture_%v.pcapng", constants.SERVER_START_AT))
-	if _, statErr := os.Stat(fileName); statErr == nil {
-		fileName = filepath.Join(logDir, fmt.Sprintf("packet_capture_%v_%v.pcapng", constants.SERVER_START_AT, time.Now().Unix()))
-	}
-	fd, err := os.OpenFile(fileName, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
-	if err != nil {
-		logger.Println(err)
-		return err
+	// 每個 reader 一個檔：用 O_EXCL 開，撞名就換下一個 suffix，永不覆寫既有檔
+	// （兩個 reader 同一秒建立時，單純加時間戳仍會撞名並被 O_TRUNC 洗掉）。
+	base := fmt.Sprintf("packet_capture_%v", constants.SERVER_START_AT)
+	var fd *os.File
+	var err error
+	for i := 0; ; i++ {
+		name := base + ".pcapng"
+		if i > 0 {
+			name = fmt.Sprintf("%s_%d.pcapng", base, i)
+		}
+		fd, err = os.OpenFile(filepath.Join(logDir, name), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+		if err == nil {
+			break
+		}
+		if !os.IsExist(err) {
+			logger.Println(err)
+			return err
+		}
 	}
 
 	t.logFd = fd
@@ -357,6 +393,21 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 	}
 	packetLayers := []gopacket.LayerType(nil)
 
+	// Capture handle/logHandle locally: Close() may close them from another
+	// goroutine, but must never race a field read here. Closing unblocks
+	// ReadPacketData, which ends this loop.
+	handle := t.handle
+	logHandle := t.logHandle
+
+	// send forwards a payload but bails out if the reader is shutting down,
+	// so a full channel (drained by a stopped packetLoop) can't wedge us.
+	send := func(p gamePacketPayload) {
+		select {
+		case ch <- p:
+		case <-t.ctx.Done():
+		}
+	}
+
 	// Sequence number tracking.
 	baseSeq := uint32(0)
 	nextSeq, prevDstPort := uint32(0), layers.TCPPort(0)
@@ -365,7 +416,7 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 	lastDropped := 0
 	var prevCapTime time.Time
 	for i := 0; t.ctx.Err() == nil; i++ {
-		b, ci, err := t.handle.ReadPacketData()
+		b, ci, err := handle.ReadPacketData()
 		if err != nil {
 			// Expected on Close() / channel-switch — pcap handle goes
 			// away and ReadPacketData returns EOF. No diagnostic value.
@@ -389,13 +440,13 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 			prevCapTime = ci.Timestamp
 		}
 
-		if t.logHandle != nil {
-			_ = t.logHandle.WritePacket(ci, b)
+		if logHandle != nil {
+			_ = logHandle.WritePacket(ci, b)
 		}
 
 		// Poll pcap stats every 100 packets to detect kernel-level drops.
 		if i%100 == 0 {
-			if stats, err := t.handle.Stats(); err == nil {
+			if stats, err := handle.Stats(); err == nil {
 				if stats.PacketsDropped > lastDropped {
 					logger.Printf("[pcap] received=%d dropped=%d ifdropped=%d (+%d new drops)",
 						stats.PacketsReceived, stats.PacketsDropped, stats.PacketsIfDropped,
@@ -434,11 +485,11 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 				// Connection switch (channel change etc.).
 				if prevDstPort != tcp.DstPort {
 					for _, v := range pendingTcpLayers {
-						ch <- gamePacketPayload{
+						send(gamePacketPayload{
 							relSeq: v.tcpLayer.Seq - baseSeq,
 							data:   v.tcpLayer.Payload,
 							at:     v.ci.Timestamp,
-						}
+						})
 					}
 					pendingTcpLayers = pendingTcpLayers[:0]
 					prevDstPort = tcp.DstPort
@@ -451,11 +502,11 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 						continue
 					}
 
-					ch <- gamePacketPayload{
+					send(gamePacketPayload{
 						relSeq: tcp.Seq - baseSeq,
 						data:   tcp.Payload,
 						at:     ci.Timestamp,
-					}
+					})
 					continue
 				}
 
@@ -469,11 +520,11 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 					if tcp.Seq+uint32(len(tcp.Payload)) >= nextSeq {
 						payload := tcp.Payload[nextSeq-tcp.Seq:]
 						if len(payload) > 0 {
-							ch <- gamePacketPayload{
+							send(gamePacketPayload{
 								relSeq: nextSeq - baseSeq,
 								data:   payload,
 								at:     ci.Timestamp,
-							}
+							})
 						}
 						nextSeq = tcp.Seq + uint32(len(tcp.Payload))
 						continue
@@ -484,19 +535,19 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 					// Pending buffer is full: flush everything and give up
 					// waiting for the missing segment.
 					for _, v := range pendingTcpLayers {
-						ch <- gamePacketPayload{
+						send(gamePacketPayload{
 							relSeq: v.tcpLayer.Seq - baseSeq,
 							data:   v.tcpLayer.Payload,
 							at:     v.ci.Timestamp,
-						}
+						})
 					}
 					pendingTcpLayers = pendingTcpLayers[:0]
 
-					ch <- gamePacketPayload{
+					send(gamePacketPayload{
 						relSeq: tcp.Seq - baseSeq,
 						data:   tcp.Payload,
 						at:     ci.Timestamp,
-					}
+					})
 					nextSeq = tcp.Seq + uint32(len(tcp.Payload))
 					continue
 				}
@@ -517,11 +568,11 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 			}
 
 			// In-order segment: forward immediately.
-			ch <- gamePacketPayload{
+			send(gamePacketPayload{
 				relSeq: tcp.Seq - baseSeq,
 				data:   tcp.Payload,
 				at:     ci.Timestamp,
-			}
+			})
 			nextSeq = tcp.Seq + uint32(len(tcp.Payload))
 			prevDstPort = tcp.DstPort
 
@@ -531,11 +582,11 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 				for len(pendingTcpLayers) > 0 {
 					v := pendingTcpLayers[0]
 					if v.tcpLayer.Seq == nextSeq {
-						ch <- gamePacketPayload{
+						send(gamePacketPayload{
 							relSeq: v.tcpLayer.Seq - baseSeq,
 							data:   v.tcpLayer.Payload,
 							at:     v.ci.Timestamp,
-						}
+						})
 						nextSeq = v.tcpLayer.Seq + uint32(len(v.tcpLayer.Payload))
 						pendingTcpLayers = pendingTcpLayers[1:]
 						continue
@@ -548,11 +599,11 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 						}
 						payload := v.tcpLayer.Payload[nextSeq-v.tcpLayer.Seq:]
 						if len(payload) > 0 {
-							ch <- gamePacketPayload{
+							send(gamePacketPayload{
 								relSeq: nextSeq - baseSeq,
 								data:   payload,
 								at:     v.ci.Timestamp,
-							}
+							})
 						}
 						nextSeq = v.tcpLayer.Seq + uint32(len(v.tcpLayer.Payload))
 						pendingTcpLayers = pendingTcpLayers[1:]
@@ -572,56 +623,50 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 
 	// Loop ended: flush any remaining pending segments.
 	for _, v := range pendingTcpLayers {
-		ch <- gamePacketPayload{
+		send(gamePacketPayload{
 			relSeq: v.tcpLayer.Seq - baseSeq,
 			data:   v.tcpLayer.Payload,
 			at:     v.ci.Timestamp,
-		}
+		})
 	}
 }
 
+// Close is safe to call multiple times and from any goroutine. It cancels
+// the context (which ends packetLoop; final stats are logged there) and
+// releases the pcap handle / file descriptors exactly once. It does NOT
+// read the stat counters — those are owned by packetLoop's goroutine.
 func (t *GameServerPacketReader) Close() {
-	if !t.quiet {
-		logger.Printf("[Close Stats] Payloads: %d, Parsed: %d, Errors: %d",
-			t.payloadCount, t.parsedCount, t.parseErrorCount)
-
-		if t.parseErrorCount > 0 {
-			logger.Printf("[Close Stats] Last error at: %v", t.lastErrorTime)
+	t.closeOnce.Do(func() {
+		if t.ctxCancel != nil {
+			t.ctxCancel()
 		}
-	}
+		if t.handle != nil {
+			t.handle.Close()
+		}
+		if t.fd != nil {
+			t.fd.Close()
+		}
+		if t.logHandle != nil {
+			t.logHandle.Flush()
+		}
+		if t.logFd != nil {
+			t.logFd.Close()
+		}
+	})
+}
 
-	if t.ctxCancel != nil {
-		t.ctxCancel()
-		t.ctxCancel = nil
-	}
-
-	if t.handle != nil {
-		t.handle.Close()
-		t.handle = nil
-	}
-
-	if t.fd != nil {
-		t.fd.Close()
-		t.fd = nil
-	}
-
-	if t.logHandle != nil {
-		t.logHandle.Flush()
-		t.logHandle = nil
-	}
-
-	if t.logFd != nil {
-		t.logFd.Close()
-		t.logFd = nil
+// ResetParseState clears packetLoop's partial parse buffer. Called on a
+// same-net channel switch, where the reader is kept but the TCP stream is
+// new. Non-blocking: a pending reset already covers this one.
+func (t *GameServerPacketReader) ResetParseState() {
+	select {
+	case t.resetCh <- struct{}{}:
+	default:
 	}
 }
 
 func (t *GameServerPacketReader) PacketCh() <-chan *GamePacket {
 	return t.packetCh
-}
-
-func (t *GameServerPacketReader) GetStats() (payloads, parsed, errors uint64) {
-	return t.payloadCount, t.parsedCount, t.parseErrorCount
 }
 
 // parseGamePacket attempts to parse a single game packet from data.
@@ -632,9 +677,9 @@ func (t *GameServerPacketReader) GetStats() (payloads, parsed, errors uint64) {
 //   - err:      io.EOF when more data is needed; any other error
 //               indicates a malformed header or body
 //
-// Design invariant: errors never consume bytes. The caller decides how
-// to advance (typically by one byte and retrying). This avoids trusting
-// `length` when the header turned out to be a false positive.
+// Design invariant: errors never consume bytes. On error the caller
+// (packetLoop.nextPayload) drops the whole frontmost TCP segment and
+// retries, rather than trusting `length` from a false-positive header.
 func parseGamePacket(data []byte, at time.Time) (*GamePacket, int, error) {
 	const headerSize = 6
 
