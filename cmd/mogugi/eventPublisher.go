@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -37,6 +38,7 @@ type eventPublisher struct {
 	lastSentAt      time.Time
 	lastPacketAt    time.Time
 	lastRegion      uint32 // 目前地圖 region id（26009），0=未知
+	lastMission     string // 最近的副本任務代碼（22007 enter_<code>），如 mrd
 }
 
 type eventClient struct {
@@ -343,6 +345,9 @@ func (t *eventPublisher) handlePacket(p *packet.GamePacket) {
 
 	case packet.OpcodeStatUpdatePublic:
 		t.handleStatUpdate(p)
+
+	case packet.OpcodeMissionState:
+		t.handleMissionState(p)
 
 	case packet.OpcodeSetLocation:
 		t.handleSetLocation(p)
@@ -845,17 +850,46 @@ func (t *eventPublisher) handleSetLocation(p *packet.GamePacket) {
 	t.lastRegion = region
 	t.Unlock()
 	if changed {
-		logger.Printf("map change: %s (region=%d) pos=(%d,%d)", regionName(region), region, x, y)
+		logger.Printf("map change: %s (region=%d) pos=(%d,%d)", t.regionName(region), region, x, y)
+	}
+}
+
+// missionNames：副本任務代碼 → 顯示名（由 minimap jpg 命名對照 MinimapInfo
+// 得出，如 minimap_2024_mrd_* → 穆利亞斯；逐步擴充）。
+var missionNames = map[string]string{
+	"mrd": "穆利亞斯",
+}
+
+// handleMissionState 記下 enter_<code> 任務代碼；緊接的動態 region 26009
+// 會用它命名副本。
+func (t *eventPublisher) handleMissionState(p *packet.GamePacket) {
+	if len(p.Msg) < 3 || p.Msg[2].Type() != packet.MessageElemTypeString {
+		return
+	}
+	s, _ := p.Msg[2].Data().(string)
+	if code, ok := strings.CutPrefix(s, "enter_"); ok && code != "" {
+		t.Lock()
+		t.lastMission = code
+		t.Unlock()
 	}
 }
 
 // regionName 回傳地圖名；>=35000 為動態副本實例（每次進入配發新 id），
-// 不在靜態表中。
-func regionName(region uint32) string {
+// 不在靜態表中，改用最近的任務代碼命名。
+func (t *eventPublisher) regionName(region uint32) string {
 	if n, ok := regionNames[region]; ok {
 		return n
 	}
 	if region >= 35000 {
+		t.Lock()
+		code := t.lastMission
+		t.Unlock()
+		if code != "" {
+			if n, ok := missionNames[code]; ok {
+				return fmt.Sprintf("副本:%s", n)
+			}
+			return fmt.Sprintf("副本:%s", code)
+		}
 		return "副本(動態區域)"
 	}
 	return "未知地圖"
