@@ -283,8 +283,11 @@ export default defineComponent({
 
         // 已確認的系統 pocket 名稱（無對應包包物品，靠實測命名）。
         const POCKET_NAMES: Record<number, string> = {
+            49: '專用物品欄', // 亞多利爾的號角 實測
+            53: 'VIP物品欄',  // 卡絲妮亞硬幣 實測（尊榮生活VIP服務物品欄）
             56: '釣魚桶',     // 亞布內亞鯉魚 實測（固定 pocket，桶自身 @12=0）
             61: '點數包包',   // 三劍客的護手禮劍放置架 實測
+            72: '擴張物品欄', // 冬季可愛大提琴 實測（也放各種背包）
         };
         // containerText: 背包欄顯示 — 包包名 > 已知系統空間名 > 分類 > 未知空間#pocket。
         const containerText = (h: Holder): string => {
