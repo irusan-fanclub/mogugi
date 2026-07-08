@@ -62,10 +62,11 @@ type InventoryItem struct {
 	// Metalware 是細緻工匠能力清單（kind-7 的 40-byte 記錄）。
 	Metalware []MetalwareEntry
 	// 效果行實際值（40-byte 記錄）：kind-0 接頭賦予 / kind-1 接尾賦予 /
-	// kind-10 聖水（祝福）。
+	// kind-10 聖水（祝福）/ kind-11 遺物效果。
 	PrefixEffects []EnchantEffect
 	SuffixEffects []EnchantEffect
 	BlessEffects  []EnchantEffect
+	RelicEffects  []EnchantEffect
 	// Metadata 是 MetaData1 原始 KV 字串（MDEF/MPROT/OWNER/IMRBV/HOWA…），
 	// 由前端解讀已知 key，保持前向相容。
 	Metadata string
@@ -119,16 +120,18 @@ func parseMetalwareBin(b []byte) (MetalwareEntry, bool) {
 	}, true
 }
 
-// parseEffectBin 解析 kind=0/1/10 的 40-byte 記錄（裝備效果行實際值）。
+// parseEffectBin 解析 kind=0/1/10/11 的 40-byte 記錄（裝備效果行實際值）。
 // 參數碼 u16@12、實際值 i16@14、條件技能 u16@36、條件等級 u8@39
 // （真實資料 @36..39 = "2e 27 00 06" → 技能 10030、等級 6=A）。
-// 回傳 kind 供呼叫端分路（0=接頭、1=接尾、10=聖水）。
+// 回傳 kind 供呼叫端分路（0=接頭、1=接尾、10=聖水、11=遺物：code 2558=
+// 死亡準星傷害，值=%，驗證：嵐嵐小雞 穆利亞斯的遺物 {2558,400} = tooltip
+// 死亡準星傷害增加400%）。
 func parseEffectBin(b []byte) (kind uint32, e EnchantEffect, ok bool) {
 	if len(b) < 40 {
 		return 0, EnchantEffect{}, false
 	}
 	kind = le.Uint32(b[0:])
-	if kind != 0 && kind != 1 && kind != 10 {
+	if kind != 0 && kind != 1 && kind != 10 && kind != 11 {
 		return kind, EnchantEffect{}, false
 	}
 	e = EnchantEffect{

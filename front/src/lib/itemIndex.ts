@@ -9,6 +9,7 @@ interface ItemExtra {
     prefixEffects?: IndexEnchantEffect[];
     suffixEffects?: IndexEnchantEffect[];
     blessEffects?: IndexEnchantEffect[];
+    relicEffects?: IndexEnchantEffect[];
     bagItemId?: number;  // 所在袋子的 item id（0/undefined = 非袋內）
     pocket?: number;     // 原始 pocket id
     colors?: string[];   // 六色 rrggbb hex

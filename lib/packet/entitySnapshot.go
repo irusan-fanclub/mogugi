@@ -108,6 +108,8 @@ func ParseEntitySnapshot(msg Message) (*EntitySnapshot, error) {
 								it.SuffixEffects = append(it.SuffixEffects, eff)
 							case 10:
 								it.BlessEffects = append(it.BlessEffects, eff)
+							case 11:
+								it.RelicEffects = append(it.RelicEffects, eff)
 							}
 						}
 					}

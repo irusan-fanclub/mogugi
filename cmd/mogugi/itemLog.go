@@ -55,6 +55,7 @@ type IndexItem struct {
 	PrefixEffects []IndexEnchantEffect `json:"prefixEffects,omitempty"`
 	SuffixEffects []IndexEnchantEffect `json:"suffixEffects,omitempty"`
 	BlessEffects  []IndexEnchantEffect `json:"blessEffects,omitempty"`
+	RelicEffects  []IndexEnchantEffect `json:"relicEffects,omitempty"`
 	Colors        []string             `json:"colors,omitempty"`   // 六色 0xRRGGBB hex（全 0 略）
 	Metadata      string               `json:"metadata,omitempty"` // MetaData1 原始 KV
 }
@@ -206,7 +207,7 @@ func writeEntityCSVTo(dir string, snap *packet.EntitySnapshot) error {
 	_ = w.Write([]string{"# master", snap.Master})
 	_ = w.Write([]string{"item_id", "qty", "container", "pos_x", "pos_y", "enchant_prefix", "enchant_suffix",
 		"durability", "durability_max", "defense", "attack_min", "attack_max", "metalware", "suffix_effects",
-		"prefix_effects", "bless_effects", "protection", "colors", "metadata", "injury_min", "injury_max", "balance", "critical", "bag_item_id", "pocket"})
+		"prefix_effects", "bless_effects", "protection", "colors", "metadata", "injury_min", "injury_max", "balance", "critical", "bag_item_id", "pocket", "relic_effects"})
 	for _, it := range snap.Items {
 		_ = w.Write([]string{
 			strconv.FormatUint(uint64(it.ItemID), 10),
@@ -234,6 +235,7 @@ func writeEntityCSVTo(dir string, snap *packet.EntitySnapshot) error {
 			strconv.FormatUint(uint64(it.Critical), 10),
 			strconv.FormatUint(uint64(it.BagItemID), 10),
 			strconv.FormatUint(uint64(it.Pocket), 10),
+			encodeEffects(it.RelicEffects),
 		})
 	}
 	w.Flush()
@@ -355,6 +357,9 @@ func readOneEntityCSV(path string) (IndexEntity, error) {
 		if len(row) >= 25 {
 			pk, _ := strconv.ParseUint(row[24], 10, 32)
 			item.Pocket = uint32(pk)
+		}
+		if len(row) >= 26 {
+			item.RelicEffects = decodeEffects(row[25])
 		}
 		ent.Items = append(ent.Items, item)
 	}

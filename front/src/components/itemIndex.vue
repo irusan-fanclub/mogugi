@@ -41,6 +41,10 @@
                             <div class="tip-section">聖水效果</div>
                             <div v-for="(l, i) in item.tip.bless" :key="`b${i}`" class="tip-line tip-mw">{{ l }}</div>
                         </template>
+                        <template v-if="item.tip.relic.length">
+                            <div class="tip-section">遺物效果</div>
+                            <div v-for="(l, i) in item.tip.relic" :key="`r${i}`" class="tip-line tip-mw">{{ l }}</div>
+                        </template>
                         <template v-if="item.tip.enchants.length">
                             <div class="tip-section">魔力賦予</div>
                             <template v-for="(e, i) in item.tip.enchants" :key="`e${i}`">
@@ -93,6 +97,11 @@ import type { EnchantInfo, ItemUpgrade, ManualForm, MetalwareAbility } from '@/s
 // 賦予等級 → 遊戲位階字母（level 1=F … 6=A, 7=9, 8=8 …15=1）。
 const RANKS = ['F', 'E', 'D', 'C', 'B', 'A', '9', '8', '7', '6', '5', '4', '3', '2', '1'];
 
+// 遺物效果碼 → 顯示名（kind-11；逐項與遊戲 tooltip 對照）。
+const RELIC_EFFECT_NAMES: Record<number, string> = {
+    2558: '死亡準星傷害',
+};
+
 // 效果行參數碼 → 顯示名（由 OptionList SetParamOnEquip 逐行對照驗證）。
 const PARAM_NAMES: Record<number, string> = {
     1: '最大生命值', 3: '最大魔法值', 16: '最大傷害', 19: '暴擊率',
@@ -107,6 +116,7 @@ interface Tip {
     enchants: TipEnchant[];
     rolls: number[];
     bless: string[];
+    relic: string[];
     upgrades: string[];
     special: string | null;
     energy: string | null;
@@ -224,6 +234,10 @@ export default defineComponent({
             const bless = (h.blessEffects ?? []).map(e =>
                 `${PARAM_NAMES[e.code] ?? `#${e.code}`} ${e.value > 0 ? '+' : ''}${e.value}`);
 
+            // 遺物效果（kind-11，值為 %）。
+            const relic = (h.relicEffects ?? []).map(e =>
+                `${RELIC_EFFECT_NAMES[e.code] ?? `效果#${e.code}`} 增加${e.value}%`);
+
             // 改造（UPR1..n）："upgrade_id,effect_id,v1,v2,..." → 名稱＋該次數值。
             const upgrades: string[] = [];
             for (let i = 1; i <= 9; i++) {
@@ -277,8 +291,8 @@ export default defineComponent({
             });
 
             if (!props.length && !enchants.length && !metalware.length && !bless.length
-                && !imprint && !upgrades.length && !special && !energy) return null;
-            return { props, imprint, enchants, rolls, bless, upgrades, special, energy, metalware, colorGroups };
+                && !imprint && !upgrades.length && !special && !energy && !relic.length) return null;
+            return { props, imprint, enchants, rolls, bless, relic, upgrades, special, energy, metalware, colorGroups };
         };
 
         // 已確認的系統 pocket 名稱（無對應包包物品，靠實測命名）。
