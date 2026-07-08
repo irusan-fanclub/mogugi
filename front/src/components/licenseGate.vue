@@ -1,15 +1,19 @@
 <template>
-  <v-container class="d-flex flex-column align-center justify-center"
-    style="min-height: 100vh; max-width: 520px;">
-    <h2 class="mb-2">啟用 mogugi</h2>
-    <p class="text-medium-emphasis mb-4" style="text-align: center;">
-      請貼上從 Discord 機器人取得的驗證碼。每組驗證碼僅供本人使用，
-      且需於取得後 30 分鐘內啟用。
-    </p>
-    <v-text-field v-model="code" label="驗證碼 (MOGUGI-...)" variant="outlined"
-      density="comfortable" class="w-100" :error-messages="errorMsg"
-      @keyup.enter="activate" />
-    <v-btn color="primary" block :loading="busy" @click="activate">啟用</v-btn>
+  <!-- 卡片式排版：欄位/按鈕不放在會拉伸子元素的 100vh flex-column 裡
+       （Vuetify .v-input 有 flex:1 1 auto，直排時會被撐到吃滿剩餘高度）。 -->
+  <v-container class="d-flex align-center justify-center" style="min-height: 100vh;">
+    <v-card max-width="440" width="100%" class="pa-8" elevation="8" rounded="lg">
+      <h2 class="text-h5 text-center mb-2">啟用 mogugi</h2>
+      <p class="text-body-2 text-medium-emphasis text-center mb-6">
+        請貼上從 Discord 機器人取得的驗證碼。每組驗證碼僅供本人使用，
+        且需於取得後 30 分鐘內啟用。
+      </p>
+      <v-text-field v-model="code" label="驗證碼 (MOGUGI-...)" variant="outlined"
+        density="comfortable" :error-messages="errorMsg"
+        autofocus @keyup.enter="activate" />
+      <v-btn color="primary" block size="large" class="mt-2"
+        :loading="busy" @click="activate">啟用</v-btn>
+    </v-card>
   </v-container>
 </template>
 
