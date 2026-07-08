@@ -39,6 +39,7 @@ type eventPublisher struct {
 	lastPacketAt    time.Time
 	lastRegion      uint32 // 目前地圖 region id（26009），0=未知
 	lastMission     string // 最近的副本任務代碼（22007 enter_<code>），如 mrd
+	lastMissionID   uint32 // 最近的副本任務 id（45004），查 dungeonNames
 }
 
 type eventClient struct {
@@ -348,6 +349,9 @@ func (t *eventPublisher) handlePacket(p *packet.GamePacket) {
 
 	case packet.OpcodeMissionState:
 		t.handleMissionState(p)
+
+	case packet.OpcodeMissionStart:
+		t.handleMissionStart(p)
 
 	case packet.OpcodeSetLocation:
 		t.handleSetLocation(p)
@@ -874,16 +878,30 @@ func (t *eventPublisher) handleMissionState(p *packet.GamePacket) {
 	}
 }
 
+// handleMissionStart 記下副本任務 id（45004 在動態 region 的 26009 前送達）。
+func (t *eventPublisher) handleMissionStart(p *packet.GamePacket) {
+	if len(p.Msg) < 1 || p.Msg[0].Type() != packet.MessageElemTypeInt {
+		return
+	}
+	id, _ := p.Msg[0].Data().(uint32)
+	t.Lock()
+	t.lastMissionID = id
+	t.Unlock()
+}
+
 // regionName 回傳地圖名；>=35000 為動態副本實例（每次進入配發新 id），
-// 不在靜態表中，改用最近的任務代碼命名。
+// 不在靜態表中，改用最近的任務 id / 任務代碼命名。
 func (t *eventPublisher) regionName(region uint32) string {
 	if n, ok := regionNames[region]; ok {
 		return n
 	}
 	if region >= 35000 {
 		t.Lock()
-		code := t.lastMission
+		id, code := t.lastMissionID, t.lastMission
 		t.Unlock()
+		if n, ok := dungeonNames[id]; ok {
+			return fmt.Sprintf("副本:%s", n)
+		}
 		if code != "" {
 			if n, ok := missionNames[code]; ok {
 				return fmt.Sprintf("副本:%s", n)

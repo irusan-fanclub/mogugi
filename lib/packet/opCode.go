@@ -25,6 +25,7 @@ const (
 	OpcodeUnequipment           OpCode = 23015 // 0x59e7
 	OpcodeItemDurabilityUpdate  OpCode = 23509 // 0x5bd5
 	OpcodeMissionState          OpCode = 22007 // (byte, long, string "enter_<code>", string) — mission enter, precedes the dynamic-region 26009
+	OpcodeMissionStart          OpCode = 45004 // (int missionId, int) — broadcast at dynamic-instance start, 2ms before 26009; id resolves via DungeonGuide
 	OpcodeSetLocation           OpCode = 26009 // 0x6599 own warp/spawn: (byte 1, region, x, y) — sent on map change & channel-in
 	OpcodeForceWalk             OpCode = 25995 // 0x659b
 	OpcodeFlying                OpCode = 26031 // 0x65af
