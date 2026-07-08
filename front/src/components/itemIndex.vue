@@ -41,9 +41,10 @@
                             <div class="tip-section">聖水效果</div>
                             <div v-for="(l, i) in item.tip.bless" :key="`b${i}`" class="tip-line tip-mw">{{ l }}</div>
                         </template>
-                        <template v-if="item.tip.relic.length">
+                        <template v-if="item.tip.relic.length || item.tip.relicDesc">
                             <div class="tip-section">遺物效果</div>
                             <div v-for="(l, i) in item.tip.relic" :key="`r${i}`" class="tip-line tip-mw">{{ l }}</div>
+                            <div v-if="item.tip.relicDesc" class="tip-line tip-desc">{{ item.tip.relicDesc }}</div>
                         </template>
                         <template v-if="item.tip.enchants.length">
                             <div class="tip-section">魔力賦予</div>
@@ -117,6 +118,7 @@ interface Tip {
     rolls: number[];
     bless: string[];
     relic: string[];
+    relicDesc: string | null;
     upgrades: string[];
     special: string | null;
     energy: string | null;
@@ -132,6 +134,8 @@ export default defineComponent({
         const metalwareMap = inject('metalwareMap') as Ref<Record<number, MetalwareAbility>>;
         const manualFormMap = inject('manualFormMap') as Ref<Record<number, ManualForm>>;
         const itemUpgradeMap = inject('itemUpgradeMap') as Ref<Record<number, ItemUpgrade>>;
+        const db = inject('db') as import('vue').ComputedRef<import('@/mabidb').MabiDB>;
+        const itemDescMap = ref<Record<number, string>>({});
         const query = ref('');
         const loading = ref(false);
         const idx = ref(new Map<number, Holder[]>());
@@ -234,9 +238,12 @@ export default defineComponent({
             const bless = (h.blessEffects ?? []).map(e =>
                 `${PARAM_NAMES[e.code] ?? `#${e.code}`} ${e.value > 0 ? '+' : ''}${e.value}`);
 
-            // 遺物效果（kind-11，值為 %）。
+            // 遺物效果（kind-11 動態值 + 物品說明裡的固定效果文字）。
             const relic = (h.relicEffects ?? []).map(e =>
                 `${RELIC_EFFECT_NAMES[e.code] ?? `效果#${e.code}`} 增加${e.value}%`);
+            const isRelicPocket = h.pocket !== undefined && h.pocket >= 32 && h.pocket <= 35;
+            const relicDesc = isRelicPocket && itemDescMap.value[h.id]
+                ? itemDescMap.value[h.id].replaceAll('\\n', '\n') : null;
 
             // 改造（UPR1..n）："upgrade_id,effect_id,v1,v2,..." → 名稱＋該次數值。
             const upgrades: string[] = [];
@@ -291,8 +298,8 @@ export default defineComponent({
             });
 
             if (!props.length && !enchants.length && !metalware.length && !bless.length
-                && !imprint && !upgrades.length && !special && !energy && !relic.length) return null;
-            return { props, imprint, enchants, rolls, bless, relic, upgrades, special, energy, metalware, colorGroups };
+                && !imprint && !upgrades.length && !special && !energy && !relic.length && !relicDesc) return null;
+            return { props, imprint, enchants, rolls, bless, relic, relicDesc, upgrades, special, energy, metalware, colorGroups };
         };
 
         // 已確認的系統 pocket 名稱（無對應包包物品，靠實測命名）。
@@ -335,6 +342,12 @@ export default defineComponent({
             try {
                 const data: IndexEntity[] = await (await fetch('/api/item-index')).json();
                 idx.value = buildItemIndex(data);
+                // 遺物欄位（32-35）的物品：撈物品說明（固定效果寫在說明裡）。
+                const relicIds = new Set<number>();
+                for (const e of data) for (const it of e.items)
+                    if (it.pocket !== undefined && it.pocket >= 32 && it.pocket <= 35) relicIds.add(it.id);
+                itemDescMap.value = relicIds.size
+                    ? await db.value.getItemDescriptions([...relicIds]) : {};
             } catch (e) {
                 console.error('item-index fetch failed', e);
             } finally {

@@ -71,6 +71,17 @@ export class MabiDB {
         return query<ListRow>(`SELECT id AS Id, name AS Name FROM ${table} ORDER BY id`);
     }
 
+    // 批次取物品說明（遺物欄位固定效果寫在說明裡；只查需要的少數 id）。
+    public async getItemDescriptions(ids: number[]): Promise<Record<number, string>> {
+        if (!ids.length) return {};
+        await this.tryOpen();
+        const rows = query<{ Id: number; Desc: string | null }>(
+            `SELECT id AS Id, description AS Desc FROM item WHERE id IN (${ids.map(() => '?').join(',')})`, ids);
+        const out: Record<number, string> = {};
+        for (const r of rows) if (r.Desc) out[r.Id] = r.Desc;
+        return out;
+    }
+
     // 賦予（OptionSet）完整列：名稱 + 等級 + 效果描述（tooltip 用）。
     public async getOptionSets(): Promise<OptionSetRow[]> {
         await this.tryOpen();

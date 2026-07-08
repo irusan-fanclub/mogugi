@@ -11,7 +11,7 @@ import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import Database from 'better-sqlite3';
 
-const BUILD_VERSION = 6;
+const BUILD_VERSION = 7;
 
 const REGION = 'tw';
 const VER = 'v154';
@@ -44,7 +44,8 @@ const LIST_SOURCES = [
     { dst: 'race',                src: 'race',                id: 'race_id' },
     { dst: 'skill',               src: 'skill',               id: 'skill_id' },
     { dst: 'character_condition', src: 'character_condition', id: 'condition_id' },
-    { dst: 'item',                src: 'item',                id: 'item_id' },
+    { dst: 'item',                src: 'item',                id: 'item_id',
+      extra: { description: 'TEXT' } },
     { dst: 'optionset',           src: 'optionset',           id: 'optionset_id', optional: true,
       extra: { level: 'INTEGER', description: 'TEXT' } },
     { dst: 'metalware_ability',   src: 'metalware_ability',   id: 'ability_id',   optional: true,
