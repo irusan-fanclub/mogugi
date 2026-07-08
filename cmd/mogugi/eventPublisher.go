@@ -37,10 +37,11 @@ type eventPublisher struct {
 	pendingEvents   []event.IEvent
 	lastSentAt      time.Time
 	lastPacketAt    time.Time
-	lastRegion      uint32 // 目前地圖 region id（26009），0=未知
-	lastMission     string // 最近的副本任務代碼（22007 enter_<code>），如 mrd
-	lastMissionID   uint32 // 最近的副本任務 id（45004），查 dungeonNames
-	lastBGM         string // 目前播放的 BGM（43302），Boss_* 表示王戰中
+	lastRegion      uint32            // 目前地圖 region id（26009），0=未知
+	lastMission     string            // 最近的副本任務代碼（22007 enter_<code>），如 mrd
+	lastMissionID   uint32            // 最近的副本任務 id（45004），查 dungeonNames
+	lastBGM         string            // 目前播放的 BGM（43302），Boss_* 表示王戰中
+	bossEntities    map[uint64]string // 場上王級實體 id → 王名（EntityAppear race 判定）
 }
 
 type eventClient struct {
@@ -59,6 +60,7 @@ func newEventPublisher(ctx context.Context, r *packet.GameServerPacketReader) *e
 		entityCache:     make(entityCache),
 		currentClientId: 1,
 		pendingEvents:   make([]event.IEvent, 0, _maxPendingEvents),
+		bossEntities:    make(map[uint64]string),
 		lastSentAt:      time.Now(),
 		lastPacketAt:    time.Now(),
 	}
@@ -393,6 +395,14 @@ func (t *eventPublisher) handleEntityAppear(p *packet.GamePacket) {
 		return
 	}
 
+	// 王級怪物以 race id 判定（比 BGM 準）：登場即記錄並追蹤其實體 id。
+	if boss, ok := bossRaces[entity.RaceId]; ok {
+		t.Lock()
+		t.bossEntities[entity.Id] = boss
+		t.Unlock()
+		logger.Printf("boss appear: %s (race=%d id=%d)", boss, entity.RaceId, entity.Id)
+	}
+
 	if len(entity.Name) <= 0 || entity.Name[0] == '_' {
 		return
 	}
@@ -460,6 +470,13 @@ func (t *eventPublisher) handleEntityDisappear(p *packet.GamePacket) {
 	}
 
 	id := p.Msg[0].Data().(uint64)
+
+	t.Lock()
+	if boss, ok := t.bossEntities[id]; ok {
+		delete(t.bossEntities, id)
+		logger.Printf("boss gone: %s (id=%d)", boss, id)
+	}
+	t.Unlock()
 
 	t.Lock()
 	t.entityCache.disappear(id, p.At)
@@ -893,11 +910,22 @@ func (t *eventPublisher) handleMissionStart(p *packet.GamePacket) {
 	t.Unlock()
 }
 
-// bossBGMNames：王戰 BGM 檔名 → 王名。縮寫對照 DungeonCheckPoint（布里萊赫：
-// BT=布倫塔納斯、LM=雷楠的米勒）；VT 為一王（名稱待實測確認）。
+// bossBGMNames：王戰 BGM 檔名 → 王名（Race.xml EnglishName 縮寫：
+// VT=Vertrag 佩塔克、BT=Bronntanas 布倫塔納斯、LM=Midir of Leannan 雷楠的米勒）。
 var bossBGMNames = map[string]string{
+	"Boss_VT.mp3": "佩塔克",
 	"Boss_BT.mp3": "布倫塔納斯",
 	"Boss_LM.mp3": "雷楠的米勒",
+}
+
+// bossRaces：王級怪物 race id → 王名（Race.xml，含難度/型態變體）。
+// 目前收錄布里萊赫三王；其他副本的王逐步擴充。
+var bossRaces = map[uint32]string{
+	5211: "佩塔克", 5216: "佩塔克", 5217: "佩塔克", 5229: "佩塔克",
+	5224: "古樹的佩塔克",
+	5225: "布倫塔納斯", 7602: "布倫塔納斯",
+	5218: "雷楠的米勒", 7603: "雷楠的米勒",
+	7615: "雷楠的米勒:悔恨",
 }
 
 // handleBGMPlay 以 BGM 切換偵測王戰開始/結束：切到 Boss_*.mp3 = 開打，
