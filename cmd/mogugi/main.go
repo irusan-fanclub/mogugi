@@ -215,11 +215,23 @@ func startWebsocketServer(newClientCb func(*websocket.Conn)) {
 	<-time.After(1 * time.Second)
 }
 
-// startConnectionWatchdog polls Client.exe TCP connections every 3s and
-// swaps the reader when the current triple disappears (channel switch).
-// A 60s packet-idle fallback catches cases the TCP poll might miss.
+// sameServerNet reports whether two IPv4 strings share a /24. Same-net
+// channel switches don't need a new reader — the wide BPF filter already
+// captures the new stream, so we only reset the session.
+func sameServerNet(a, b string) bool {
+	ai := strings.LastIndex(a, ".")
+	bi := strings.LastIndex(b, ".")
+	return a != "" && ai > 0 && bi > 0 && a[:ai] == b[:bi]
+}
+
+// startConnectionWatchdog polls Client.exe TCP connections every 1s and
+// reacts when the current triple disappears (channel switch). Because the
+// capture filter is scoped to the whole server /24, a same-net switch only
+// re-points the tracked triple and resets the session (no reader rebuild,
+// so no capture gap); a different-net switch rebuilds the reader.
+// A 10s packet-idle fallback catches cases the TCP poll might miss.
 func startConnectionWatchdog(ctx context.Context, pub *eventPublisher) {
-	pollTicker := time.NewTicker(3 * time.Second)
+	pollTicker := time.NewTicker(1 * time.Second)
 	defer pollTicker.Stop()
 
 	idleTicker := time.NewTicker(10 * time.Second)
@@ -277,14 +289,31 @@ func startConnectionWatchdog(ctx context.Context, pub *eventPublisher) {
 			if alive {
 				continue
 			}
-			reason := "channel_switch"
 			if constants.ServerIP == "" {
 				// Empty triple = first-ever discovery, not a real switch.
-				reason = "initial"
-			} else {
-				logger.Printf("watchdog: current connection gone, %d candidate(s); switching", len(conns))
+				go swap("initial")
+				continue
 			}
-			go swap(reason)
+
+			// Prefer a same-/24 candidate: the wide filter already captures
+			// it, so we can re-point without rebuilding the reader (no gap).
+			var sameNet *pcaputil.ClientConnection
+			for i := range conns {
+				if sameServerNet(conns[i].ServerIP, constants.ServerIP) {
+					sameNet = &conns[i]
+					break
+				}
+			}
+			if sameNet != nil {
+				logger.Printf("watchdog: same-net switch -> %s:%s (no reader rebuild)",
+					sameNet.ServerIP, sameNet.ServerPort)
+				pcaputil.ApplyConnectionFilter(*sameNet)
+				pub.ResetSession("channel_switch")
+				continue
+			}
+
+			logger.Printf("watchdog: current connection gone, %d candidate(s); switching", len(conns))
+			go swap("channel_switch")
 
 		case <-idleTicker.C:
 			if time.Since(pub.LastPacketAt()) <= 60*time.Second {

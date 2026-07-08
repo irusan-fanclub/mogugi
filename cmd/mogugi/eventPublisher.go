@@ -172,6 +172,39 @@ drainLoop:
 	})
 }
 
+// ResetSession handles a same-net channel switch: the reader stays (the
+// wide filter still captures the new connection), but the parser's TCP
+// sequence state now belongs to a new stream, so drop any in-flight
+// packets and broadcast a session reset. readPacketLoop re-bases its
+// sequence tracking on the new dst-port automatically.
+func (t *eventPublisher) ResetSession(reason string) {
+	t.Lock()
+	t.lastPacketAt = time.Now()
+	t.Unlock()
+
+	drained := 0
+	for {
+		select {
+		case <-t.packetCh:
+			drained++
+		default:
+			if drained > 0 {
+				logger.Printf("ResetSession: dropped %d in-flight packet(s)", drained)
+			}
+			logger.Printf("SessionReset: reason=%s", reason)
+			t.publish(&event.EventSessionReset{
+				EventBase: event.EventBase{
+					EventId: event.EventIdSessionReset,
+					At:      time.Now().Unix(),
+					Id:      "0",
+				},
+				Reason: reason,
+			})
+			return
+		}
+	}
+}
+
 // LastPacketAt returns the timestamp of the most recently received
 // game packet. The connection watchdog uses this for idle detection.
 func (t *eventPublisher) LastPacketAt() time.Time {

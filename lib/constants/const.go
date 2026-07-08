@@ -2,6 +2,7 @@ package constants
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -25,11 +26,30 @@ func init() {
 }
 
 // RebuildFilter rebuilds the pcap BPF filter from the current settings.
-// Since the filter is scoped to the game server IP and port, TLS traffic
-// never reaches this capture and no extra content-type filtering is needed.
+//
+// The filter is deliberately WIDE — the whole /24 server net plus the game
+// port range — instead of pinning one (ip, src port, dst port) triple:
+// on a channel switch the client connects to a DIFFERENT channel server
+// (new ip / dst port); with a pinned filter those packets never reach the
+// pcap handle, and by the time the watchdog installs a new reader the
+// 0x5209 snapshot (sent in the first seconds) is already lost.
+// readPacketLoop's dst-port switch handling then follows the new stream
+// seamlessly. The explicit src port is kept as a fallback for servers
+// outside the usual port range.
 func RebuildFilter() {
-	filter := fmt.Sprintf("tcp and src net %s and src port (%s) and dst port (%s)", ServerIP, ServerSrcPort, ServerDstPort)
+	filter := fmt.Sprintf("tcp and src net %s and (src portrange 11000-11999 or src port (%s))",
+		serverNet24(ServerIP), ServerSrcPort)
 	PCAP_GAMESERVER_FILTER = filter
+}
+
+// serverNet24 turns "a.b.c.d" into the "a.b.c.0/24" network. Non-IPv4
+// input is returned unchanged (keeps behaviour for empty/odd values).
+func serverNet24(ip string) string {
+	parts := strings.Split(ip, ".")
+	if len(parts) != 4 {
+		return ip
+	}
+	return fmt.Sprintf("%s.%s.%s.0/24", parts[0], parts[1], parts[2])
 }
 
 var SERVER_START_AT = time.Now().Unix()
