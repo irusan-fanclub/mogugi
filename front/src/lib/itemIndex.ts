@@ -10,6 +10,7 @@ interface ItemExtra {
     suffixEffects?: IndexEnchantEffect[];
     blessEffects?: IndexEnchantEffect[];
     bagItemId?: number;  // 所在袋子的 item id（0/undefined = 非袋內）
+    pocket?: number;     // 原始 pocket id
     colors?: string[];   // 六色 rrggbb hex
     metadata?: string;   // MetaData1 原始 KV 字串
 }

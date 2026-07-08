@@ -23,7 +23,7 @@ func TestParseItemInfo(t *testing.T) {
 func TestParseItemInfo_ContainerMapping(t *testing.T) {
 	// pocket id：2=main、寵物特例 20/86/100/101、小值=穿戴裝備欄、其餘=袋子。
 	cases := map[uint32]string{2: "main", 20: "pet_equip", 86: "pet_bag", 100: "pet_subbag", 101: "pet_subbag",
-		5: "equip", 6: "equip", 61: "bag", 999: "bag"}
+		5: "equip", 6: "equip", 13: "equip", 23: "quest", 61: "bag", 999: "bag"}
 	for rec, want := range cases {
 		info := make([]byte, 80)
 		le.PutUint32(info[0:], rec)

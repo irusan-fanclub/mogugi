@@ -193,10 +193,12 @@ func containerFromRecType(rec uint32) string {
 		return "pet_bag"
 	case rec == 100 || rec == 101:
 		return "pet_subbag"
-	case rec >= 3 && rec <= 40:
+	case rec == 23:
+		return "quest" // 任務頁籤（實測 100× 打怪任務卷在此）
+	case rec >= 3 && rec <= 22:
 		return "equip" // 穿戴中裝備欄位
 	default:
-		return "bag" // 擴充袋（pocket id 每袋不同）
+		return "bag" // 擴充袋或系統頁籤（pocket id 每袋不同）
 	}
 }
 

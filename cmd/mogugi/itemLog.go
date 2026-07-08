@@ -49,6 +49,7 @@ type IndexItem struct {
 	Balance       uint32               `json:"balance,omitempty"`
 	Critical      uint32               `json:"critical,omitempty"`
 	BagItemID     uint32               `json:"bagItemId,omitempty"`
+	Pocket        uint32               `json:"pocket,omitempty"`
 	AttackMax     uint32               `json:"attackMax,omitempty"`
 	Metalware     []IndexMetalware     `json:"metalware,omitempty"`
 	PrefixEffects []IndexEnchantEffect `json:"prefixEffects,omitempty"`
@@ -205,7 +206,7 @@ func writeEntityCSVTo(dir string, snap *packet.EntitySnapshot) error {
 	_ = w.Write([]string{"# master", snap.Master})
 	_ = w.Write([]string{"item_id", "qty", "container", "pos_x", "pos_y", "enchant_prefix", "enchant_suffix",
 		"durability", "durability_max", "defense", "attack_min", "attack_max", "metalware", "suffix_effects",
-		"prefix_effects", "bless_effects", "protection", "colors", "metadata", "injury_min", "injury_max", "balance", "critical", "bag_item_id"})
+		"prefix_effects", "bless_effects", "protection", "colors", "metadata", "injury_min", "injury_max", "balance", "critical", "bag_item_id", "pocket"})
 	for _, it := range snap.Items {
 		_ = w.Write([]string{
 			strconv.FormatUint(uint64(it.ItemID), 10),
@@ -232,6 +233,7 @@ func writeEntityCSVTo(dir string, snap *packet.EntitySnapshot) error {
 			strconv.FormatUint(uint64(it.Balance), 10),
 			strconv.FormatUint(uint64(it.Critical), 10),
 			strconv.FormatUint(uint64(it.BagItemID), 10),
+			strconv.FormatUint(uint64(it.Pocket), 10),
 		})
 	}
 	w.Flush()
@@ -349,6 +351,10 @@ func readOneEntityCSV(path string) (IndexEntity, error) {
 		if len(row) >= 24 {
 			bid, _ := strconv.ParseUint(row[23], 10, 32)
 			item.BagItemID = uint32(bid)
+		}
+		if len(row) >= 25 {
+			pk, _ := strconv.ParseUint(row[24], 10, 32)
+			item.Pocket = uint32(pk)
 		}
 		ent.Items = append(ent.Items, item)
 	}
