@@ -27,6 +27,12 @@ export const condNameMap = ref<Record<number, string>>({});
 export const itemNameMap = ref<Record<number, string>>({});
 // enchant (OptionSet) id -> plain localized name, e.g. 11107 -> 生命.
 export const enchantNameMap = ref<Record<number, string>>({});
+
+// tooltip 資料：賦予完整資訊與細緻工匠能力表。
+export interface EnchantInfo { name: string; level: number | null; desc: string | null }
+export const enchantInfoMap = ref<Record<number, EnchantInfo>>({});
+export interface MetalwareAbility { name: string; init: number; per: number; max: number }
+export const metalwareMap = ref<Record<number, MetalwareAbility>>({});
 export const appEvent = ref(new EventTarget());
 
 export const dcManager = shallowRef(new DamageCollectorManager());

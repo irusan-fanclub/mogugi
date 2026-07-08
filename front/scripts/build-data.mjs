@@ -11,7 +11,7 @@ import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import Database from 'better-sqlite3';
 
-const BUILD_VERSION = 2;
+const BUILD_VERSION = 3;
 
 const REGION = 'tw';
 const VER = 'v154';
@@ -37,14 +37,19 @@ const ICON_SOURCES = [
     { kind: 'title', table: 'title', id: 'title_id' },
 ];
 
-// `optional: true` — table may be absent from older upstream sqlites (optionset
-// landed with mabitsequal schema user_version 4); emit an empty table then.
+// `optional: true` — table may be absent from older upstream sqlites (optionset:
+// mabitsequal schema >= 4, metalware_ability: >= 5); emit an empty table then.
+// `extra` — additional columns copied verbatim beyond id + name.
 const LIST_SOURCES = [
     { dst: 'race',                src: 'race',                id: 'race_id' },
     { dst: 'skill',               src: 'skill',               id: 'skill_id' },
     { dst: 'character_condition', src: 'character_condition', id: 'condition_id' },
     { dst: 'item',                src: 'item',                id: 'item_id' },
-    { dst: 'optionset',           src: 'optionset',           id: 'optionset_id', optional: true },
+    { dst: 'optionset',           src: 'optionset',           id: 'optionset_id', optional: true,
+      extra: { level: 'INTEGER', description: 'TEXT' } },
+    { dst: 'metalware_ability',   src: 'metalware_ability',   id: 'ability_id',   optional: true,
+      nameExpr: 'name',
+      extra: { initial_value: 'REAL', value_per_level: 'REAL', base_max_level: 'INTEGER' } },
 ];
 
 async function exists(p) {
@@ -141,34 +146,36 @@ async function buildLeanDb(src) {
     dst.pragma('journal_mode = OFF');
     dst.pragma('synchronous = OFF');
 
-    dst.exec(`
-        CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
-        CREATE TABLE race (id INTEGER PRIMARY KEY, name TEXT);
-        CREATE TABLE skill (id INTEGER PRIMARY KEY, name TEXT);
-        CREATE TABLE character_condition (id INTEGER PRIMARY KEY, name TEXT);
-        CREATE TABLE item (id INTEGER PRIMARY KEY, name TEXT);
-        CREATE TABLE optionset (id INTEGER PRIMARY KEY, name TEXT);
-    `);
+    dst.exec('CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);');
+    for (const { dst: dstTable, extra } of LIST_SOURCES) {
+        const extraCols = Object.entries(extra ?? {}).map(([c, t]) => `, ${c} ${t}`).join('');
+        dst.exec(`CREATE TABLE ${dstTable} (id INTEGER PRIMARY KEY, name TEXT${extraCols});`);
+    }
 
     const metaRows = src.prepare('SELECT key, value FROM meta').all();
     const insertMeta = dst.prepare('INSERT INTO meta (key, value) VALUES (?, ?)');
     for (const m of metaRows) insertMeta.run(m.key, m.value);
 
-    const srcHasTable = dst0 => src.prepare(
+    const srcHasTable = name => src.prepare(
         `SELECT 1 FROM sqlite_master WHERE type='table' AND name=?`
-    ).get(dst0) !== undefined;
+    ).get(name) !== undefined;
 
-    for (const { dst: dstTable, src: srcTable, id, optional } of LIST_SOURCES) {
+    for (const { dst: dstTable, src: srcTable, id, optional, extra, nameExpr } of LIST_SOURCES) {
         if (optional && !srcHasTable(srcTable)) {
-            console.warn(`[build-data] source table '${srcTable}' missing upstream — emitted empty (needs a mabitsequal build with schema >= 4).`);
+            console.warn(`[build-data] source table '${srcTable}' missing upstream — emitted empty (needs a newer mabitsequal build).`);
             continue;
         }
-        const insert = dst.prepare(`INSERT INTO ${dstTable} (id, name) VALUES (?, ?)`);
+        const extraCols = Object.keys(extra ?? {});
+        const cols = ['id', 'name', ...extraCols];
+        const insert = dst.prepare(
+            `INSERT INTO ${dstTable} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`
+        );
+        const selExtra = extraCols.map(c => `, ${c}`).join('');
         const rows = src.prepare(
-            `SELECT ${id} AS id, COALESCE(local_name, english_name) AS name FROM ${srcTable}`
+            `SELECT ${id} AS id, ${nameExpr ?? 'COALESCE(local_name, english_name)'} AS name${selExtra} FROM ${srcTable}`
         ).all();
         const tx = dst.transaction(() => {
-            for (const r of rows) insert.run(r.id, r.name);
+            for (const r of rows) insert.run(r.id, r.name, ...extraCols.map(c => r[c]));
         });
         tx();
         console.log(`[build-data] wrote ${rows.length} ${dstTable} rows.`);

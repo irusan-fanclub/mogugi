@@ -6,6 +6,12 @@ import (
 	"strings"
 )
 
+// MetalwareEntry 是一條細緻工匠能力（ability id + 等級）。
+type MetalwareEntry struct {
+	AbilityID uint32
+	Level     uint32
+}
+
 // InventoryItem 是從 0x5209 inventory 抽出的單件物品。
 type InventoryItem struct {
 	ItemID    uint32
@@ -17,6 +23,14 @@ type InventoryItem struct {
 	// ENSFIX），0 表示無。名稱對照留待後續，先原樣帶 id。
 	EnchantPrefix uint32
 	EnchantSuffix uint32
+	// 道具屬性（來自擴充 Bin(144)）：耐久 ×1000、防禦、攻擊小/大傷。
+	Durability    uint32
+	DurabilityMax uint32
+	Defense       uint32
+	AttackMin     uint32
+	AttackMax     uint32
+	// Metalware 是細緻工匠能力清單（kind-7 的 40-byte 記錄）。
+	Metalware []MetalwareEntry
 }
 
 // parseExtEnchants 從 item 的擴充 Bin（Item.OptionInfo 結構，144 bytes）取
@@ -28,6 +42,35 @@ func parseExtEnchants(ext []byte) (prefix, suffix uint32) {
 		return 0, 0
 	}
 	return uint32(le.Uint16(ext[60:])), uint32(le.Uint16(ext[62:]))
+}
+
+// parseExtStats 從擴充 Bin 取道具屬性：耐久 u32@16、耐久上限 u32@20（皆
+// ×1000）、攻擊小/大傷 u16@28/@30、防禦 u32@40。
+// 驗證樣本：杜克獵人手套 耐久 8000/8000（遊戲顯示 8/8）、防禦 1；
+// 堅固鐮刀（capture 1783467845）攻擊 1~7。
+func parseExtStats(ext []byte, it *InventoryItem) {
+	if len(ext) < 44 {
+		return
+	}
+	it.Durability = le.Uint32(ext[16:])
+	it.DurabilityMax = le.Uint32(ext[20:])
+	it.AttackMin = uint32(le.Uint16(ext[28:]))
+	it.AttackMax = uint32(le.Uint16(ext[30:]))
+	it.Defense = le.Uint32(ext[40:])
+}
+
+// parseMetalwareBin 解析一筆物品尾隨的 40-byte 記錄；kind（u32@0）為 7 時是
+// 細緻工匠能力：等級 u16@14、ability id u32@36。其他 kind 回 false。
+// 驗證樣本：杜克獵人手套三條 = (4300106,8)(3500403,17)(3501002,13)，
+// 與遊戲 tooltip 克諾斯之怒最小負傷率/水炮射程距離/造雨雲層範圍一致。
+func parseMetalwareBin(b []byte) (MetalwareEntry, bool) {
+	if len(b) < 40 || le.Uint32(b[0:]) != 7 {
+		return MetalwareEntry{}, false
+	}
+	return MetalwareEntry{
+		AbilityID: le.Uint32(b[36:]),
+		Level:     uint32(le.Uint16(b[14:])),
+	}, true
 }
 
 // parseOptionInfo 解析 Mabinogi item 的 OptionInfo 字串，格式為

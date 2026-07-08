@@ -14,9 +14,9 @@ func TestParseItemInfo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseItemInfo: %v", err)
 	}
-	want := InventoryItem{ItemID: 40026, Qty: 5, Container: "main", PosX: 3, PosY: 1}
-	if got != want {
-		t.Fatalf("got %+v, want %+v", got, want)
+	// InventoryItem 含 slice，不能直接 ==；逐欄比對 parseItemInfo 會填的欄位。
+	if got.ItemID != 40026 || got.Qty != 5 || got.Container != "main" || got.PosX != 3 || got.PosY != 1 {
+		t.Fatalf("got %+v", got)
 	}
 }
 

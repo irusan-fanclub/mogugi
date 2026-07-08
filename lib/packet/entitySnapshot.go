@@ -69,6 +69,7 @@ func ParseEntitySnapshot(msg Message) (*EntitySnapshot, error) {
 		if i+3 < len(msg) && msg[i+3].Type() == MessageElemTypeBin {
 			if ext, ok := msg[i+3].Data().([]byte); ok {
 				it.EnchantPrefix, it.EnchantSuffix = parseExtEnchants(ext)
+				parseExtStats(ext, &it)
 			}
 			if i+4 < len(msg) && msg[i+4].Type() == MessageElemTypeString {
 				if s, ok := msg[i+4].Data().(string); ok {
@@ -78,6 +79,24 @@ func ParseEntitySnapshot(msg Message) (*EntitySnapshot, error) {
 					}
 					if sfx != 0 {
 						it.EnchantSuffix = sfx
+					}
+				}
+			}
+			// 兩個字串之後是 Byte(count) + count × Bin(40)，其中 kind=7
+			// 的是細緻工匠能力（等級 + ability id）。
+			if i+6 < len(msg) && msg[i+5].Type() == MessageElemTypeString && msg[i+6].Type() == MessageElemTypeByte {
+				if cnt, ok := msg[i+6].Data().(uint8); ok {
+					for k := 0; k < int(cnt) && i+7+k < len(msg); k++ {
+						if msg[i+7+k].Type() != MessageElemTypeBin {
+							break
+						}
+						b, ok := msg[i+7+k].Data().([]byte)
+						if !ok {
+							break
+						}
+						if mw, ok := parseMetalwareBin(b); ok {
+							it.Metalware = append(it.Metalware, mw)
+						}
 					}
 				}
 			}

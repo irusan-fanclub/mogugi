@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/csv"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -16,14 +17,55 @@ import (
 var itemsLogDirPath = "items_log"
 
 // IndexItem / IndexEntity 是 /api/item-index 的聚合模型。
+// IndexMetalware 是一條細緻工匠能力（JSON 用）。
+type IndexMetalware struct {
+	ID    uint32 `json:"id"`
+	Level uint32 `json:"level"`
+}
+
 type IndexItem struct {
-	ID            uint32 `json:"id"`
-	Qty           uint32 `json:"qty"`
-	Container     string `json:"container"`
-	X             uint32 `json:"x"`
-	Y             uint32 `json:"y"`
-	EnchantPrefix uint32 `json:"enchantPrefix,omitempty"`
-	EnchantSuffix uint32 `json:"enchantSuffix,omitempty"`
+	ID            uint32           `json:"id"`
+	Qty           uint32           `json:"qty"`
+	Container     string           `json:"container"`
+	X             uint32           `json:"x"`
+	Y             uint32           `json:"y"`
+	EnchantPrefix uint32           `json:"enchantPrefix,omitempty"`
+	EnchantSuffix uint32           `json:"enchantSuffix,omitempty"`
+	Durability    uint32           `json:"durability,omitempty"`
+	DurabilityMax uint32           `json:"durabilityMax,omitempty"`
+	Defense       uint32           `json:"defense,omitempty"`
+	AttackMin     uint32           `json:"attackMin,omitempty"`
+	AttackMax     uint32           `json:"attackMax,omitempty"`
+	Metalware     []IndexMetalware `json:"metalware,omitempty"`
+}
+
+// encodeMetalware / decodeMetalware 以 "id:lv|id:lv" 存入 CSV 單欄。
+func encodeMetalware(list []packet.MetalwareEntry) string {
+	parts := make([]string, 0, len(list))
+	for _, m := range list {
+		parts = append(parts, fmt.Sprintf("%d:%d", m.AbilityID, m.Level))
+	}
+	return strings.Join(parts, "|")
+}
+
+func decodeMetalware(s string) []IndexMetalware {
+	if s == "" {
+		return nil
+	}
+	var out []IndexMetalware
+	for _, part := range strings.Split(s, "|") {
+		id, lv, ok := strings.Cut(part, ":")
+		if !ok {
+			continue
+		}
+		idU, err1 := strconv.ParseUint(id, 10, 32)
+		lvU, err2 := strconv.ParseUint(lv, 10, 32)
+		if err1 != nil || err2 != nil {
+			continue
+		}
+		out = append(out, IndexMetalware{ID: uint32(idU), Level: uint32(lvU)})
+	}
+	return out
 }
 
 type IndexEntity struct {
@@ -80,7 +122,8 @@ func writeEntityCSVTo(dir string, snap *packet.EntitySnapshot) error {
 
 	w := csv.NewWriter(tmp)
 	_ = w.Write([]string{"# master", snap.Master})
-	_ = w.Write([]string{"item_id", "qty", "container", "pos_x", "pos_y", "enchant_prefix", "enchant_suffix"})
+	_ = w.Write([]string{"item_id", "qty", "container", "pos_x", "pos_y", "enchant_prefix", "enchant_suffix",
+		"durability", "durability_max", "defense", "attack_min", "attack_max", "metalware"})
 	for _, it := range snap.Items {
 		_ = w.Write([]string{
 			strconv.FormatUint(uint64(it.ItemID), 10),
@@ -90,6 +133,12 @@ func writeEntityCSVTo(dir string, snap *packet.EntitySnapshot) error {
 			strconv.FormatUint(uint64(it.PosY), 10),
 			strconv.FormatUint(uint64(it.EnchantPrefix), 10),
 			strconv.FormatUint(uint64(it.EnchantSuffix), 10),
+			strconv.FormatUint(uint64(it.Durability), 10),
+			strconv.FormatUint(uint64(it.DurabilityMax), 10),
+			strconv.FormatUint(uint64(it.Defense), 10),
+			strconv.FormatUint(uint64(it.AttackMin), 10),
+			strconv.FormatUint(uint64(it.AttackMax), 10),
+			encodeMetalware(it.Metalware),
 		})
 	}
 	w.Flush()
@@ -163,12 +212,25 @@ func readOneEntityCSV(path string) (IndexEntity, error) {
 		item := IndexItem{
 			ID: uint32(id), Qty: uint32(qty), Container: row[2], X: uint32(x), Y: uint32(y),
 		}
-		// 賦予欄位為後加；舊 CSV 只有 5 欄，缺就當 0。
+		// 之後的欄位皆為後加；舊 CSV 欄數不足時缺什麼補 0。
 		if len(row) >= 7 {
 			ep, _ := strconv.ParseUint(row[5], 10, 32)
 			es, _ := strconv.ParseUint(row[6], 10, 32)
 			item.EnchantPrefix = uint32(ep)
 			item.EnchantSuffix = uint32(es)
+		}
+		if len(row) >= 13 {
+			dur, _ := strconv.ParseUint(row[7], 10, 32)
+			durMax, _ := strconv.ParseUint(row[8], 10, 32)
+			def, _ := strconv.ParseUint(row[9], 10, 32)
+			aMin, _ := strconv.ParseUint(row[10], 10, 32)
+			aMax, _ := strconv.ParseUint(row[11], 10, 32)
+			item.Durability = uint32(dur)
+			item.DurabilityMax = uint32(durMax)
+			item.Defense = uint32(def)
+			item.AttackMin = uint32(aMin)
+			item.AttackMax = uint32(aMax)
+			item.Metalware = decodeMetalware(row[12])
 		}
 		ent.Items = append(ent.Items, item)
 	}

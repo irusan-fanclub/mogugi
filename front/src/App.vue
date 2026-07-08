@@ -176,6 +176,8 @@ export default defineComponent({
         const condNameMap = inject('condNameMap');
         const itemNameMap = inject('itemNameMap');
         const enchantNameMap = inject('enchantNameMap');
+        const enchantInfoMap = inject('enchantInfoMap');
+        const metalwareMap = inject('metalwareMap');
         const appEvent = inject('appEvent');
         const actorManager = inject('actorManager');
         const dcManager = inject('dcManager');
@@ -415,16 +417,30 @@ export default defineComponent({
                 }
             }
             try {
-                // Enchant names (plain, no id suffix — used verbatim in the item
-                // index). Table may be absent/empty in dbs built from an upstream
-                // sqlite older than mabitsequal schema v4 → ids stay as fallback.
-                const list = await db.value.getSortedListData('OptionSetList');
+                // Enchant names/details (plain, no id suffix — used verbatim in
+                // the item index + tooltip). Tables may be absent/empty in dbs
+                // built from an older upstream sqlite → ids stay as fallback.
+                const list = await db.value.getOptionSets();
 
                 for (const v of list) {
-                    enchantNameMap.value[v.Id] = db.value.getCurLangString(v.Name);
+                    enchantNameMap.value[v.Id] = v.Name;
+                    enchantInfoMap.value[v.Id] = { name: v.Name, level: v.Level, desc: v.Description };
                 }
             } catch (e) {
                 console.warn('optionset list unavailable (old bundled db?)', e);
+            }
+            try {
+                // 細緻工匠能力表（tooltip 用）。
+                const list = await db.value.getMetalwareAbilities();
+
+                for (const v of list) {
+                    metalwareMap.value[v.Id] = {
+                        name: v.Name, init: v.InitialValue ?? 0,
+                        per: v.ValuePerLevel ?? 0, max: v.BaseMaxLevel ?? 0,
+                    };
+                }
+            } catch (e) {
+                console.warn('metalware ability list unavailable (old bundled db?)', e);
             }
 
             if (!isStandalone) {

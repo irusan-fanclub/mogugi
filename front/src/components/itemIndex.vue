@@ -6,18 +6,60 @@
             <v-btn :loading="loading" @click="reload">重新整理</v-btn>
             <span class="text-caption text-medium-emphasis">{{ entityCount }} 個實體 / {{ itemKindCount }} 種物品</span>
         </div>
-        <v-data-table :headers="headers" :items="rows" density="compact" :items-per-page="50" />
+        <v-data-table :headers="headers" :items="rows" density="compact" :items-per-page="50">
+            <template #[`item.item`]="{ item }">
+                <v-tooltip v-if="item.tip" location="right" content-class="item-tip-content" :open-delay="150">
+                    <template #activator="{ props }">
+                        <span v-bind="props" class="item-name-hover">{{ item.item }}</span>
+                    </template>
+                    <div class="item-tip">
+                        <div class="tip-title">{{ item.item }}</div>
+                        <template v-if="item.tip.props.length">
+                            <div class="tip-section">道具屬性</div>
+                            <div v-for="(l, i) in item.tip.props" :key="`p${i}`" class="tip-line">{{ l }}</div>
+                        </template>
+                        <template v-if="item.tip.enchants.length">
+                            <div class="tip-section">魔力賦予</div>
+                            <template v-for="(e, i) in item.tip.enchants" :key="`e${i}`">
+                                <div class="tip-line">
+                                    [{{ e.slot }}] {{ e.name }}<span v-if="e.rank" class="tip-rank">（等級 {{ e.rank }}）</span>
+                                </div>
+                                <div v-if="e.desc" class="tip-line tip-desc">{{ e.desc }}</div>
+                            </template>
+                        </template>
+                        <template v-if="item.tip.metalware.length">
+                            <div class="tip-section">細緻工匠</div>
+                            <template v-for="(m, i) in item.tip.metalware" :key="`m${i}`">
+                                <div class="tip-line tip-mw">{{ m.name }} ({{ m.level }}/{{ m.max }}等級)</div>
+                                <div v-if="m.value != null" class="tip-line tip-desc">L {{ m.value }} 增加</div>
+                            </template>
+                        </template>
+                    </div>
+                </v-tooltip>
+                <span v-else>{{ item.item }}</span>
+            </template>
+        </v-data-table>
     </div>
 </template>
 
 <script lang="ts">
 import { defineComponent, ref, computed, inject, onMounted, type Ref } from 'vue';
 import { buildItemIndex, searchById, searchByName, type IndexEntity, type Holder } from '@/lib/itemIndex';
+import type { EnchantInfo, MetalwareAbility } from '@/store';
+
+// 賦予等級 → 遊戲位階字母（level 1=F … 6=A, 7=9, 8=8 …15=1）。
+const RANKS = ['F', 'E', 'D', 'C', 'B', 'A', '9', '8', '7', '6', '5', '4', '3', '2', '1'];
+
+interface TipEnchant { slot: string; name: string; rank: string | null; desc: string | null }
+interface TipMetalware { name: string; level: number; max: number; value: number | null }
+interface Tip { props: string[]; enchants: TipEnchant[]; metalware: TipMetalware[] }
 
 export default defineComponent({
     setup() {
         const itemNameMap = inject('itemNameMap') as Ref<Record<number, string>>;
         const enchantNameMap = inject('enchantNameMap') as Ref<Record<number, string>>;
+        const enchantInfoMap = inject('enchantInfoMap') as Ref<Record<number, EnchantInfo>>;
+        const metalwareMap = inject('metalwareMap') as Ref<Record<number, MetalwareAbility>>;
         const query = ref('');
         const loading = ref(false);
         const idx = ref(new Map<number, Holder[]>());
@@ -27,16 +69,6 @@ export default defineComponent({
             const label = itemNameMap.value[id];
             if (!label) return `Item ${id}`;
             return label.replace(/\s*\d+$/, '');
-        };
-
-        // enchantText: 有賦予時顯示「接頭:名稱 / 接尾:名稱」；名稱表沒有該 id
-        // （內嵌 db 還沒帶 optionset）時退回顯示數字 id。
-        const enchantText = (h: Holder): string => {
-            const label = (id: number) => enchantNameMap.value[id] ?? `${id}`;
-            const parts: string[] = [];
-            if (h.enchantPrefix) parts.push(`接頭:${label(h.enchantPrefix)}`);
-            if (h.enchantSuffix) parts.push(`接尾:${label(h.enchantSuffix)}`);
-            return parts.join(' / ');
         };
 
         // displayName: 仿遊戲命名——
@@ -52,6 +84,44 @@ export default defineComponent({
             return /卷軸|魔法粉/.test(base)
                 ? `${base} - ${parts.join(' - ')}`
                 : `${parts.join(' ')} ${base}`;
+        };
+
+        // buildTip: 組出遊戲風格 tooltip 的三個區塊；全空回 null（不掛 tooltip）。
+        const buildTip = (h: Holder): Tip | null => {
+            const props: string[] = [];
+            if (h.attackMax) props.push(`攻擊 ${h.attackMin ?? 0}~${h.attackMax}`);
+            if (h.defense) props.push(`防禦力 ${h.defense}`);
+            if (h.durabilityMax) {
+                props.push(`耐久度 ${Math.floor((h.durability ?? 0) / 1000)}/${Math.floor(h.durabilityMax / 1000)}`);
+            }
+
+            const enchants: TipEnchant[] = [];
+            const pushEnchant = (slot: string, id?: number) => {
+                if (!id) return;
+                const info = enchantInfoMap.value[id];
+                enchants.push({
+                    slot,
+                    name: info?.name ?? `${id}`,
+                    rank: info?.level ? (RANKS[info.level - 1] ?? `${info.level}`) : null,
+                    desc: info?.desc ?? null,
+                });
+            };
+            pushEnchant('接頭', h.enchantPrefix);
+            pushEnchant('接尾', h.enchantSuffix);
+
+            // 細緻工匠：數值 = InitialValue + (level-1) × ValuePerLevel。
+            const metalware: TipMetalware[] = (h.metalware ?? []).map(m => {
+                const a = metalwareMap.value[m.id];
+                return {
+                    name: a?.name ?? `#${m.id}`,
+                    level: m.level,
+                    max: a?.max || 20,
+                    value: a ? Number((a.init + (m.level - 1) * a.per).toFixed(2)) : null,
+                };
+            });
+
+            if (!props.length && !enchants.length && !metalware.length) return null;
+            return { props, enchants, metalware };
         };
 
         // nameToIds: 回傳 label 含查詢字串的所有 item id（模糊比對）。
@@ -100,19 +170,18 @@ export default defineComponent({
             return holders.map(h => ({
                 item: displayName(h),
                 itemId: h.id,
-                enchant: enchantText(h),
                 entity: h.entity,
                 master: h.master,
                 container: h.container,
                 qty: h.qty,
                 pos: `(${h.x},${h.y})`,
+                tip: buildTip(h),
             }));
         });
 
         const headers = [
             { title: '物品', key: 'item' },
             { title: '物品ID', key: 'itemId' },
-            { title: '賦予', key: 'enchant' },
             { title: '角色', key: 'entity' },
             { title: 'Owner', key: 'master' },
             { title: '背包', key: 'container' },
@@ -125,3 +194,58 @@ export default defineComponent({
     },
 });
 </script>
+
+<style>
+/* 遊戲風 tooltip：深色面板 + 橘色區塊標頭。 */
+.item-tip-content {
+    background: rgba(12, 12, 14, 0.96) !important;
+    border: 1px solid #555;
+    padding: 0 !important;
+    max-width: 380px;
+}
+
+.item-tip {
+    padding: 8px 12px;
+    font-size: 0.85rem;
+    color: #ddd;
+}
+
+.item-tip .tip-title {
+    text-align: center;
+    color: #fff;
+    font-weight: bold;
+    margin-bottom: 6px;
+}
+
+.item-tip .tip-section {
+    display: inline-block;
+    background: #7a4a00;
+    color: #ffd27f;
+    font-weight: bold;
+    padding: 0 8px;
+    border-radius: 2px;
+    margin: 6px 0 3px;
+}
+
+.item-tip .tip-line {
+    line-height: 1.5;
+}
+
+.item-tip .tip-rank {
+    color: #8fd0ff;
+}
+
+.item-tip .tip-mw {
+    color: #8fd0ff;
+}
+
+.item-tip .tip-desc {
+    color: #aaa;
+    padding-left: 10px;
+}
+
+.item-name-hover {
+    cursor: help;
+    border-bottom: 1px dotted #777;
+}
+</style>

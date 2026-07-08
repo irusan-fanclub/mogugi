@@ -111,6 +111,63 @@ func TestParseEntitySnapshot_EquipEnchantFromExtBin(t *testing.T) {
 	}
 }
 
+func TestParseEntitySnapshot_MetalwareAndStats(t *testing.T) {
+	// 鏡像 capture 1783467845 的手套記錄：Bin80 → Bin144 → 2×String →
+	// Byte(4) → 4×Bin40（1 筆 kind=1 忽略 + 3 筆 kind=7 細工）。
+	info := make([]byte, 80)
+	le.PutUint32(info[0:], 2)
+	le.PutUint32(info[4:], 16009)
+	ext := make([]byte, 144)
+	le.PutUint32(ext[16:], 8000) // durability
+	le.PutUint32(ext[20:], 8000) // durability max
+	le.PutUint16(ext[28:], 1)    // attack min
+	le.PutUint16(ext[30:], 7)    // attack max
+	le.PutUint32(ext[40:], 1)    // defense
+	le.PutUint16(ext[62:], 30105)
+
+	mw := func(kind, aid uint32, lv uint16) []byte {
+		b := make([]byte, 40)
+		le.PutUint32(b[0:], kind)
+		le.PutUint16(b[14:], lv)
+		le.PutUint32(b[36:], aid)
+		return b
+	}
+	msg := Message{
+		NewMessageElemString("嫩煎雞小羊01"),
+		NewMessageElemLong(0x1234), NewMessageElemByte(2),
+		NewMessageElemBin(info), NewMessageElemBin(ext),
+		NewMessageElemString(""), NewMessageElemString(""),
+		NewMessageElemByte(4),
+		NewMessageElemBin(mw(1, 99, 99)), // kind=1 非細工，忽略
+		NewMessageElemBin(mw(7, 4300106, 8)),
+		NewMessageElemBin(mw(7, 3500403, 17)),
+		NewMessageElemBin(mw(7, 3501002, 13)),
+	}
+	snap, err := ParseEntitySnapshot(msg)
+	if err != nil {
+		t.Fatalf("ParseEntitySnapshot: %v", err)
+	}
+	if len(snap.Items) != 1 {
+		t.Fatalf("items=%+v", snap.Items)
+	}
+	it := snap.Items[0]
+	if it.Durability != 8000 || it.DurabilityMax != 8000 || it.Defense != 1 || it.AttackMin != 1 || it.AttackMax != 7 {
+		t.Fatalf("stats=%+v", it)
+	}
+	want := []MetalwareEntry{{4300106, 8}, {3500403, 17}, {3501002, 13}}
+	if len(it.Metalware) != 3 {
+		t.Fatalf("metalware=%+v", it.Metalware)
+	}
+	for i, w := range want {
+		if it.Metalware[i] != w {
+			t.Fatalf("metalware[%d]=%+v want %+v", i, it.Metalware[i], w)
+		}
+	}
+	if it.EnchantSuffix != 30105 {
+		t.Fatalf("suffix=%d", it.EnchantSuffix)
+	}
+}
+
 func TestParseEntitySnapshot_Enchant(t *testing.T) {
 	// 真實值取自 dilmeter_1783460656（嫩煎雞小羊01）：prefix 21203 / suffix 11107。
 	msg := Message{NewMessageElemString("嫩煎雞小羊01")}

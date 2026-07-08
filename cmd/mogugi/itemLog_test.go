@@ -81,6 +81,32 @@ func TestWriteAndReadItemIndex_Enchant(t *testing.T) {
 	}
 }
 
+func TestWriteAndReadItemIndex_MetalwareAndStats(t *testing.T) {
+	dir := t.TempDir()
+	snap := &packet.EntitySnapshot{
+		Name: "嫩煎雞小羊01",
+		Items: []packet.InventoryItem{
+			{ItemID: 16009, Container: "main", EnchantSuffix: 30105,
+				Durability: 8000, DurabilityMax: 8000, Defense: 1, AttackMin: 1, AttackMax: 7,
+				Metalware: []packet.MetalwareEntry{{AbilityID: 4300106, Level: 8}, {AbilityID: 3501002, Level: 13}}},
+		},
+	}
+	if err := writeEntityCSVTo(dir, snap); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	idx, err := readItemIndexFrom(dir)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	it := idx[0].Items[0]
+	if it.Durability != 8000 || it.DurabilityMax != 8000 || it.Defense != 1 || it.AttackMin != 1 || it.AttackMax != 7 {
+		t.Fatalf("stats=%+v", it)
+	}
+	if len(it.Metalware) != 2 || it.Metalware[0] != (IndexMetalware{4300106, 8}) || it.Metalware[1] != (IndexMetalware{3501002, 13}) {
+		t.Fatalf("metalware=%+v", it.Metalware)
+	}
+}
+
 func TestReadItemIndex_LegacyCSV(t *testing.T) {
 	// 舊版 5 欄 CSV（無賦予欄）要能讀，賦予預設 0。
 	dir := t.TempDir()
