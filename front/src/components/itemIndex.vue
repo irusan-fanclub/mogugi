@@ -7,8 +7,6 @@
                 density="compact" clearable multiple chips closable-chips style="min-width: 200px; max-width: 320px" />
             <v-autocomplete v-model="masterFilter" :items="masterOptions" label="Owner" hide-details
                 density="compact" clearable multiple chips closable-chips style="min-width: 180px; max-width: 300px" />
-            <v-select v-model="containerFilter" :items="containerOptions" label="背包" hide-details
-                density="compact" clearable style="min-width: 140px; max-width: 180px" />
             <v-btn :loading="loading" @click="reload">重新整理</v-btn>
             <v-menu :close-on-content-click="false">
                 <template #activator="{ props }">
@@ -84,10 +82,9 @@ export default defineComponent({
         const loading = ref(false);
         const idx = ref(new Map<number, Holder[]>());
 
-        // 欄位過濾：角色 / Owner 可複選，背包單選；與文字搜尋 AND 疊加。
+        // 欄位過濾：角色 / Owner 可複選；與文字搜尋 AND 疊加。
         const entityFilter = ref<string[]>([]);
         const masterFilter = ref<string[]>([]);
-        const containerFilter = ref<string | null>(null);
 
         // itemNameMap 的值格式為「名稱 id」，這裡去掉結尾的 id 只留名稱。
         const itemName = (id: number): string => {
@@ -213,7 +210,6 @@ export default defineComponent({
         };
         const entityOptions = computed(() => distinct(h => h.entity));
         const masterOptions = computed(() => distinct(h => h.master));
-        const containerOptions = computed(() => distinct(h => h.container));
 
         const rows = computed(() => {
             const q = (query.value ?? '').trim().toLowerCase();
@@ -228,9 +224,6 @@ export default defineComponent({
             }
             if (masterFilter.value.length) {
                 holders = holders.filter(h => masterFilter.value.includes(h.master));
-            }
-            if (containerFilter.value) {
-                holders = holders.filter(h => h.container === containerFilter.value);
             }
             return holders.map(h => ({
                 item: displayName(h),
@@ -278,8 +271,8 @@ export default defineComponent({
         return {
             query, loading, reload, rows, headers, allHeaders, visibleCols,
             entityCount, itemKindCount,
-            entityFilter, masterFilter, containerFilter,
-            entityOptions, masterOptions, containerOptions,
+            entityFilter, masterFilter,
+            entityOptions, masterOptions,
         };
     },
 });
