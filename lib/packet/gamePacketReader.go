@@ -307,7 +307,13 @@ func (t *GameServerPacketReader) openLog() error {
 		logger.Println(err)
 		return err
 	}
+	// 換線會建立新 reader；若沿用同名檔 O_TRUNC 會把先前捕獲（含 0x5209
+	// 快照）整個洗掉——曾造成 capture 無法回放（session 1783517744）。
+	// 檔名已存在就輪替（加當下秒），每個 reader 一個檔。
 	fileName := filepath.Join(logDir, fmt.Sprintf("packet_capture_%v.pcapng", constants.SERVER_START_AT))
+	if _, statErr := os.Stat(fileName); statErr == nil {
+		fileName = filepath.Join(logDir, fmt.Sprintf("packet_capture_%v_%v.pcapng", constants.SERVER_START_AT, time.Now().Unix()))
+	}
 	fd, err := os.OpenFile(fileName, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 	if err != nil {
 		logger.Println(err)
