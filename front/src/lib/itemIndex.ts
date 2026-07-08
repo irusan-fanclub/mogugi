@@ -51,20 +51,3 @@ export function buildItemIndex(data: IndexEntity[]): Map<number, Holder[]> {
     }
     return idx;
 }
-
-export function searchById(idx: Map<number, Holder[]>, id: number): Holder[] {
-    return idx.get(id) ?? [];
-}
-
-// searchByName 用 nameToId 反查（可回傳多個 id），合併各 id 的持有者。
-export function searchByName(
-    idx: Map<number, Holder[]>,
-    name: string,
-    nameToIds: (name: string) => number[],
-): Holder[] {
-    const out: Holder[] = [];
-    for (const id of nameToIds(name)) {
-        out.push(...searchById(idx, id));
-    }
-    return out;
-}
