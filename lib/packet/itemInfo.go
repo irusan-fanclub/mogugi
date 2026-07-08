@@ -30,7 +30,11 @@ type EnchantEffect struct {
 type InventoryItem struct {
 	ItemID    uint32
 	Qty       uint32
-	Container string // main | pet_equip | pet_bag | pet_subbag | unknown
+	Container string // main | equip | bag | pet_* | unknown
+	Pocket    uint32 // Item.Info @0 的原始 pocket id
+	// BagItemID 是此物品所在袋子的 item id（0=不在使用者袋中）。
+	// 對映規則（實測）：袋子物品 MetaData1 的 IBOR:4:<n> → 內容 pocket = 95+n。
+	BagItemID uint32
 	PosX      uint32
 	PosY      uint32
 	// EnchantPrefix / EnchantSuffix 是 OptionInfo 字串裡的賦予 id（ENPFIX /
@@ -135,6 +139,19 @@ func parseEffectBin(b []byte) (kind uint32, e EnchantEffect, ok bool) {
 	return kind, e, true
 }
 
+// metaIntValue 從 MetaData1 KV 字串取指定 key 的整數值（"KEY:type:value;"）。
+func metaIntValue(meta, key string) (int64, bool) {
+	for _, tok := range strings.Split(meta, ";") {
+		parts := strings.SplitN(tok, ":", 3)
+		if len(parts) == 3 && parts[0] == key {
+			if v, err := strconv.ParseInt(parts[2], 10, 64); err == nil {
+				return v, true
+			}
+		}
+	}
+	return 0, false
+}
+
 // parseOptionInfo 解析 Mabinogi item 的 OptionInfo 字串，格式為
 // "KEY:type:value;KEY:type:value;..."，取出 prefix（ENPFIX）與 suffix
 // （ENSFIX）賦予 id。缺鍵回 0。卷軸走這裡；裝備上已附的賦予則在擴充 Bin
@@ -191,10 +208,12 @@ func parseItemInfo(info []byte) (InventoryItem, error) {
 	if len(info) < 52 {
 		return InventoryItem{}, fmt.Errorf("item info too short: %d", len(info))
 	}
+	pocket := le.Uint32(info[0:])
 	it := InventoryItem{
 		ItemID:    le.Uint32(info[4:]),
 		Qty:       le.Uint32(info[36:]),
-		Container: containerFromRecType(le.Uint32(info[0:])),
+		Container: containerFromRecType(pocket),
+		Pocket:    pocket,
 		PosX:      le.Uint32(info[44:]),
 		PosY:      le.Uint32(info[48:]),
 	}

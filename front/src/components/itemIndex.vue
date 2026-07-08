@@ -350,7 +350,7 @@ export default defineComponent({
                 itemId: h.id,
                 entity: h.entity,
                 master: h.master,
-                container: h.container,
+                container: h.bagItemId ? itemName(h.bagItemId) : h.container,
                 qty: h.qty,
                 pos: `(${h.x},${h.y})`,
                 metalware: metalwareText(h),

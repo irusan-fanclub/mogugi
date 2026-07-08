@@ -117,5 +117,19 @@ func ParseEntitySnapshot(msg Message) (*EntitySnapshot, error) {
 		snap.Items = append(snap.Items, it)
 	}
 
+	// 袋子回填：袋子物品的 IBOR:4:<n> → 內容 pocket = 95+n（實測：慶典
+	// 服裝背包 IBOR=7 ↔ 內容物 pocket 102；IBOR 缺號袋 = 空袋）。
+	bagByPocket := map[uint32]uint32{}
+	for _, it := range snap.Items {
+		if n, ok := metaIntValue(it.Metadata, "IBOR"); ok && n > 0 {
+			bagByPocket[uint32(95+n)] = it.ItemID
+		}
+	}
+	for i := range snap.Items {
+		if id, ok := bagByPocket[snap.Items[i].Pocket]; ok {
+			snap.Items[i].BagItemID = id
+		}
+	}
+
 	return snap, nil
 }

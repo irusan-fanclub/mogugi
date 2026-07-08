@@ -323,3 +323,35 @@ func TestParseEntitySnapshot_RealFixture(t *testing.T) {
 		}
 	}
 }
+
+func TestParseEntitySnapshot_BagMapping(t *testing.T) {
+	// 袋子（pocket 2、meta IBOR:4:7）→ 內容物 pocket 102 = 95+7。
+	bag := make([]byte, 80)
+	le.PutUint32(bag[0:], 2)
+	le.PutUint32(bag[4:], 5500008)
+	inBag := make([]byte, 80)
+	le.PutUint32(inBag[0:], 102)
+	le.PutUint32(inBag[4:], 1460011)
+	msg := Message{
+		NewMessageElemString("地域磨菇"),
+		NewMessageElemLong(1), NewMessageElemByte(2),
+		NewMessageElemBin(bag), NewMessageElemBin(make([]byte, 144)),
+		NewMessageElemString("IBOR:4:7;"), NewMessageElemString(""),
+		NewMessageElemLong(2), NewMessageElemByte(2),
+		NewMessageElemBin(inBag), NewMessageElemBin(make([]byte, 144)),
+		NewMessageElemString(""), NewMessageElemString(""),
+	}
+	snap, err := ParseEntitySnapshot(msg)
+	if err != nil {
+		t.Fatalf("ParseEntitySnapshot: %v", err)
+	}
+	if len(snap.Items) != 2 {
+		t.Fatalf("items=%+v", snap.Items)
+	}
+	if snap.Items[1].BagItemID != 5500008 {
+		t.Fatalf("bagItemId=%d want 5500008", snap.Items[1].BagItemID)
+	}
+	if snap.Items[0].BagItemID != 0 {
+		t.Fatalf("bag itself should not be in a bag: %d", snap.Items[0].BagItemID)
+	}
+}
