@@ -157,28 +157,19 @@ func TestWriteAndReadItemIndex_AllColumns(t *testing.T) {
 	}
 }
 
-func TestWriteEntity_SameNameDifferentMaster(t *testing.T) {
-	// 兩隻同名寵物、不同主人：不可互相覆蓋（各自一個檔）。
+func TestReadItemIndex_TrueNameFromMeta(t *testing.T) {
+	// 名字含非法字元時：檔名被消毒，但 # meta 列保留真實名字。
 	dir := t.TempDir()
-	a := &packet.EntitySnapshot{Name: "小雞", Master: "甲", Items: []packet.InventoryItem{{ItemID: 1}}}
-	b := &packet.EntitySnapshot{Name: "小雞", Master: "乙", Items: []packet.InventoryItem{{ItemID: 2}}}
-	if err := writeEntityCSVTo(dir, a); err != nil {
-		t.Fatal(err)
-	}
-	if err := writeEntityCSVTo(dir, b); err != nil {
+	snap := &packet.EntitySnapshot{Name: "a/b:c", Master: "主人", Items: []packet.InventoryItem{{ItemID: 1}}}
+	if err := writeEntityCSVTo(dir, snap); err != nil {
 		t.Fatal(err)
 	}
 	idx, err := readItemIndexFrom(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(idx) != 2 {
-		t.Fatalf("want 2 distinct entities, got %d: %+v", len(idx), idx)
-	}
-	for _, e := range idx {
-		if e.Entity != "小雞" {
-			t.Errorf("entity display name should stay 小雞, got %q", e.Entity)
-		}
+	if len(idx) != 1 || idx[0].Entity != "a/b:c" || idx[0].Master != "主人" {
+		t.Fatalf("want true name a/b:c from # meta, got %+v", idx)
 	}
 }
 

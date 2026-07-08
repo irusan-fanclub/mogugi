@@ -41,11 +41,10 @@ type GameServerPacketReader struct {
 	logFd     *os.File
 	linkType  layers.LinkType
 
-	// statistics
-	payloadCount    uint64    // number of received TCP payloads
-	parsedCount     uint64    // number of successfully parsed game packets
-	parseErrorCount uint64    // number of parse errors
-	lastErrorTime   time.Time // timestamp of the most recent error
+	// statistics (owned by packetLoop's goroutine — do not read elsewhere)
+	payloadCount    uint64 // number of received TCP payloads
+	parsedCount     uint64 // number of successfully parsed game packets
+	parseErrorCount uint64 // number of parse errors
 }
 
 type GameServerPacketReaderOpt struct {
@@ -250,7 +249,6 @@ func (t *GameServerPacketReader) packetLoop(payloadCh <-chan gamePacketPayload) 
 					break readerLoop
 				}
 				t.parseErrorCount++
-				t.lastErrorTime = time.Now()
 				logger.Printf("[ParseError #%d] relSeq=%d %v", t.parseErrorCount, lastRelSeq, err)
 				nextPayload()
 				continue
@@ -673,9 +671,9 @@ func (t *GameServerPacketReader) PacketCh() <-chan *GamePacket {
 // Returns:
 //   - packet:   the parsed packet on success (nil on error)
 //   - consumed: on success, the number of bytes this packet occupies;
-//               always 0 on error and on io.EOF
+//     always 0 on error and on io.EOF
 //   - err:      io.EOF when more data is needed; any other error
-//               indicates a malformed header or body
+//     indicates a malformed header or body
 //
 // Design invariant: errors never consume bytes. On error the caller
 // (packetLoop.nextPayload) drops the whole frontmost TCP segment and

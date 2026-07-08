@@ -193,15 +193,6 @@ func sanitizeEntityName(name string) string {
 	return out
 }
 
-// entityFileBase 產生實體檔名基底：主人名不同的同名寵物不會互相覆蓋。
-func entityFileBase(name, master string) string {
-	base := sanitizeEntityName(name)
-	if m := strings.TrimSpace(master); m != "" && m != strings.TrimSpace(name) {
-		base += "__" + sanitizeEntityName(master)
-	}
-	return base
-}
-
 // itemsLogDir 回傳物品索引輸出目錄（與 logs/ 同層）。
 func itemsLogDir() (string, error) {
 	return itemsLogDirPath, nil
@@ -222,7 +213,9 @@ func writeEntityCSVTo(dir string, snap *packet.EntitySnapshot) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	final := filepath.Join(dir, entityFileBase(snap.Name, snap.Master)+".csv")
+	// 實體名唯一（角色/寵物皆不重名），故檔名用名字即可；真實（未消毒）名字
+	// 另存於 # meta 列，避免消毒後失真。
+	final := filepath.Join(dir, sanitizeEntityName(snap.Name)+".csv")
 	tmp, err := os.CreateTemp(dir, ".tmp-*.csv")
 	if err != nil {
 		return err
