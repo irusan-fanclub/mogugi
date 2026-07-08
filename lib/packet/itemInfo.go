@@ -33,8 +33,12 @@ type InventoryItem struct {
 	Container string // main | equip | bag | pet_* | unknown
 	Pocket    uint32 // Item.Info @0 的原始 pocket id
 	// BagItemID 是此物品所在袋子的 item id（0=不在使用者袋中）。
-	// 對映規則（實測）：袋子物品 MetaData1 的 IBOR:4:<n> → 內容 pocket = 95+n。
+	// 對映規則（實測）：袋子物品自身 OptionInfo(Bin144) 的 u32@12 = 它的
+	// 內容 pocket（慶典服裝背包→102、星光背包→138 皆驗證；非袋物品該欄=0）。
 	BagItemID uint32
+	// bagContentPocket 是袋子提供的內容 pocket（Bin144 u32@12），僅供
+	// snapshot 後處理配對，不輸出。
+	bagContentPocket uint32
 	PosX      uint32
 	PosY      uint32
 	// EnchantPrefix / EnchantSuffix 是 OptionInfo 字串裡的賦予 id（ENPFIX /
@@ -88,6 +92,7 @@ func parseExtStats(ext []byte, it *InventoryItem) {
 	if len(ext) < 48 {
 		return
 	}
+	it.bagContentPocket = le.Uint32(ext[12:])
 	it.Durability = le.Uint32(ext[16:])
 	it.DurabilityMax = le.Uint32(ext[20:])
 	it.AttackMin = uint32(le.Uint16(ext[28:]))

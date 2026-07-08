@@ -117,12 +117,13 @@ func ParseEntitySnapshot(msg Message) (*EntitySnapshot, error) {
 		snap.Items = append(snap.Items, it)
 	}
 
-	// 袋子回填：袋子物品的 IBOR:4:<n> → 內容 pocket = 95+n（實測：慶典
-	// 服裝背包 IBOR=7 ↔ 內容物 pocket 102；IBOR 缺號袋 = 空袋）。
+	// 袋子回填：袋子物品 Bin144 u32@12 = 它的內容 pocket（慶典服裝背包
+	// →102、星光背包→138 皆驗證）。以 IBOR key 存在與否辨識「這是袋子」，
+	// 避免其他物品 @12 的殘值造成誤配。
 	bagByPocket := map[uint32]uint32{}
 	for _, it := range snap.Items {
-		if n, ok := metaIntValue(it.Metadata, "IBOR"); ok && n > 0 {
-			bagByPocket[uint32(95+n)] = it.ItemID
+		if _, isBag := metaIntValue(it.Metadata, "IBOR"); isBag && it.bagContentPocket != 0 {
+			bagByPocket[it.bagContentPocket] = it.ItemID
 		}
 	}
 	for i := range snap.Items {
