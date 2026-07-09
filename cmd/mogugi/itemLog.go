@@ -10,7 +10,10 @@ import (
 	"strings"
 
 	"github.com/irusan-fanclub/mabidilmeter/lib/packet"
+	"github.com/irusan-fanclub/mabidilmeter/lib/util"
 )
+
+var itemLogger = util.NewLogger("itemlog")
 
 // itemsLogDirPath is the output dir for item-index CSVs, alongside logs/
 // (relative to the working dir). A variable so tests can override it.
@@ -295,7 +298,7 @@ func readItemIndexFrom(dir string) ([]IndexEntity, error) {
 		}
 		ent, err := readOneEntityCSV(filepath.Join(dir, e.Name()))
 		if err != nil {
-			logger.Printf("item-index: skip %s: %v", e.Name(), err)
+			itemLogger.Printf("skip %s: %v", e.Name(), err)
 			continue
 		}
 		out = append(out, ent)

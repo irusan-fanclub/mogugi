@@ -350,15 +350,14 @@ func (t *eventPublisher) handlePacket(p *packet.GamePacket) {
 func (t *eventPublisher) handleChannelCharacterInfo(p *packet.GamePacket) {
 	snap, err := packet.ParseEntitySnapshot(p.Msg)
 	if err != nil {
-		logger.Printf("item-index: parse 0x5209 failed: %v", err)
+		itemLogger.Printf("parse 0x5209 failed: %v", err)
 		return
 	}
 	if err := writeEntitySnapshot(snap); err != nil {
-		logger.Printf("item-index: write csv failed: %v", err)
+		itemLogger.Printf("write csv failed: %v", err)
 		return
 	}
-	dir, _ := itemsLogDir()
-	logger.Printf("item-index: wrote %q (%d items) -> %s", snap.Name, len(snap.Items), dir)
+	itemLogger.Printf("update %q (%d items)", snap.Name, len(snap.Items))
 }
 
 func (t *eventPublisher) handleEntityAppear(p *packet.GamePacket) {
