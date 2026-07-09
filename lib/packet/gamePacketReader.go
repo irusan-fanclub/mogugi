@@ -530,15 +530,19 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 			copy(key.src[:], ip4.SrcIP.To4())
 			st := streams[key]
 			if st == nil {
+				// Vet the local (dst) port BEFORE attaching a stream, so a
+				// non-Client.exe connection never gets parsed or recorded.
+				if t.vetPort != nil && !t.vetPort(fmt.Sprintf("%d", uint16(tcp.DstPort))) {
+					streams[key] = &tcpStreamState{rejected: true}
+					if !t.quiet {
+						logger.Printf("stream rejected (local:%d not a Client.exe connection)", tcp.DstPort)
+					}
+					continue
+				}
 				st = &tcpStreamState{id: nextStreamID, baseSeq: tcp.Seq}
 				nextStreamID++
 				streams[key] = st
-				if t.vetPort != nil && !t.vetPort(fmt.Sprintf("%d", uint16(tcp.DstPort))) {
-					st.rejected = true
-					if !t.quiet {
-						logger.Printf("stream #%d rejected (local:%d not a Client.exe connection)", st.id, tcp.DstPort)
-					}
-				} else if !t.quiet {
+				if !t.quiet {
 					logger.Printf("stream #%d: %v:%d -> local:%d", st.id, ip4.SrcIP, tcp.SrcPort, tcp.DstPort)
 				}
 				// A new connection's first packet is usually the 4-byte

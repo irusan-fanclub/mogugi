@@ -244,29 +244,31 @@ func CurrentFilter() string {
 }
 
 // FilterForConns builds the live capture filter from the given Client.exe
-// connections: the exact set of server hosts (deduped), any port. This
-// captures only servers the client is actually talking to — a VM or other
-// process on a different server is never captured — and covers the game's
-// several connections (field + mission instance). The watchdog reapplies
-// it as connections come and go. Empty conns -> "" (caller keeps the last).
+// connections: the exact set of client-side local ports, receive
+// direction (`dst port L`). This captures ONLY the client's own sockets
+// (server->client) — a VM or other process has different local ports and
+// is never captured, at the pcap level — while covering the game's several
+// connections (field + mission instance) and any server IP/port (works
+// behind an accelerator). The watchdog reapplies it as connections come
+// and go. Empty conns -> "" (caller keeps the last).
 func FilterForConns(conns []ClientConnection) string {
 	seen := map[string]bool{}
-	var hosts []string
+	var ports []string
 	for _, c := range conns {
-		if c.ServerIP == "" || seen[c.ServerIP] {
+		if c.LocalPort == "" || seen[c.LocalPort] {
 			continue
 		}
-		seen[c.ServerIP] = true
-		hosts = append(hosts, c.ServerIP)
+		seen[c.LocalPort] = true
+		ports = append(ports, c.LocalPort)
 	}
-	if len(hosts) == 0 {
+	if len(ports) == 0 {
 		return ""
 	}
-	sort.Strings(hosts)
-	for i, h := range hosts {
-		hosts[i] = "host " + h
+	sort.Strings(ports)
+	for i, p := range ports {
+		ports[i] = "dst port " + p
 	}
-	return "tcp and (" + strings.Join(hosts, " or ") + ")"
+	return "tcp and (" + strings.Join(ports, " or ") + ")"
 }
 
 func FindNic() (string, error) {
