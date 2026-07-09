@@ -15,7 +15,6 @@ import (
 	"unsafe"
 
 	"github.com/gopacket/gopacket/pcap"
-	"github.com/irusan-fanclub/mabidilmeter/lib/constants"
 	"github.com/irusan-fanclub/mabidilmeter/lib/packet"
 	"github.com/irusan-fanclub/mabidilmeter/lib/util"
 	"golang.org/x/sys/windows"
@@ -63,8 +62,8 @@ type ClientConnection struct {
 // watchdog poll but never change for the process lifetime in practice
 // (NICs aren't hot-swapped while the meter is running).
 var (
-	nicCacheOnce        sync.Once
-	cachedInterfaceMap  map[string]string
+	nicCacheOnce          sync.Once
+	cachedInterfaceMap    map[string]string
 	cachedInterfaceNicMap map[string]string
 )
 
@@ -111,18 +110,18 @@ func displayWidth(s string) int {
 func isWideRune(r rune) bool {
 	switch {
 	case r >= 0x1100 && r <= 0x115F, // Hangul Jamo
-		r >= 0x2E80 && r <= 0x303E,    // CJK Radicals / Symbols
-		r >= 0x3041 && r <= 0x33FF,    // Hiragana / Katakana / CJK symbols
-		r >= 0x3400 && r <= 0x4DBF,    // CJK Extension A
-		r >= 0x4E00 && r <= 0x9FFF,    // CJK Unified Ideographs
-		r >= 0xA000 && r <= 0xA4CF,    // Yi
-		r >= 0xAC00 && r <= 0xD7A3,    // Hangul Syllables
-		r >= 0xF900 && r <= 0xFAFF,    // CJK Compatibility Ideographs
-		r >= 0xFE30 && r <= 0xFE4F,    // CJK Compatibility Forms
-		r >= 0xFF00 && r <= 0xFF60,    // Fullwidth Forms
-		r >= 0xFFE0 && r <= 0xFFE6,    // Fullwidth signs
-		r >= 0x20000 && r <= 0x2FFFD,  // CJK Extensions B-F
-		r >= 0x30000 && r <= 0x3FFFD:  // CJK Extension G
+		r >= 0x2E80 && r <= 0x303E,   // CJK Radicals / Symbols
+		r >= 0x3041 && r <= 0x33FF,   // Hiragana / Katakana / CJK symbols
+		r >= 0x3400 && r <= 0x4DBF,   // CJK Extension A
+		r >= 0x4E00 && r <= 0x9FFF,   // CJK Unified Ideographs
+		r >= 0xA000 && r <= 0xA4CF,   // Yi
+		r >= 0xAC00 && r <= 0xD7A3,   // Hangul Syllables
+		r >= 0xF900 && r <= 0xFAFF,   // CJK Compatibility Ideographs
+		r >= 0xFE30 && r <= 0xFE4F,   // CJK Compatibility Forms
+		r >= 0xFF00 && r <= 0xFF60,   // Fullwidth Forms
+		r >= 0xFFE0 && r <= 0xFFE6,   // Fullwidth signs
+		r >= 0x20000 && r <= 0x2FFFD, // CJK Extensions B-F
+		r >= 0x30000 && r <= 0x3FFFD: // CJK Extension G
 		return true
 	}
 	return false
@@ -193,15 +192,37 @@ func PollClientConnections() ([]ClientConnection, error) {
 	return conns, nil
 }
 
-// ApplyConnectionFilter updates the global BPF filter to match the
-// given connection. Subsequent NewGameServerPacketReader calls will pick
-// up the new filter. Logging is left to the caller (FindNic only logs
-// the final successful triple).
+// current is the Client.exe connection the capture follows. Read and
+// written only by the watchdog goroutine (including the initial FindNic)
+// -- no lock; serialization is the caller's contract (see
+// startConnectionWatchdog).
+var current ClientConnection
+
+// ApplyConnectionFilter records the connection the capture should follow.
+// Readers obtain the BPF filter via CurrentFilter().
 func ApplyConnectionFilter(c ClientConnection) {
-	constants.ServerIP = c.ServerIP
-	constants.ServerSrcPort = c.ServerPort
-	constants.ServerDstPort = c.LocalPort
-	constants.RebuildFilter()
+	current = c
+}
+
+// Current returns the tracked connection triple (zero value when nothing
+// has been discovered yet).
+func Current() ClientConnection {
+	return current
+}
+
+// CurrentFilter builds the BPF filter for the tracked connection.
+//
+// The filter is deliberately WIDE -- the whole /24 server net plus the
+// game port range -- instead of pinning one (ip, src port, dst port)
+// triple: on a channel switch the client connects to a DIFFERENT channel
+// server (new ip / dst port); with a pinned filter those packets never
+// reach the pcap handle, and by the time the watchdog installs a new
+// reader the 0x5209 snapshot (sent in the first seconds) is already
+// lost. The explicit src port is kept as a fallback for servers outside
+// the usual port range.
+func CurrentFilter() string {
+	return fmt.Sprintf("tcp and src net %s and (src portrange 11000-11999 or src port (%s))",
+		util.ServerNet24(current.ServerIP), current.ServerPort)
 }
 
 func FindNic() (string, error) {
@@ -215,13 +236,11 @@ func FindNic() (string, error) {
 		return "", errors.New("no Client.exe network connections found")
 	}
 
-	// Snapshot the current filter so we can restore it if every
-	// candidate fails — otherwise constants.* would be left pointing at
-	// the last (wrong) candidate, and the watchdog's "alive" check would
-	// match it on the next poll.
-	savedIP := constants.ServerIP
-	savedSrcPort := constants.ServerSrcPort
-	savedDstPort := constants.ServerDstPort
+	// Snapshot the tracked connection so we can restore it if every
+	// candidate fails -- otherwise it would be left pointing at the last
+	// (wrong) candidate, and the watchdog's "alive" check would match it
+	// on the next poll.
+	saved := current
 
 	// Test high server-side ports first. Login / patch / lobby servers
 	// tend to use lower well-known ports (e.g. 11020), while game shards
@@ -250,22 +269,19 @@ func FindNic() (string, error) {
 	for _, c := range conns {
 		ApplyConnectionFilter(c)
 
-		if testNicForPackets(c.NicName) {
+		if testNicForPackets(c.NicName, CurrentFilter()) {
 			logger.Printf("Picked NIC %s (%s) -> %s:%s",
 				c.NicName, c.FriendlyName, c.ServerIP, c.ServerPort)
 			return c.NicName, nil
 		}
 	}
 
-	constants.ServerIP = savedIP
-	constants.ServerSrcPort = savedSrcPort
-	constants.ServerDstPort = savedDstPort
-	constants.RebuildFilter()
+	current = saved
 
 	return "", errors.New("no game packets found on any Client.exe connection")
 }
 
-func testNicForPackets(nicName string) bool {
+func testNicForPackets(nicName string, filter string) bool {
 	packetWaitTime := time.Second * 3
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -274,6 +290,7 @@ func testNicForPackets(nicName string) bool {
 	r, err := packet.NewGameServerPacketReader(&packet.GameServerPacketReaderOpt{
 		Ctx:     ctx,
 		NicName: nicName,
+		Filter:  filter,
 		Quiet:   true,
 	})
 

@@ -4,7 +4,7 @@
 # and packages the result into dist/mogugi_<version>.zip.
 #
 # Usage:
-#   .\release.ps1                  # uses constants.go default version
+#   .\release.ps1                  # uses cmd/mogugi/main.go default version
 #   .\release.ps1 -Version 0.2.1   # build & package as 0.2.1
 
 param(
@@ -16,8 +16,8 @@ $ErrorActionPreference = "Stop"
 
 # ── Resolve version ───────────────────────────────────────────────────────────
 if ([string]::IsNullOrWhiteSpace($Version)) {
-    # Read default from lib/constants/const.go
-    $constsPath = "lib/constants/const.go"
+    # Read default from cmd/mogugi/main.go
+    $constsPath = "cmd/mogugi/main.go"
     $line = Select-String -Path $constsPath -Pattern '^var Version = "(.+)"' | Select-Object -First 1
     if (-not $line) {
         Write-Host "Could not find Version in $constsPath" -ForegroundColor Red
@@ -96,7 +96,7 @@ Write-Host "`n[3/4] Building Backend (release flags)..." -ForegroundColor Yellow
 $binDir = "bin"
 if (-not (Test-Path $binDir)) { New-Item -ItemType Directory -Path $binDir | Out-Null }
 
-$ldflags = "-s -w -X github.com/irusan-fanclub/mabidilmeter/lib/constants.Version=$Version $($lic.LDFlag)"
+$ldflags = "-s -w -X main.Version=$Version $($lic.LDFlag)"
 $apiBin  = "$binDir/mogugi.exe"
 
 go build -ldflags $ldflags -trimpath -o $apiBin ./cmd/mogugi

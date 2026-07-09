@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/gopacket/gopacket/pcap"
-	"github.com/irusan-fanclub/mabidilmeter/lib/constants"
 	"github.com/irusan-fanclub/mabidilmeter/lib/event"
 	"github.com/irusan-fanclub/mabidilmeter/lib/packet"
 	"github.com/irusan-fanclub/mabidilmeter/lib/pcaputil"
@@ -32,11 +31,16 @@ const (
 //go:embed static
 var staticFiles embed.FS
 
+// Version is the build version. Override at link time via:
+//
+//	go build -ldflags "-X main.Version=x.y.z"
+var Version = "0.2.3"
+
 var logger = util.NewLogger("mogugi")
 var packetLogFilename = ""
 
 func main() {
-	logFilePath := filepath.Join(_logDir, fmt.Sprintf("dilmeter_%v.log", constants.SERVER_START_AT))
+	logFilePath := filepath.Join(_logDir, fmt.Sprintf("dilmeter_%v.log", util.StartUnix))
 	if err := util.LogInit(logFilePath); err != nil {
 		logger.Println("LogInit failed:", err)
 	}
@@ -50,7 +54,7 @@ func main() {
 		mode = os.Args[1]
 	}
 
-	logger.Printf("* mogugi v%s %s (fork from dilmatulgi)", constants.Version, mode)
+	logger.Printf("* mogugi v%s %s (fork from dilmatulgi)", Version, mode)
 
 	switch mode {
 	case "list":
@@ -219,9 +223,7 @@ func startWebsocketServer(newClientCb func(*websocket.Conn)) {
 // channel switches don't need a new reader — the wide BPF filter already
 // captures the new stream, so we only reset the session.
 func sameServerNet(a, b string) bool {
-	ai := strings.LastIndex(a, ".")
-	bi := strings.LastIndex(b, ".")
-	return a != "" && ai > 0 && bi > 0 && a[:ai] == b[:bi]
+	return a != "" && b != "" && util.ServerNet24(a) == util.ServerNet24(b)
 }
 
 // startConnectionWatchdog polls Client.exe TCP connections every 1s and
@@ -254,6 +256,7 @@ func startConnectionWatchdog(ctx context.Context, pub *eventPublisher) {
 		newR, err := packet.NewGameServerPacketReader(&packet.GameServerPacketReaderOpt{
 			Ctx:     ctx,
 			NicName: nicName,
+			Filter:  pcaputil.CurrentFilter(),
 		})
 		if err != nil {
 			logger.Println("watchdog: open new reader failed:", err)
@@ -277,11 +280,12 @@ func startConnectionWatchdog(ctx context.Context, pub *eventPublisher) {
 			if len(conns) == 0 {
 				continue
 			}
+			cur := pcaputil.Current()
 			alive := false
 			for _, c := range conns {
-				if c.ServerIP == constants.ServerIP &&
-					c.ServerPort == constants.ServerSrcPort &&
-					c.LocalPort == constants.ServerDstPort {
+				if c.ServerIP == cur.ServerIP &&
+					c.ServerPort == cur.ServerPort &&
+					c.LocalPort == cur.LocalPort {
 					alive = true
 					break
 				}
@@ -289,7 +293,7 @@ func startConnectionWatchdog(ctx context.Context, pub *eventPublisher) {
 			if alive {
 				continue
 			}
-			if constants.ServerIP == "" {
+			if cur.ServerIP == "" {
 				// Empty triple = first-ever discovery, not a real switch.
 				swap("initial")
 				continue
@@ -299,7 +303,7 @@ func startConnectionWatchdog(ctx context.Context, pub *eventPublisher) {
 			// it, so we can re-point without rebuilding the reader (no gap).
 			var sameNet *pcaputil.ClientConnection
 			for i := range conns {
-				if sameServerNet(conns[i].ServerIP, constants.ServerIP) {
+				if sameServerNet(conns[i].ServerIP, cur.ServerIP) {
 					sameNet = &conns[i]
 					break
 				}
@@ -335,7 +339,7 @@ func startPacketWriter(ctx context.Context, ch <-chan []event.IEvent) error {
 		return err
 	}
 
-	packetLogBaseName := fmt.Sprintf("packet_log_%v.ndjson", constants.SERVER_START_AT)
+	packetLogBaseName := fmt.Sprintf("packet_log_%v.ndjson", util.StartUnix)
 	packetLogFilename = filepath.Join(_logDir, packetLogBaseName)
 
 	fd, err := os.OpenFile(packetLogFilename, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)

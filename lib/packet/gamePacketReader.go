@@ -16,7 +16,6 @@ import (
 	"github.com/gopacket/gopacket/layers"
 	"github.com/gopacket/gopacket/pcap"
 	"github.com/gopacket/gopacket/pcapgo"
-	"github.com/irusan-fanclub/mabidilmeter/lib/constants"
 	"github.com/irusan-fanclub/mabidilmeter/lib/util"
 )
 
@@ -51,6 +50,8 @@ type GameServerPacketReaderOpt struct {
 	Ctx      context.Context
 	FileName string
 	NicName  string
+	// Filter is the BPF expression for live capture (ignored for files).
+	Filter string
 	// Quiet suppresses informational logs and skips opening the pcapng
 	// log file. Used by short-lived test readers (NIC discovery probes)
 	// so they don't spam the log or stomp on the live capture file.
@@ -86,11 +87,9 @@ func NewGameServerPacketReader(opt *GameServerPacketReaderOpt) (_ *GameServerPac
 		return nil, errors.New("opt is nil")
 	}
 
-	filter := constants.PCAP_GAMESERVER_FILTER
-
-	// File replays are already pre-filtered; the constants used to
-	// build the BPF expression are only populated by FindNic in live
-	// mode.
+	// File replays are already pre-filtered; live mode passes the BPF
+	// expression via opt.Filter (built by pcaputil.CurrentFilter).
+	filter := opt.Filter
 	if opt.FileName != "" {
 		filter = ""
 	}
@@ -368,7 +367,7 @@ func (t *GameServerPacketReader) openLog() error {
 	// 快照）整個洗掉——曾造成 capture 無法回放（session 1783517744）。
 	// 每個 reader 一個檔：用 O_EXCL 開，撞名就換下一個 suffix，永不覆寫既有檔
 	// （兩個 reader 同一秒建立時，單純加時間戳仍會撞名並被 O_TRUNC 洗掉）。
-	base := fmt.Sprintf("packet_capture_%v", constants.SERVER_START_AT)
+	base := fmt.Sprintf("packet_capture_%v", util.StartUnix)
 	var fd *os.File
 	var err error
 	for i := 0; ; i++ {
