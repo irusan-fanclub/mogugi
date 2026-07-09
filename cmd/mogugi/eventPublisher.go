@@ -42,6 +42,7 @@ type eventPublisher struct {
 	lastMissionID   uint32            // 最近的副本任務 id（45004），查 dungeonNames
 	lastBGM         string            // 目前播放的 BGM（43302），Boss_* 表示王戰中
 	bossEntities    map[uint64]string // 場上王級實體 id → 王名（EntityAppear race 判定）
+	dgnLog          dungeonLog        // 白名單副本的獨立事件檔（自帶鎖）
 }
 
 type eventClient struct {
@@ -168,6 +169,9 @@ drainLoop:
 		return
 	}
 
+	// 連線重來，副本記錄作廢（斷在哪一行檔案自會呈現）。
+	t.dgnLog.Close()
+
 	logger.Printf("SessionReset: reason=%s", reason)
 	t.publish(&event.EventSessionReset{
 		EventBase: event.EventBase{
@@ -270,6 +274,9 @@ func (t *eventPublisher) flushNow() {
 		}
 	}
 	t.Unlock()
+
+	// 副本記錄檔（開著才會寫；自帶鎖，勿在持有 publisher 鎖時呼叫）。
+	t.dgnLog.Write(batch)
 }
 
 func (t *eventPublisher) loop() {
@@ -280,6 +287,7 @@ func (t *eventPublisher) loop() {
 	for {
 		select {
 		case <-t.ctx.Done():
+			t.dgnLog.Close()
 			return
 
 		case <-flushTicker.C:
@@ -873,9 +881,29 @@ func (t *eventPublisher) handleSetLocation(p *packet.GamePacket) {
 	t.Lock()
 	changed := region != t.lastRegion
 	t.lastRegion = region
+	missionID := t.lastMissionID
+	var owner string
+	if e, ok := t.entityCache[p.Id]; ok {
+		owner = e.Name
+	}
 	t.Unlock()
-	if changed {
-		logger.Printf("map change: %s (region=%d) pos=(%d,%d)", t.regionName(region), region, x, y)
+	if !changed {
+		return
+	}
+	logger.Printf("map change: %s (region=%d) pos=(%d,%d)", t.regionName(region), region, x, y)
+
+	// 白名單副本 → 另存事件檔；離開（含跳到其他地圖）→ 關檔。
+	if code, ok := dungeonCodes[missionID]; ok && region >= 35000 {
+		if owner == "" {
+			owner = "unknown"
+		}
+		// 進場前隊友早已 appear 過，開檔先補種 entityCache 快照，
+		// 否則檔內傷害事件對不回玩家名。
+		if err := t.dgnLog.Open(code, owner, p.At.Unix(), t.snapshotEvents()); err != nil {
+			logger.Println("dungeon-log open failed:", err)
+		}
+	} else {
+		t.dgnLog.Close()
 	}
 }
 
@@ -998,15 +1026,9 @@ func (t *eventPublisher) handleChangeStance(p *packet.GamePacket) {
 	})
 }
 
-// addClient registers a new WebSocket client and sends it a snapshot of
-// the current entity cache so the UI can render without waiting for new
-// packets. Safe to call from its own goroutine.
-func (t *eventPublisher) addClient(ctx context.Context, ch chan<- []event.IEvent) uint32 {
-	t.Lock()
-	t.currentClientId++
-	clientId := t.currentClientId
-	t.Unlock()
-
+// snapshotEvents 把 entityCache 重建成事件序列（appear + condition + 裝備），
+// 供新 WS 客戶端的 initial snapshot 與副本檔開檔補種共用。
+func (t *eventPublisher) snapshotEvents() []event.IEvent {
 	initial := []event.IEvent(nil)
 
 	t.Lock()
@@ -1036,6 +1058,20 @@ func (t *eventPublisher) addClient(ctx context.Context, ch chan<- []event.IEvent
 		}
 	}
 	t.Unlock()
+
+	return initial
+}
+
+// addClient registers a new WebSocket client and sends it a snapshot of
+// the current entity cache so the UI can render without waiting for new
+// packets. Safe to call from its own goroutine.
+func (t *eventPublisher) addClient(ctx context.Context, ch chan<- []event.IEvent) uint32 {
+	t.Lock()
+	t.currentClientId++
+	clientId := t.currentClientId
+	t.Unlock()
+
+	initial := t.snapshotEvents()
 
 	if len(initial) > 0 {
 		logger.Printf("send initial data: client=%d events=%d", clientId, len(initial))
