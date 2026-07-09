@@ -175,23 +175,22 @@ func NewGameServerPacketReader(opt *GameServerPacketReaderOpt) (_ *GameServerPac
 
 func (t *GameServerPacketReader) packetLoop(payloadCh <-chan gamePacketPayload) {
 	// Per-stream parse state: TCP payload bytes from different connections
-	// must never be concatenated. The game itself runs several live streams
-	// (field conn + mission-instance conn); sibling-service noise captured
-	// by the wide filter self-classifies as junk (only-ever-errors) and is
-	// squelched. On parse failure we drop the frontmost payload (a full
-	// segment) of that stream and retry — granular recovery without the
-	// cascading false positives of byte-level scans.
+	// must never be concatenated. The client's own non-game sockets (HTTPS,
+	// lobby) are captured too; a stream that yields no game opcode within
+	// squelchAfter is deemed non-game and dropped silently. On parse failure
+	// we drop the frontmost payload (a full segment) and retry — granular
+	// recovery without the cascading false positives of byte-level scans.
 	type parseState struct {
 		buffer     *bytes.Buffer
 		payloads   []gamePacketPayload
 		lastRelSeq uint32
 		lastAt     time.Time
-		errCount   int
+		firstAt    time.Time
 		okCount    int
 		junk       bool
 	}
 	states := map[uint32]*parseState{}
-	const junkErrThreshold = 10
+	const squelchAfter = time.Second
 
 	// skipPayload advances the front of the payloads list by n bytes
 	// after a successful parse.
@@ -258,7 +257,7 @@ func (t *GameServerPacketReader) packetLoop(payloadCh <-chan gamePacketPayload) 
 		t.payloadCount++
 		st := states[payloadData.stream]
 		if st == nil {
-			st = &parseState{buffer: bytes.NewBuffer(nil), lastAt: time.Now()}
+			st = &parseState{buffer: bytes.NewBuffer(nil), lastAt: time.Now(), firstAt: payloadData.at}
 			states[payloadData.stream] = st
 		}
 		if st.junk {
@@ -273,18 +272,23 @@ func (t *GameServerPacketReader) packetLoop(payloadCh <-chan gamePacketPayload) 
 				if err == io.EOF {
 					break readerLoop
 				}
-				t.parseErrorCount++
-				st.errCount++
-				if st.okCount == 0 && st.errCount >= junkErrThreshold {
-					// Never parsed successfully = not the game protocol
-					// (another service on the same net); squelch it.
-					st.junk = true
-					st.buffer.Reset()
-					st.payloads = nil
-					logger.Printf("stream #%d squelched after %d parse errors (non-game traffic)",
-						payloadData.stream, st.errCount)
-					break readerLoop
+				// A stream with no game opcode yet is unproven: it may be a
+				// non-game socket (HTTPS/lobby). Drop it once it has stayed
+				// silent for squelchAfter, without logging each error.
+				if st.okCount == 0 {
+					if payloadData.at.Sub(st.firstAt) >= squelchAfter {
+						st.junk = true
+						st.buffer.Reset()
+						st.payloads = nil
+						logger.Printf("stream #%d squelched (no game opcode in %s, non-game traffic)",
+							payloadData.stream, squelchAfter)
+						break readerLoop
+					}
+					nextPayload(st)
+					continue
 				}
+				// Proven game stream desynced — worth surfacing.
+				t.parseErrorCount++
 				logger.Printf("[ParseError #%d] stream=%d relSeq=%d %v",
 					t.parseErrorCount, payloadData.stream, st.lastRelSeq, err)
 				nextPayload(st)
