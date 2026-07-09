@@ -532,9 +532,6 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 				// non-Client.exe connection never gets parsed or recorded.
 				if t.vetPort != nil && !t.vetPort(fmt.Sprintf("%d", uint16(tcp.DstPort))) {
 					streams[key] = &tcpStreamState{rejected: true}
-					if !t.quiet {
-						logger.Printf("stream rejected (local:%d not a Client.exe connection)", tcp.DstPort)
-					}
 					continue
 				}
 				st = &tcpStreamState{id: nextStreamID, baseSeq: tcp.Seq}
@@ -561,9 +558,8 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 			}
 
 			if st.nextSeq != 0 && tcp.Seq != st.nextSeq {
-				// Sequence number is out of alignment.
-				logger.Println("packet align error", i, "stream", st.id, st.nextSeq, tcp.Seq)
-
+				// Out of alignment: normal TCP reorder/retransmit, handled
+				// below without logging (would be per-packet spam).
 				if tcp.Seq < st.nextSeq {
 					// Retransmission or overlap: if the segment overlaps
 					// but extends past nextSeq, trim the overlapping prefix

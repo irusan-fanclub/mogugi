@@ -427,54 +427,6 @@ func buildInterfaceNicMap() map[string]string {
 	return result
 }
 
-func findNicByPackets() (string, error) {
-	// Original implementation: try each NIC until we find game server packets
-	packetWaitTime := time.Second * 5
-
-	nics, err := pcap.FindAllDevs()
-	if err != nil {
-		logger.Println(err)
-		return "", err
-	}
-
-	found := ""
-	for _, nic := range nics {
-		ctx, cancel := context.WithCancel(context.Background())
-
-		r, err := packet.NewGameServerPacketReader(&packet.GameServerPacketReaderOpt{
-			Ctx:     ctx,
-			NicName: nic.Name,
-		})
-
-		if err != nil {
-			logger.Println("findNic failed", err, nic.Name)
-			cancel()
-			continue
-		}
-
-		select {
-		case <-time.After(packetWaitTime):
-			logger.Println("findNic timeout", nic.Name)
-
-		case <-r.PacketCh():
-			found = nic.Name
-			logger.Println("findNic success", nic.Name)
-		}
-
-		cancel()
-		r.Close()
-	}
-
-	if found == "" {
-		err := errors.New("findNic failed: not found")
-		logger.Println(err)
-		return "", err
-	}
-
-	logger.Println("findNic success:", found)
-	return found, nil
-}
-
 func getTCPRows() ([]mibTCPRowOwnerPID, error) {
 	var size uint32
 	_ = getExtendedTcpTable(nil, &size, false, afInet, tcpTableOwnerPIDAll, 0)

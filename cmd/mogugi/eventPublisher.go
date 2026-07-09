@@ -253,7 +253,6 @@ func (t *eventPublisher) flushNow() {
 }
 
 func (t *eventPublisher) loop() {
-	const debug = false
 	flushTicker := time.NewTicker(_eventFlushInterval / 2)
 	defer flushTicker.Stop()
 
@@ -267,13 +266,6 @@ func (t *eventPublisher) loop() {
 			t.flushNow()
 
 		case p := <-t.packetCh:
-			if debug {
-				logger.Printf("packet op %s id %x", p.Op, p.Id)
-				for i, msg := range p.Msg {
-					logger.Println("* msg", i, msg.Type(), msg.String())
-				}
-			}
-
 			t.Lock()
 			t.lastPacketAt = time.Now()
 			t.Unlock()
@@ -544,9 +536,6 @@ func (t *eventPublisher) handleEntitiesDisappear(p *packet.GamePacket) {
 			msg[1].Type() != packet.MessageElemTypeLong {
 
 			logger.Println("EntitiesDisappear: invalid packet")
-			for j, m := range p.Msg {
-				logger.Println("* msg", j, m.Type(), m.String())
-			}
 			break
 		}
 
@@ -713,9 +702,6 @@ func (t *eventPublisher) handleEffectDelayed(p *packet.GamePacket) {
 		p.Msg[5].Type() != packet.MessageElemTypeLong ||
 		p.Msg[6].Type() != packet.MessageElemTypeShort {
 		logger.Printf("EffectDelayed: invalid packet op=%s id=%x", p.Op, p.Id)
-		for i, msg := range p.Msg {
-			logger.Println("* msg", i, msg.Type(), msg.String())
-		}
 		return
 	}
 
