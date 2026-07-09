@@ -33,9 +33,6 @@ type GameServerPacketReader struct {
 
 	closeOnce sync.Once
 	vetPort   func(port string) bool
-	// resetCh signals packetLoop to drop its partial parse buffer after a
-	// same-net channel switch (stale bytes from the old stream).
-	resetCh chan struct{}
 
 	logHandle *pcapgo.NgWriter
 	logFd     *os.File
@@ -117,7 +114,6 @@ func NewGameServerPacketReader(opt *GameServerPacketReaderOpt) (_ *GameServerPac
 		realtime:  opt.Realtime,
 		vetPort:   opt.VetLocalPort,
 		linkType:  layers.LinkTypeNull, // default, will be updated when opening
-		resetCh:   make(chan struct{}, 1),
 	}
 
 	// Any failure after a handle/fd is opened must close it — the returned
@@ -244,12 +240,6 @@ func (t *GameServerPacketReader) packetLoop(payloadCh <-chan gamePacketPayload) 
 					t.payloadCount, t.parsedCount, t.parseErrorCount)
 			}
 			return
-
-		case <-t.resetCh:
-			// Same-net channel switch: discard every stream's partial
-			// packet so new-stream bytes parse cleanly from the start.
-			states = map[uint32]*parseState{}
-			continue
 
 		case payloadData = <-payloadCh:
 		}
@@ -730,16 +720,6 @@ func (t *GameServerPacketReader) Close() {
 			t.logFd.Close()
 		}
 	})
-}
-
-// ResetParseState clears packetLoop's partial parse buffer. Called on a
-// same-net channel switch, where the reader is kept but the TCP stream is
-// new. Non-blocking: a pending reset already covers this one.
-func (t *GameServerPacketReader) ResetParseState() {
-	select {
-	case t.resetCh <- struct{}{}:
-	default:
-	}
 }
 
 func (t *GameServerPacketReader) PacketCh() <-chan *GamePacket {

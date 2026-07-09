@@ -244,31 +244,36 @@ func CurrentFilter() string {
 }
 
 // FilterForConns builds the live capture filter from the given Client.exe
-// connections: the exact set of client-side local ports, receive
-// direction (`dst port L`). This captures ONLY the client's own sockets
-// (server->client) — a VM or other process has different local ports and
-// is never captured, at the pcap level — while covering the game's several
-// connections (field + mission instance) and any server IP/port (works
-// behind an accelerator). The watchdog reapplies it as connections come
-// and go. Empty conns -> "" (caller keeps the last).
+// connections: the /24 of each game server, receive direction (`src net`).
+// Capturing the whole /24 (not the exact socket) is what lets a channel
+// switch or mission-instance connection be captured the instant it opens —
+// its new client local port isn't known until the next netstat poll, too
+// late for the server's 0x5209 snapshot. Web ports (443/80) are skipped so
+// CDN downloads aren't captured. Non-client streams on the /24 (a VM, other
+// processes) are dropped before parse/record by the reader's local-port
+// vet. Empty conns -> "" (caller keeps the last).
 func FilterForConns(conns []ClientConnection) string {
 	seen := map[string]bool{}
-	var ports []string
+	var nets []string
 	for _, c := range conns {
-		if c.LocalPort == "" || seen[c.LocalPort] {
+		if c.ServerIP == "" || c.ServerPort == "443" || c.ServerPort == "80" {
 			continue
 		}
-		seen[c.LocalPort] = true
-		ports = append(ports, c.LocalPort)
+		n := util.ServerNet24(c.ServerIP)
+		if seen[n] {
+			continue
+		}
+		seen[n] = true
+		nets = append(nets, n)
 	}
-	if len(ports) == 0 {
+	if len(nets) == 0 {
 		return ""
 	}
-	sort.Strings(ports)
-	for i, p := range ports {
-		ports[i] = "dst port " + p
+	sort.Strings(nets)
+	for i, n := range nets {
+		nets[i] = "src net " + n
 	}
-	return "tcp and (" + strings.Join(ports, " or ") + ")"
+	return "tcp and (" + strings.Join(nets, " or ") + ")"
 }
 
 func FindNic() (string, error) {

@@ -185,47 +185,6 @@ drainLoop:
 	})
 }
 
-// ResetSession handles a same-net channel switch: the reader stays (the
-// wide filter still captures the new connection), but the parser's TCP
-// sequence state now belongs to a new stream, so drop any in-flight
-// packets and broadcast a session reset. readPacketLoop re-bases its
-// sequence tracking on the new dst-port automatically.
-func (t *eventPublisher) ResetSession(reason string) {
-	t.Lock()
-	t.lastPacketAt = time.Now()
-	r := t.r
-	t.Unlock()
-
-	// Clear the reader's partial parse buffer: the kept reader is now seeing
-	// a brand-new TCP stream, and leftover bytes from the old one would
-	// corrupt the first packets (including the 0x5209 snapshot).
-	if r != nil {
-		r.ResetParseState()
-	}
-
-	drained := 0
-	for {
-		select {
-		case <-t.packetCh:
-			drained++
-		default:
-			if drained > 0 {
-				logger.Printf("ResetSession: dropped %d in-flight packet(s)", drained)
-			}
-			logger.Printf("SessionReset: reason=%s", reason)
-			t.publish(&event.EventSessionReset{
-				EventBase: event.EventBase{
-					EventId: event.EventIdSessionReset,
-					At:      time.Now().Unix(),
-					Id:      "0",
-				},
-				Reason: reason,
-			})
-			return
-		}
-	}
-}
-
 // SetReaderFilter updates the current reader's live capture filter.
 func (t *eventPublisher) SetReaderFilter(filter string) error {
 	t.Lock()

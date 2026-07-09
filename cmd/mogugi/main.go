@@ -282,13 +282,13 @@ func startConnectionWatchdog(ctx context.Context, pub *eventPublisher) {
 				rebuild("initial")
 				continue
 			}
-			// Keep the filter equal to the current client connections.
+			// Keep the filter equal to the current game server nets.
 			if want := pcaputil.FilterForConns(conns); want != "" && want != lastFilter {
 				if err := pub.SetReaderFilter(want); err != nil {
 					logger.Println("watchdog: set filter failed:", err)
 					continue
 				}
-				logger.Printf("watchdog: capture filter -> %d connection(s): %s", len(conns), want)
+				logger.Printf("watchdog: capture filter -> %s", want)
 				lastFilter = want
 			}
 
