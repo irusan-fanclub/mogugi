@@ -192,10 +192,8 @@ func PollClientConnections() ([]ClientConnection, error) {
 	return conns, nil
 }
 
-// clientPortCache is the set of Client.exe local TCP ports, used to vet
-// capture streams so traffic from other processes (e.g. a VM whose NAT
-// shares the host IP and happens to reach the same server net) is never
-// parsed or recorded. Guarded by clientPortMu; refreshed lazily.
+// Cached set of Client.exe local TCP ports, used to reject other
+// processes' streams (e.g. a VM sharing the host IP). Refreshed lazily.
 var (
 	clientPortMu  sync.Mutex
 	clientPorts   map[string]bool
@@ -203,10 +201,8 @@ var (
 )
 
 // IsClientLocalPort reports whether the local TCP port belongs to a
-// Client.exe connection. On a cache miss the port table is re-polled once
-// (a brand-new dungeon/channel connection is vetted synchronously, so no
-// capture gap), then the negative answer is trusted until the next
-// refresh.
+// Client.exe connection. Re-polls once on a miss/stale so a new
+// dungeon/channel connection is vetted without a capture gap.
 func IsClientLocalPort(port string) bool {
 	clientPortMu.Lock()
 	defer clientPortMu.Unlock()
@@ -247,19 +243,13 @@ func Current() ClientConnection {
 	return current
 }
 
-// CurrentFilter builds the BPF filter for the tracked connection.
-//
-// The filter is deliberately WIDE -- the whole /24 server net plus the
-// game port range -- instead of pinning one (ip, src port, dst port)
-// triple: on a channel switch the client connects to a DIFFERENT channel
-// server (new ip / dst port); with a pinned filter those packets never
-// reach the pcap handle, and by the time the watchdog installs a new
-// reader the 0x5209 snapshot (sent in the first seconds) is already
-// lost. The explicit src port is kept as a fallback for servers outside
-// the usual port range.
+// CurrentFilter returns the capture filter: the whole /24 of the current
+// server, any port. Wide so a channel switch (new server ip/port) is
+// caught before the reader rebuilds; no port restriction so accelerators
+// relaying on odd ports still work. Foreign/non-game streams on the /24
+// are dropped downstream (readPacketLoop port-vet + packetLoop squelch).
 func CurrentFilter() string {
-	return fmt.Sprintf("tcp and src net %s and (src portrange 11000-11999 or src port (%s))",
-		util.ServerNet24(current.ServerIP), current.ServerPort)
+	return fmt.Sprintf("tcp and src net %s", util.ServerNet24(current.ServerIP))
 }
 
 func FindNic() (string, error) {

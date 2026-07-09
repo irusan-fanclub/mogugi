@@ -54,10 +54,8 @@ type GameServerPacketReaderOpt struct {
 	// Filter is the BPF expression for live capture (ignored for files).
 	Filter string
 	// VetLocalPort, when set, is asked once per new TCP stream whether the
-	// local (dst) port belongs to the game client process. Rejected
-	// streams are neither parsed nor written to the pcapng capture —
-	// keeps other processes' traffic (e.g. a VM sharing the host IP via
-	// NAT) out of the recording. Nil accepts everything (file replay).
+	// local (dst) port is the game client's. Rejected streams are neither
+	// parsed nor recorded. Nil accepts everything (file replay).
 	VetLocalPort func(port string) bool
 	// Quiet suppresses informational logs and skips opening the pcapng
 	// log file. Used by short-lived test readers (NIC discovery probes)
