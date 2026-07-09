@@ -428,6 +428,10 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 	default:
 		layerParser = gopacket.NewDecodingLayerParser(layers.LayerTypeEthernet, &eth, &ip4, &tcp, &payload)
 	}
+	// Non-game sockets (e.g. HTTPS/TLS) have no decoder past TCP; ignore
+	// that instead of erroring per packet. The TCP payload is still decoded
+	// and its stream self-squelches as junk downstream.
+	layerParser.IgnoreUnsupported = true
 	packetLayers := []gopacket.LayerType(nil)
 
 	// Capture handle/logHandle locally: Close() may close them from another

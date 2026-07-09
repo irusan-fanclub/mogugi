@@ -219,14 +219,14 @@ func startWebsocketServer(newClientCb func(*websocket.Conn)) {
 	<-time.After(1 * time.Second)
 }
 
-// startConnectionWatchdog polls Client.exe TCP connections every 1s and
-// keeps the live capture filter equal to the exact set of servers the
-// client is connected to (see pcaputil.FilterForConns). A new connection
-// (mission instance, channel switch) is captured as soon as the next poll
-// widens the filter; a closed one is dropped. Only the initial install and
-// a 60s packet-idle fallback rebuild the reader.
+// startConnectionWatchdog polls Client.exe TCP connections every 500ms and
+// keeps the live capture filter equal to the client's own local ports (see
+// pcaputil.FilterForConns). A new connection (mission instance, channel
+// switch) is captured as soon as the next poll widens the filter; a closed
+// one is dropped. Only the initial install and a 60s packet-idle fallback
+// rebuild the reader.
 func startConnectionWatchdog(ctx context.Context, pub *eventPublisher) {
-	pollTicker := time.NewTicker(1 * time.Second)
+	pollTicker := time.NewTicker(500 * time.Millisecond)
 	defer pollTicker.Stop()
 
 	idleTicker := time.NewTicker(10 * time.Second)
