@@ -39,6 +39,9 @@ func httpHandlerLicenseActivate(w http.ResponseWriter, r *http.Request) {
 	}
 	switch err := license.Activate(body.Code); {
 	case err == nil:
+		if onLicenseActivated != nil {
+			onLicenseActivated()
+		}
 		writeLicenseJSON(w, http.StatusOK, map[string]any{"ok": true})
 	case errors.Is(err, license.ErrExpired):
 		writeLicenseJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "expired"})

@@ -12,11 +12,13 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/gopacket/gopacket/pcap"
 	"github.com/irusan-fanclub/mabidilmeter/lib/event"
+	"github.com/irusan-fanclub/mabidilmeter/lib/license"
 	"github.com/irusan-fanclub/mabidilmeter/lib/packet"
 	"github.com/irusan-fanclub/mabidilmeter/lib/pcaputil"
 	"github.com/irusan-fanclub/mabidilmeter/lib/util"
@@ -78,13 +80,30 @@ func main() {
 	<-ctx.Done()
 }
 
-// runLive: HTTP/WS server up immediately, watchdog discovers Client.exe.
-func runLive(ctx context.Context) {
-	logger.Println("live mode: waiting for Client.exe")
+// onLicenseActivated starts capture the moment the license becomes valid
+// (set by runLive, called by the activate handler). Guarded so scanning
+// starts exactly once.
+var onLicenseActivated func()
 
+// runLive: HTTP/WS server up immediately. TCP scanning (the watchdog) is
+// held back until the license is active — either already, or via the
+// activate endpoint — so we don't touch the network before activation.
+func runLive(ctx context.Context) {
 	pub := newEventPublisher(ctx, nil)
 	go runPacketWriter(ctx, pub)
-	go startConnectionWatchdog(ctx, pub)
+
+	var once sync.Once
+	onLicenseActivated = func() {
+		once.Do(func() {
+			logger.Println("live mode: license active, scanning for Client.exe")
+			go startConnectionWatchdog(ctx, pub)
+		})
+	}
+	if license.Status() {
+		onLicenseActivated()
+	} else {
+		logger.Println("live mode: waiting for license activation")
+	}
 	serve(pub)
 }
 
