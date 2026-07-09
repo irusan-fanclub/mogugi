@@ -51,10 +51,10 @@ const (
 )
 
 // String returns the constant name for the opcode if known, or its
-// numeric value otherwise.
+// numeric value (hex) otherwise.
 func (t OpCode) String() string {
 	if s, ok := OpCodeStringMap[uint32(t)]; ok {
 		return s
 	}
-	return fmt.Sprintf("%d", uint32(t))
+	return fmt.Sprintf("0x%04X", uint32(t))
 }

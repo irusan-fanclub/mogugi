@@ -12,6 +12,7 @@ import (
 	"go/token"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -25,7 +26,7 @@ func main() {
 
 	type entry struct {
 		name  string
-		value string
+		value uint64
 	}
 	var entries []entry
 	seen := map[string]bool{}
@@ -48,17 +49,22 @@ func main() {
 			if !ok {
 				continue
 			}
+			v, err := strconv.ParseUint(strings.ReplaceAll(lit.Value, "_", ""), 0, 32)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "bad opcode literal %s = %s: %v\n", name, lit.Value, err)
+				os.Exit(1)
+			}
 			// Skip duplicate values (keep the first name).
 			if seen[lit.Value] {
 				continue
 			}
 			seen[lit.Value] = true
-			entries = append(entries, entry{name: name, value: lit.Value})
+			entries = append(entries, entry{name: name, value: v})
 		}
 	}
 
 	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].name < entries[j].name
+		return entries[i].value < entries[j].value
 	})
 
 	out, err := os.Create("opCode_string.go")
@@ -74,7 +80,9 @@ func main() {
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "var OpCodeStringMap = map[uint32]string{")
 	for _, e := range entries {
-		fmt.Fprintf(out, "\t%s: %q,\n", e.value, e.name)
+		// Keys are emitted in hex — the convention used across the packet
+		// notes and reverse-engineering docs.
+		fmt.Fprintf(out, "\t0x%04X: %q,\n", e.value, e.name)
 	}
 	fmt.Fprintln(out, "}")
 }
