@@ -10,9 +10,10 @@ import (
 )
 
 // _logModuleWidth is the fixed column width for the module name in
-// log output. Set to the longest existing module name so every line
-// lines up at the message column. Bump this if you add a longer name.
-const _logModuleWidth = 11
+// log output. Set to the longest existing module name ("pcaputil") so
+// every line lines up at the message column. Bump this if you add a
+// longer name.
+const _logModuleWidth = 8
 
 // writer is a process-wide switchable io.Writer used by all loggers
 // created via NewLogger. It allows LogInit to redirect every logger's
