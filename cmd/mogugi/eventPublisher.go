@@ -226,6 +226,17 @@ func (t *eventPublisher) ResetSession(reason string) {
 	}
 }
 
+// SetReaderFilter updates the current reader's live capture filter.
+func (t *eventPublisher) SetReaderFilter(filter string) error {
+	t.Lock()
+	r := t.r
+	t.Unlock()
+	if r == nil {
+		return nil
+	}
+	return r.SetFilter(filter)
+}
+
 // LastPacketAt returns the timestamp of the most recently received
 // game packet. The connection watchdog uses this for idle detection.
 func (t *eventPublisher) LastPacketAt() time.Time {

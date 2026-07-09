@@ -219,19 +219,12 @@ func startWebsocketServer(newClientCb func(*websocket.Conn)) {
 	<-time.After(1 * time.Second)
 }
 
-// sameServerNet reports whether two IPv4 strings share a /24. Same-net
-// channel switches don't need a new reader — the wide BPF filter already
-// captures the new stream, so we only reset the session.
-func sameServerNet(a, b string) bool {
-	return a != "" && b != "" && util.ServerNet24(a) == util.ServerNet24(b)
-}
-
 // startConnectionWatchdog polls Client.exe TCP connections every 1s and
-// reacts when the current triple disappears (channel switch). Because the
-// capture filter is scoped to the whole server /24, a same-net switch only
-// re-points the tracked triple and resets the session (no reader rebuild,
-// so no capture gap); a different-net switch rebuilds the reader.
-// A 10s packet-idle fallback catches cases the TCP poll might miss.
+// keeps the live capture filter equal to the exact set of servers the
+// client is connected to (see pcaputil.FilterForConns). A new connection
+// (mission instance, channel switch) is captured as soon as the next poll
+// widens the filter; a closed one is dropped. Only the initial install and
+// a 60s packet-idle fallback rebuild the reader.
 func startConnectionWatchdog(ctx context.Context, pub *eventPublisher) {
 	pollTicker := time.NewTicker(1 * time.Second)
 	defer pollTicker.Stop()
@@ -240,8 +233,10 @@ func startConnectionWatchdog(ctx context.Context, pub *eventPublisher) {
 	defer idleTicker.Stop()
 
 	var switching int32
+	installed := false
+	lastFilter := ""
 
-	swap := func(reason string) {
+	rebuild := func(reason string) {
 		if !atomic.CompareAndSwapInt32(&switching, 0, 1) {
 			return
 		}
@@ -252,19 +247,21 @@ func startConnectionWatchdog(ctx context.Context, pub *eventPublisher) {
 			logger.Println("watchdog: discover failed:", err)
 			return
 		}
+		conns, _ := pcaputil.PollClientConnections()
+		lastFilter = pcaputil.FilterForConns(conns)
 
 		newR, err := packet.NewGameServerPacketReader(&packet.GameServerPacketReaderOpt{
 			Ctx:          ctx,
 			NicName:      nicName,
-			Filter:       pcaputil.CurrentFilter(),
+			Filter:       lastFilter,
 			VetLocalPort: pcaputil.IsClientLocalPort,
 		})
 		if err != nil {
 			logger.Println("watchdog: open new reader failed:", err)
 			return
 		}
-
 		pub.SwitchReader(newR, reason)
+		installed = true
 	}
 
 	for {
@@ -281,47 +278,22 @@ func startConnectionWatchdog(ctx context.Context, pub *eventPublisher) {
 			if len(conns) == 0 {
 				continue
 			}
-			cur := pcaputil.Current()
-			alive := false
-			for _, c := range conns {
-				if c.ServerIP == cur.ServerIP &&
-					c.ServerPort == cur.ServerPort &&
-					c.LocalPort == cur.LocalPort {
-					alive = true
-					break
+			if !installed {
+				rebuild("initial")
+				continue
+			}
+			// Keep the filter equal to the current client connections.
+			if want := pcaputil.FilterForConns(conns); want != "" && want != lastFilter {
+				if err := pub.SetReaderFilter(want); err != nil {
+					logger.Println("watchdog: set filter failed:", err)
+					continue
 				}
+				logger.Printf("watchdog: capture filter -> %d connection(s): %s", len(conns), want)
+				lastFilter = want
 			}
-			if alive {
-				continue
-			}
-			if cur.ServerIP == "" {
-				// Empty triple = first-ever discovery, not a real switch.
-				swap("initial")
-				continue
-			}
-
-			// Prefer a same-/24 candidate: the wide filter already captures
-			// it, so we can re-point without rebuilding the reader (no gap).
-			var sameNet *pcaputil.ClientConnection
-			for i := range conns {
-				if sameServerNet(conns[i].ServerIP, cur.ServerIP) {
-					sameNet = &conns[i]
-					break
-				}
-			}
-			if sameNet != nil {
-				logger.Printf("watchdog: same-net switch -> %s:%s (no reader rebuild)",
-					sameNet.ServerIP, sameNet.ServerPort)
-				pcaputil.ApplyConnectionFilter(*sameNet)
-				pub.ResetSession("channel_switch")
-				continue
-			}
-
-			logger.Printf("watchdog: current connection gone, %d candidate(s); switching", len(conns))
-			swap("channel_switch")
 
 		case <-idleTicker.C:
-			if time.Since(pub.LastPacketAt()) <= 60*time.Second {
+			if !installed || time.Since(pub.LastPacketAt()) <= 60*time.Second {
 				continue
 			}
 			conns, err := pcaputil.PollClientConnections()
@@ -329,7 +301,7 @@ func startConnectionWatchdog(ctx context.Context, pub *eventPublisher) {
 				continue
 			}
 			logger.Println("watchdog: idle 60s, fallback re-discover")
-			swap("idle_fallback")
+			rebuild("idle_fallback")
 		}
 	}
 }

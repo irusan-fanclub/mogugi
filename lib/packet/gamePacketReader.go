@@ -686,6 +686,16 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 	}
 }
 
+// SetFilter updates the live capture's BPF filter in place (no reader
+// rebuild), so the watchdog can widen/narrow capture as the client's
+// connections change. No-op for file replay.
+func (t *GameServerPacketReader) SetFilter(filter string) error {
+	if t.handle == nil || filter == "" {
+		return nil
+	}
+	return t.handle.SetBPFFilter(filter)
+}
+
 // Close is safe to call multiple times and from any goroutine. It cancels
 // the context (which ends packetLoop; final stats are logged there) and
 // releases the pcap handle / file descriptors exactly once. It does NOT

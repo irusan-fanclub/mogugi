@@ -237,19 +237,36 @@ func ApplyConnectionFilter(c ClientConnection) {
 	current = c
 }
 
-// Current returns the tracked connection triple (zero value when nothing
-// has been discovered yet).
-func Current() ClientConnection {
-	return current
+// CurrentFilter returns the probe filter for the tracked connection: that
+// one server host, any port. Used by FindNic to test a candidate NIC.
+func CurrentFilter() string {
+	return fmt.Sprintf("tcp and host %s", current.ServerIP)
 }
 
-// CurrentFilter returns the capture filter: the whole /24 of the current
-// server, any port. Wide so a channel switch (new server ip/port) is
-// caught before the reader rebuilds; no port restriction so accelerators
-// relaying on odd ports still work. Foreign/non-game streams on the /24
-// are dropped downstream (readPacketLoop port-vet + packetLoop squelch).
-func CurrentFilter() string {
-	return fmt.Sprintf("tcp and src net %s", util.ServerNet24(current.ServerIP))
+// FilterForConns builds the live capture filter from the given Client.exe
+// connections: the exact set of server hosts (deduped), any port. This
+// captures only servers the client is actually talking to — a VM or other
+// process on a different server is never captured — and covers the game's
+// several connections (field + mission instance). The watchdog reapplies
+// it as connections come and go. Empty conns -> "" (caller keeps the last).
+func FilterForConns(conns []ClientConnection) string {
+	seen := map[string]bool{}
+	var hosts []string
+	for _, c := range conns {
+		if c.ServerIP == "" || seen[c.ServerIP] {
+			continue
+		}
+		seen[c.ServerIP] = true
+		hosts = append(hosts, c.ServerIP)
+	}
+	if len(hosts) == 0 {
+		return ""
+	}
+	sort.Strings(hosts)
+	for i, h := range hosts {
+		hosts[i] = "host " + h
+	}
+	return "tcp and (" + strings.Join(hosts, " or ") + ")"
 }
 
 func FindNic() (string, error) {
