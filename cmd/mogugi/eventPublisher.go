@@ -893,7 +893,12 @@ func (t *eventPublisher) handleSetLocation(p *packet.GamePacket) {
 	logger.Printf("map change: %s (region=%d) pos=(%d,%d)", t.regionName(region), region, x, y)
 
 	// 白名單副本 → 另存事件檔；離開（含跳到其他地圖）→ 關檔。
+	// 副本內部子地圖切換（動態→動態、同一任務，如布里萊赫 35011→35013）
+	// 視為同一輪，不輪替檔案。
 	if code, ok := dungeonCodes[missionID]; ok && region >= 35000 {
+		if t.dgnLog.IsOpen() {
+			return
+		}
 		if owner == "" {
 			owner = "unknown"
 		}

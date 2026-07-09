@@ -89,6 +89,13 @@ func (d *dungeonLog) writeLocked(events []event.IEvent) {
 	}
 }
 
+// IsOpen 回報目前是否有開啟中的記錄檔。
+func (d *dungeonLog) IsOpen() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.fd != nil
+}
+
 // Close 關閉目前的檔（若有）。可重複呼叫。
 func (d *dungeonLog) Close() {
 	d.mu.Lock()
