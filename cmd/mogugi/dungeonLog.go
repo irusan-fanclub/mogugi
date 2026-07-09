@@ -10,26 +10,28 @@ import (
 	"github.com/irusan-fanclub/mabidilmeter/lib/event"
 )
 
-// dungeonLogDirPath 是副本事件 ndjson 的輸出目錄。變數形式以便測試覆寫。
+// dungeonLogDirPath is the output dir for dungeon-event ndjson. A variable
+// so tests can override it.
 var dungeonLogDirPath = filepath.Join(_logDir, "dungeons")
 
-// dungeonCodes：要獨立記錄的副本 missionId → 檔名代碼。
-// 目前只錄布里萊赫；之後擴充白名單即可。
+// dungeonCodes: whitelisted dungeon missionId -> filename code. Currently
+// only 布里萊赫 (Brileith); extend the whitelist as needed.
 var dungeonCodes = map[uint32]string{
 	717000: "brileith",
 }
 
-// dungeonLog 在進入白名單副本時，把事件流另存一份
-// dungeon_<code>_<玩家名>_<進場unix>.ndjson，離開時關閉。
-// 自帶鎖；絕不回頭拿 eventPublisher 的鎖（避免鎖序問題）。
+// dungeonLog, on entering a whitelisted dungeon, tees the event stream to
+// dungeon_<code>_<player>_<enter-unix>.ndjson and closes on exit.
+// Has its own lock; never reaches back for eventPublisher's lock (lock order).
 type dungeonLog struct {
 	mu sync.Mutex
 	fd *os.File
 }
 
-// Open 建新檔並先寫入 initial（entityCache 快照的 EntityAppear/condition/
-// 裝備事件）——隊友大多在進副本前就出現過，不補種的話檔內只有傷害事件、
-// 對不回玩家名。已開啟時會先關閉舊檔。
+// Open creates a new file and first writes initial (EntityAppear/condition/
+// equip events from the entityCache snapshot) — teammates usually appeared
+// before dungeon entry, so without seeding the file has only damage events
+// that can't be matched back to player names. Closes any open file first.
 func (d *dungeonLog) Open(code, owner string, ts int64, initial []event.IEvent) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -60,8 +62,8 @@ func (d *dungeonLog) Open(code, owner string, ts int64, initial []event.IEvent) 
 	return nil
 }
 
-// Write 追加一批事件；未開檔時為 no-op。與主 packet_log 相同，略過
-// 負數（系統層）事件。
+// Write appends a batch of events; no-op when no file is open. Like the main
+// packet_log, skips negative (system-layer) events.
 func (d *dungeonLog) Write(events []event.IEvent) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -89,14 +91,14 @@ func (d *dungeonLog) writeLocked(events []event.IEvent) {
 	}
 }
 
-// IsOpen 回報目前是否有開啟中的記錄檔。
+// IsOpen reports whether a log file is currently open.
 func (d *dungeonLog) IsOpen() bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.fd != nil
 }
 
-// Close 關閉目前的檔（若有）。可重複呼叫。
+// Close closes the current file if any. Safe to call repeatedly.
 func (d *dungeonLog) Close() {
 	d.mu.Lock()
 	defer d.mu.Unlock()

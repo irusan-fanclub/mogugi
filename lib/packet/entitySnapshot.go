@@ -2,23 +2,25 @@ package packet
 
 import "strings"
 
-// EntitySnapshot 是從 0x5209 抽出的實體背包快照。
+// EntitySnapshot is an entity's inventory snapshot extracted from 0x5209.
 type EntitySnapshot struct {
 	Name   string
 	Master string
 	Items  []InventoryItem
 }
 
-// petPropsMarker 是寵物屬性 KV 字串中固定出現的鍵；Master.Name 是緊鄰其前
-// 的那個 String element。自己角色沒有這個字串，故 master 留空。
+// petPropsMarker is a key that always appears in a pet's props KV string;
+// Master.Name is the String element right before it. The player's own
+// character lacks this string, so master stays empty.
 const petPropsMarker = "PET_AI:"
 
-// ParseEntitySnapshot 走訪 0x5209 的 element list，抽出實體名、飼主名與物品清單。
-//   - Name：第一個 String element（段 A creature.Name）。
-//   - Master：含 petPropsMarker 的寵物屬性字串的前一個 String element。
-//   - Items：掃描連續 Long → Byte(2 Private) → Bin(>=80) 視為一筆 item entry，
-//     對其 Bin 套 parseItemInfo。緊接的結構為 Bin(80) → Bin(144) → String
-//     （OptionInfo，含 ENPFIX/ENSFIX 賦予）；若存在則一併解析。
+// ParseEntitySnapshot walks the 0x5209 element list, extracting entity
+// name, master name and item list.
+//   - Name: first String element (creature.Name).
+//   - Master: the String element before the pet-props string (petPropsMarker).
+//   - Items: a run of Long -> Byte(2 Private) -> Bin(>=80) is one item entry;
+//     parseItemInfo is applied to its Bin. Followed by Bin(80) -> Bin(144) ->
+//     String (OptionInfo with ENPFIX/ENSFIX enchants), parsed when present.
 func ParseEntitySnapshot(msg Message) (*EntitySnapshot, error) {
 	snap := &EntitySnapshot{Items: []InventoryItem{}}
 
@@ -63,9 +65,10 @@ func ParseEntitySnapshot(msg Message) (*EntitySnapshot, error) {
 		if err != nil {
 			continue
 		}
-		// 賦予有兩個來源：擴充 Bin(144)@i+3 存「裝備上已附加」的賦予，
-		// OptionInfo 字串@i+4 存「卷軸將給予」的賦予（ENPFIX/ENSFIX）。
-		// 逐槽合併，字串優先。型別/邊界不符則視為無賦予。
+		// Enchants come from two sources: ext Bin(144)@i+3 holds enchants
+		// already applied to the equipment; OptionInfo string@i+4 holds
+		// scroll-granted enchants (ENPFIX/ENSFIX). Merge per slot, string
+		// wins. Type/bounds mismatch means no enchant.
 		if i+3 < len(msg) && msg[i+3].Type() == MessageElemTypeBin {
 			if ext, ok := msg[i+3].Data().([]byte); ok {
 				it.EnchantPrefix, it.EnchantSuffix = parseExtEnchants(ext)
@@ -83,9 +86,9 @@ func ParseEntitySnapshot(msg Message) (*EntitySnapshot, error) {
 					}
 				}
 			}
-			// 兩個字串之後是 Byte(count) + count × Bin(40)（Aura 的
-			// upgradeEffect）：kind=7 細緻工匠、kind=0 接頭賦予效果行、
-			// kind=1 接尾賦予效果行、kind=10 聖水效果。
+			// After the two strings: Byte(count) + count x Bin(40)
+			// (Aura upgradeEffect): kind=7 metalware, kind=0 prefix effect
+			// line, kind=1 suffix effect line, kind=10 bless effect.
 			if i+6 < len(msg) && msg[i+5].Type() == MessageElemTypeString && msg[i+6].Type() == MessageElemTypeByte {
 				if cnt, ok := msg[i+6].Data().(uint8); ok {
 					for k := 0; k < int(cnt) && i+7+k < len(msg); k++ {
@@ -119,9 +122,10 @@ func ParseEntitySnapshot(msg Message) (*EntitySnapshot, error) {
 		snap.Items = append(snap.Items, it)
 	}
 
-	// 袋子回填：袋子物品 Bin144 u32@12 = 它的內容 pocket（慶典服裝背包
-	// →102、星光背包→138 皆驗證）。以 IBOR key 存在與否辨識「這是袋子」，
-	// 避免其他物品 @12 的殘值造成誤配。
+	// Bag backfill: a bag item's Bin144 u32@12 = its content pocket
+	// (verified: festival-outfit bag->102, starlight bag->138). The IBOR
+	// key identifies "this is a bag", avoiding false matches from other
+	// items' leftover @12 values.
 	bagByPocket := map[uint32]uint32{}
 	for _, it := range snap.Items {
 		if _, isBag := metaIntValue(it.Metadata, "IBOR"); isBag && it.bagContentPocket != 0 {

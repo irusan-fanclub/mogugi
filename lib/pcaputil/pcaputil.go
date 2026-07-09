@@ -93,7 +93,7 @@ func ensureNicCache() {
 
 // displayWidth returns the column width of s in a monospaced font,
 // counting East Asian Wide / Fullwidth runes as 2 columns. Used to
-// align mixed-script names (English NIC names alongside 中文 / 한국어
+// align mixed-script names (English NIC names alongside CJK / Hangul
 // labels) in log output.
 func displayWidth(s string) int {
 	w := 0

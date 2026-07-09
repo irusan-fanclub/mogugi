@@ -12,18 +12,18 @@ import (
 	"github.com/irusan-fanclub/mabidilmeter/lib/packet"
 )
 
-// itemsLogDirPath 是物品索引 CSV 的輸出目錄，與 logs/ 同層（相對工作目錄）。
-// 以變數形式存在以便測試覆寫。
+// itemsLogDirPath is the output dir for item-index CSVs, alongside logs/
+// (relative to the working dir). A variable so tests can override it.
 var itemsLogDirPath = "items_log"
 
-// IndexItem / IndexEntity 是 /api/item-index 的聚合模型。
-// IndexMetalware 是一條細緻工匠能力（JSON 用）。
+// IndexItem / IndexEntity are the aggregation models for /api/item-index.
+// IndexMetalware is one metalware ability (for JSON).
 type IndexMetalware struct {
 	ID    uint32 `json:"id"`
 	Level uint32 `json:"level"`
 }
 
-// IndexEnchantEffect 是一條效果行實際值（JSON 用）。
+// IndexEnchantEffect is one effect-line actual value (for JSON).
 type IndexEnchantEffect struct {
 	Code      uint32 `json:"code"`
 	Value     int32  `json:"value"`
@@ -56,11 +56,12 @@ type IndexItem struct {
 	SuffixEffects []IndexEnchantEffect `json:"suffixEffects,omitempty"`
 	BlessEffects  []IndexEnchantEffect `json:"blessEffects,omitempty"`
 	RelicEffects  []IndexEnchantEffect `json:"relicEffects,omitempty"`
-	Colors        []string             `json:"colors,omitempty"`   // 六色 0xRRGGBB hex（全 0 略）
-	Metadata      string               `json:"metadata,omitempty"` // MetaData1 原始 KV
+	Colors        []string             `json:"colors,omitempty"`   // six 0xRRGGBB hex colors (omitted if all 0)
+	Metadata      string               `json:"metadata,omitempty"` // raw MetaData1 KV
 }
 
-// encodeMetalware / decodeMetalware 以 "id:lv|id:lv" 存入 CSV 單欄。
+// encodeMetalware / decodeMetalware store metalware in one CSV column as
+// "id:lv|id:lv".
 func encodeMetalware(list []packet.MetalwareEntry) string {
 	parts := make([]string, 0, len(list))
 	for _, m := range list {
@@ -89,8 +90,8 @@ func decodeMetalware(s string) []IndexMetalware {
 	return out
 }
 
-// encodeEffects / decodeEffects 以 "code:value:condSkill:condRank|…" 存入
-// CSV 單欄（value 可為負）。
+// encodeEffects / decodeEffects store effects in one CSV column as
+// "code:value:condSkill:condRank|..." (value may be negative).
 func encodeEffects(list []packet.EnchantEffect) string {
 	parts := make([]string, 0, len(list))
 	for _, r := range list {
@@ -124,8 +125,8 @@ func decodeEffects(s string) []IndexEnchantEffect {
 	return out
 }
 
-// encodeColors / decodeColors 以 "rrggbb|…"（6 段 hex）存入 CSV 單欄；
-// 全 0（無染色資料）回空字串。
+// encodeColors / decodeColors store colors in one CSV column as "rrggbb|..."
+// (6 hex segments); all-0 (no dye data) returns an empty string.
 func encodeColors(c [6]uint32) string {
 	any := false
 	for _, v := range c {
@@ -157,7 +158,8 @@ type IndexEntity struct {
 	Items  []IndexItem `json:"items"`
 }
 
-// windowsReserved 是 Windows 保留的裝置名，當作檔名（不分大小寫）會失敗。
+// windowsReserved lists Windows reserved device names, which fail as
+// filenames (case-insensitive).
 var windowsReserved = map[string]bool{
 	"con": true, "prn": true, "aux": true, "nul": true,
 	"com1": true, "com2": true, "com3": true, "com4": true, "com5": true,
@@ -166,8 +168,9 @@ var windowsReserved = map[string]bool{
 	"lpt6": true, "lpt7": true, "lpt8": true, "lpt9": true,
 }
 
-// sanitizeEntityName 把實體名稱轉成安全檔名（保留中文，移除非法字元，trim 空白，
-// 去尾端點號，避開 Windows 保留裝置名）。
+// sanitizeEntityName turns an entity name into a safe filename (keeps CJK,
+// removes illegal chars, trims whitespace and trailing dots, avoids Windows
+// reserved device names).
 func sanitizeEntityName(name string) string {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -182,7 +185,8 @@ func sanitizeEntityName(name string) string {
 			b.WriteRune(r)
 		}
 	}
-	// Windows 會忽略檔名尾端的 '.' 與空白，去掉以免對不上。
+	// Windows ignores trailing '.' and spaces in filenames; strip them so
+	// names still match.
 	out := strings.TrimRight(strings.TrimSpace(b.String()), ". ")
 	if out == "" {
 		return "_unnamed"
@@ -193,12 +197,12 @@ func sanitizeEntityName(name string) string {
 	return out
 }
 
-// itemsLogDir 回傳物品索引輸出目錄（與 logs/ 同層）。
+// itemsLogDir returns the item-index output dir (alongside logs/).
 func itemsLogDir() (string, error) {
 	return itemsLogDirPath, nil
 }
 
-// writeEntitySnapshot 把快照寫到 {exedir}/items_log/。
+// writeEntitySnapshot writes the snapshot to {exedir}/items_log/.
 func writeEntitySnapshot(snap *packet.EntitySnapshot) error {
 	dir, err := itemsLogDir()
 	if err != nil {
@@ -207,14 +211,15 @@ func writeEntitySnapshot(snap *packet.EntitySnapshot) error {
 	return writeEntityCSVTo(dir, snap)
 }
 
-// writeEntityCSVTo 原子覆寫 dir/{sanitize(name)}.csv。第一列為 master 註解，
-// 第二列表頭，其後每件物品一列。
+// writeEntityCSVTo atomically overwrites dir/{sanitize(name)}.csv. First row
+// is the master comment, second is the header, then one row per item.
 func writeEntityCSVTo(dir string, snap *packet.EntitySnapshot) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	// 實體名唯一（角色/寵物皆不重名），故檔名用名字即可；真實（未消毒）名字
-	// 另存於 # meta 列，避免消毒後失真。
+	// Entity names are unique (characters/pets never collide), so the name
+	// alone works as the filename; the true (unsanitized) name is kept in
+	// the # meta row to avoid loss from sanitization.
 	final := filepath.Join(dir, sanitizeEntityName(snap.Name)+".csv")
 	tmp, err := os.CreateTemp(dir, ".tmp-*.csv")
 	if err != nil {
@@ -224,8 +229,10 @@ func writeEntityCSVTo(dir string, snap *packet.EntitySnapshot) error {
 	defer os.Remove(tmpName)
 
 	w := csv.NewWriter(tmp)
-	// # meta 列同時帶實體名與主人名，讓顯示名與檔名脫鉤（檔名含主人名以避免
-	// 同名寵物互相覆蓋，但顯示名應是實體本名）。
+	// The # meta row carries both entity and master name, decoupling display
+	// name from filename (the filename includes the master name to avoid
+	// same-named pets overwriting each other, but the display name should be
+	// the entity's own name).
 	_ = w.Write([]string{"# meta", snap.Name, snap.Master})
 	_ = w.Write([]string{"item_id", "qty", "container", "pos_x", "pos_y", "enchant_prefix", "enchant_suffix",
 		"durability", "durability_max", "defense", "attack_min", "attack_max", "metalware", "suffix_effects",
@@ -268,10 +275,11 @@ func writeEntityCSVTo(dir string, snap *packet.EntitySnapshot) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpName, final) // 原子覆寫
+	return os.Rename(tmpName, final) // atomic overwrite
 }
 
-// readItemIndexFrom 讀 dir 下所有 .csv，回傳聚合（依 entity 名排序）。
+// readItemIndexFrom reads all .csv under dir and returns the aggregation
+// (sorted by entity name).
 func readItemIndexFrom(dir string) ([]IndexEntity, error) {
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
@@ -314,7 +322,8 @@ func readOneEntityCSV(path string) (IndexEntity, error) {
 		Items:  []IndexItem{},
 	}
 	for _, row := range rows {
-		// 新格式：# meta,<entity>,<master>；舊格式：# master,<master>（名字來自檔名）。
+		// New format: # meta,<entity>,<master>; legacy: # master,<master>
+		// (name comes from the filename).
 		if len(row) >= 3 && row[0] == "# meta" {
 			ent.Entity = row[1]
 			ent.Master = row[2]
@@ -337,7 +346,8 @@ func readOneEntityCSV(path string) (IndexEntity, error) {
 		item := IndexItem{
 			ID: uint32(id), Qty: uint32(qty), Container: row[2], X: uint32(x), Y: uint32(y),
 		}
-		// 之後的欄位皆為後加；舊 CSV 欄數不足時缺什麼補 0。
+		// The following columns were added later; when an old CSV has fewer
+		// columns, missing fields default to 0.
 		if len(row) >= 7 {
 			ep, _ := strconv.ParseUint(row[5], 10, 32)
 			es, _ := strconv.ParseUint(row[6], 10, 32)

@@ -6,46 +6,45 @@ import (
 	"strings"
 )
 
-// MetalwareEntry 是一條細緻工匠能力（ability id + 等級）。
+// MetalwareEntry is one metalware ability (ability id + level).
 type MetalwareEntry struct {
 	AbilityID uint32
 	Level     uint32
 }
 
-// EnchantEffect 是一條裝備效果行的逐件實際值（40-byte 記錄，依 kind 分類：
-// 0=接頭賦予、1=接尾賦予、10=聖水/祝福）。範圍效果（如 +(50~55)）存的是
-// 抽到的實際值；可為負（如 魔法攻擊力 -20）。
-// 驗證樣本：日月之神服裝（capture 1783476479）接頭 消失的/接尾 軌跡 的
-// 每一行 OptionList 與 kind-0/kind-1 記錄逐條對應；杜克獵人手套接尾
-// 辛勤的 → kind-1 {Code:19(Crit), Value:1, CondSkill:10030(分解),
-// CondRank:6(A)} = tooltip「分解 等級A以上時 暴擊率 1 增加(1~3)」。
+// EnchantEffect is the rolled actual value of one equipment effect line
+// (40-byte record, classified by kind: 0=prefix, 1=suffix, 10=bless).
+// Range effects (e.g. +(50~55)) store the rolled value; may be negative
+// (e.g. magic attack -20).
 type EnchantEffect struct {
-	Code      uint32 // 參數碼（1=LifeMax,3=ManaMax,16=AttMax,19=Crit,20=Prot,22=平衡,53=魔攻,54=魔保,178=人偶傷害…）
-	Value     int32  // 實際值（i16，可負）
-	CondSkill uint32 // 條件技能 id（0=無）
-	CondRank  uint32 // 條件技能等級（6=A …）
+	Code      uint32 // param code (1=LifeMax,3=ManaMax,16=AttMax,19=Crit,20=Prot,22=Balance,53=MagAtt,54=MagProt,178=puppet dmg...)
+	Value     int32  // actual value (i16, may be negative)
+	CondSkill uint32 // condition skill id (0=none)
+	CondRank  uint32 // condition skill rank (6=A ...)
 }
 
-// InventoryItem 是從 0x5209 inventory 抽出的單件物品。
+// InventoryItem is one item extracted from the 0x5209 inventory.
 type InventoryItem struct {
 	ItemID    uint32
 	Qty       uint32
 	Container string // main | equip | bag | pet_* | unknown
-	Pocket    uint32 // Item.Info @0 的原始 pocket id
-	// BagItemID 是此物品所在袋子的 item id（0=不在使用者袋中）。
-	// 對映規則（實測）：袋子物品自身 OptionInfo(Bin144) 的 u32@12 = 它的
-	// 內容 pocket（慶典服裝背包→102、星光背包→138 皆驗證；非袋物品該欄=0）。
+	Pocket    uint32 // raw pocket id from Item.Info @0
+	// BagItemID is the item id of the bag this item sits in (0=not in a
+	// user bag). Rule (measured): a bag item's own OptionInfo(Bin144)
+	// u32@12 = its content pocket (festival bag->102, starlight bag->138;
+	// non-bag items have 0 here).
 	BagItemID uint32
-	// bagContentPocket 是袋子提供的內容 pocket（Bin144 u32@12），僅供
-	// snapshot 後處理配對，不輸出。
+	// bagContentPocket is the content pocket a bag provides (Bin144 u32@12),
+	// used only for snapshot post-processing pairing, not output.
 	bagContentPocket uint32
 	PosX             uint32
 	PosY             uint32
-	// EnchantPrefix / EnchantSuffix 是 OptionInfo 字串裡的賦予 id（ENPFIX /
-	// ENSFIX），0 表示無。名稱對照留待後續，先原樣帶 id。
+	// EnchantPrefix / EnchantSuffix are the enchant ids from the OptionInfo
+	// string (ENPFIX / ENSFIX), 0=none. Name lookup is deferred; id as-is.
 	EnchantPrefix uint32
 	EnchantSuffix uint32
-	// 道具屬性（來自擴充 Bin(144)）：耐久 ×1000、防禦、保護、攻擊小/大傷。
+	// Item stats (from ext Bin(144)): durability x1000, defense, protection,
+	// attack min/max.
 	Durability    uint32
 	DurabilityMax uint32
 	Defense       uint32
@@ -56,26 +55,25 @@ type InventoryItem struct {
 	InjuryMax     uint32
 	Balance       uint32
 	Critical      uint32
-	// Colors 是六個染色部位 A-F（Bin80 @8/12/16/24/28/32，低 24 bit =
-	// 0xRRGGBB；日月之神服裝六色與 tooltip RGB 逐一對上）。
+	// Colors are the six dye slots A-F (Bin80 @8/12/16/24/28/32, low 24 bits
+	// = 0xRRGGBB).
 	Colors [6]uint32
-	// Metalware 是細緻工匠能力清單（kind-7 的 40-byte 記錄）。
+	// Metalware is the metalware ability list (kind-7 40-byte records).
 	Metalware []MetalwareEntry
-	// 效果行實際值（40-byte 記錄）：kind-0 接頭賦予 / kind-1 接尾賦予 /
-	// kind-10 聖水（祝福）/ kind-11 遺物效果。
+	// Effect-line actual values (40-byte records): kind-0 prefix / kind-1
+	// suffix / kind-10 bless / kind-11 relic.
 	PrefixEffects []EnchantEffect
 	SuffixEffects []EnchantEffect
 	BlessEffects  []EnchantEffect
 	RelicEffects  []EnchantEffect
-	// Metadata 是 MetaData1 原始 KV 字串（MDEF/MPROT/OWNER/IMRBV/HOWA…），
-	// 由前端解讀已知 key，保持前向相容。
+	// Metadata is the raw MetaData1 KV string (MDEF/MPROT/OWNER/IMRBV/HOWA...);
+	// the frontend interprets known keys, kept for forward compatibility.
 	Metadata string
 }
 
-// parseExtEnchants 從 item 的擴充 Bin（Item.OptionInfo 結構，144 bytes）取
-// 已附加在裝備上的賦予：接頭 u16 @60、接尾 u16 @62（LE）。非裝備該區為 0。
-// 驗證樣本：杜克獵人手套（capture 1783460656）@60=0（接頭空）、
-// @62=30105=辛勤的，與遊戲內「[接尾] 辛勤的」一致。
+// parseExtEnchants reads the enchants already applied to equipment from an
+// item's ext Bin (Item.OptionInfo, 144 bytes): prefix u16 @60, suffix u16
+// @62 (LE). Zero for non-equipment.
 func parseExtEnchants(ext []byte) (prefix, suffix uint32) {
 	if len(ext) < 64 {
 		return 0, 0
@@ -83,12 +81,10 @@ func parseExtEnchants(ext []byte) (prefix, suffix uint32) {
 	return uint32(le.Uint16(ext[60:])), uint32(le.Uint16(ext[62:]))
 }
 
-// parseExtStats 從擴充 Bin 取道具屬性：耐久 u32@16、耐久上限 u32@20（皆
-// ×1000）、攻擊小/大傷 u16@28/@30、負傷率小/大 u16@32/@34、平衡 u8@36、
-// 暴擊率 u8@37、防禦 u32@40、保護 u32@44。
-// 驗證樣本：杜克獵人手套 耐久 8/8、防禦 1、保護 0；堅固鐮刀 攻擊 1~7；
-// 日月之神服裝 防禦 27 保護 19；靈魂解放者單手劍 攻擊 201~255（+聚能25=
-// 遊戲顯示 226~280）、負傷率 20~35%、平衡 69、暴擊 28。
+// parseExtStats reads item stats from the ext Bin: durability u32@16,
+// durability max u32@20 (both x1000), attack min/max u16@28/@30, injury
+// min/max u16@32/@34, balance u8@36, critical u8@37, defense u32@40,
+// protection u32@44.
 func parseExtStats(ext []byte, it *InventoryItem) {
 	if len(ext) < 48 {
 		return
@@ -106,10 +102,9 @@ func parseExtStats(ext []byte, it *InventoryItem) {
 	it.Protection = le.Uint32(ext[44:])
 }
 
-// parseMetalwareBin 解析一筆物品尾隨的 40-byte 記錄；kind（u32@0）為 7 時是
-// 細緻工匠能力：等級 u16@14、ability id u32@36。其他 kind 回 false。
-// 驗證樣本：杜克獵人手套三條 = (4300106,8)(3500403,17)(3501002,13)，
-// 與遊戲 tooltip 克諾斯之怒最小負傷率/水炮射程距離/造雨雲層範圍一致。
+// parseMetalwareBin parses a 40-byte record trailing an item; when kind
+// (u32@0) is 7 it is a metalware ability: level u16@14, ability id u32@36.
+// Other kinds return false.
 func parseMetalwareBin(b []byte) (MetalwareEntry, bool) {
 	if len(b) < 40 || le.Uint32(b[0:]) != 7 {
 		return MetalwareEntry{}, false
@@ -120,12 +115,10 @@ func parseMetalwareBin(b []byte) (MetalwareEntry, bool) {
 	}, true
 }
 
-// parseEffectBin 解析 kind=0/1/10/11 的 40-byte 記錄（裝備效果行實際值）。
-// 參數碼 u16@12、實際值 i16@14、條件技能 u16@36、條件等級 u8@39
-// （真實資料 @36..39 = "2e 27 00 06" → 技能 10030、等級 6=A）。
-// 回傳 kind 供呼叫端分路（0=接頭、1=接尾、10=聖水、11=遺物：code 2558=
-// 死亡準星傷害，值=%，驗證：嵐嵐小雞 穆利亞斯的遺物 {2558,400} = tooltip
-// 死亡準星傷害增加400%）。
+// parseEffectBin parses a kind=0/1/10/11 40-byte record (equipment effect
+// line actual value): param code u16@12, value i16@14, condition skill
+// u16@36, condition rank u8@39. Returns kind for caller routing (0=prefix,
+// 1=suffix, 10=bless, 11=relic).
 func parseEffectBin(b []byte) (kind uint32, e EnchantEffect, ok bool) {
 	if len(b) < 40 {
 		return 0, EnchantEffect{}, false
@@ -140,14 +133,15 @@ func parseEffectBin(b []byte) (kind uint32, e EnchantEffect, ok bool) {
 		CondSkill: uint32(le.Uint16(b[36:])),
 		CondRank:  uint32(b[39]),
 	}
-	// 全零記錄（padding / 未知）不當效果行。
+	// All-zero record (padding / unknown) is not an effect line.
 	if e.Code == 0 && e.Value == 0 && e.CondSkill == 0 {
 		return kind, EnchantEffect{}, false
 	}
 	return kind, e, true
 }
 
-// metaIntValue 從 MetaData1 KV 字串取指定 key 的整數值（"KEY:type:value;"）。
+// metaIntValue reads a key's integer value from a MetaData1 KV string
+// ("KEY:type:value;").
 func metaIntValue(meta, key string) (int64, bool) {
 	for _, tok := range strings.Split(meta, ";") {
 		parts := strings.SplitN(tok, ":", 3)
@@ -160,10 +154,11 @@ func metaIntValue(meta, key string) (int64, bool) {
 	return 0, false
 }
 
-// parseOptionInfo 解析 Mabinogi item 的 OptionInfo 字串，格式為
-// "KEY:type:value;KEY:type:value;..."，取出 prefix（ENPFIX）與 suffix
-// （ENSFIX）賦予 id。缺鍵回 0。卷軸走這裡；裝備上已附的賦予則在擴充 Bin
-// （見 parseExtEnchants），兩者由呼叫端合併。
+// parseOptionInfo parses a Mabinogi item's OptionInfo string
+// ("KEY:type:value;KEY:type:value;...") for the prefix (ENPFIX) and suffix
+// (ENSFIX) enchant ids. Missing key returns 0. Scrolls use this; enchants
+// already applied to equipment live in the ext Bin (see parseExtEnchants),
+// merged by the caller.
 func parseOptionInfo(s string) (prefix, suffix uint32) {
 	for _, tok := range strings.Split(s, ";") {
 		if tok == "" {
@@ -187,10 +182,10 @@ func parseOptionInfo(s string) (prefix, suffix uint32) {
 	return
 }
 
-// containerFromRecType 把 Item.Info @0 的 pocket id 對應到容器類別。
-// 角色本體快照（2582 件，capture 1783476479）顯示這不是小 enum 而是
-// pocket/袋子 id：2=主背包、個位數小值=穿戴中的裝備欄（5=衣服…）、
-// 大值=各個袋子（每個袋子一個 id）。寵物快照的 20/86/100/101 沿用舊名。
+// containerFromRecType maps the pocket id from Item.Info @0 to a container
+// class. It is not a small enum but a pocket/bag id: 2=main, small values=
+// worn equipment slots (5=clothes...), large values=individual bags (one id
+// each). Pet snapshot ids 20/86/100/101 keep their legacy names.
 func containerFromRecType(rec uint32) string {
 	switch {
 	case rec == 2:
@@ -202,18 +197,17 @@ func containerFromRecType(rec uint32) string {
 	case rec == 100 || rec == 101:
 		return "pet_subbag"
 	case rec == 23:
-		return "quest" // 任務頁籤（實測 100× 打怪任務卷在此）
+		return "quest" // quest tab
 	case rec >= 3 && rec <= 22:
-		return "equip" // 穿戴中裝備欄位
+		return "equip" // worn equipment slot
 	default:
-		return "bag" // 擴充袋或系統頁籤（pocket id 每袋不同）
+		return "bag" // expansion bag or system tab (pocket id differs per bag)
 	}
 }
 
-// parseItemInfo 解析 80-byte Item.Info：pocket@0, ItemId@4, Qty@36,
-// PosX@44, PosY@48（皆 uint32 LE），染色部位 A-F @8/12/16/24/28/32
-// （日月之神服裝六色與 tooltip 道具顏色逐一對上；高位 byte 為染色 flag，
-// 取低 24 bit = 0xRRGGBB）。
+// parseItemInfo parses 80-byte Item.Info: pocket@0, ItemId@4, Qty@36,
+// PosX@44, PosY@48 (all uint32 LE), dye slots A-F @8/12/16/24/28/32 (high
+// byte is a dye flag; take low 24 bits = 0xRRGGBB).
 func parseItemInfo(info []byte) (InventoryItem, error) {
 	if len(info) < 52 {
 		return InventoryItem{}, fmt.Errorf("item info too short: %d", len(info))

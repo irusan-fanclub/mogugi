@@ -67,7 +67,7 @@ type GameServerPacketReaderOpt struct {
 }
 
 type gamePacketPayload struct {
-	stream uint32 // per-connection stream id（readPacketLoop 配發）
+	stream uint32 // per-connection stream id (assigned by readPacketLoop)
 	relSeq uint32
 	data   []byte
 	at     time.Time
@@ -276,7 +276,8 @@ func (t *GameServerPacketReader) packetLoop(payloadCh <-chan gamePacketPayload) 
 				t.parseErrorCount++
 				st.errCount++
 				if st.okCount == 0 && st.errCount >= junkErrThreshold {
-					// 從未成功解析過＝非遊戲協定（同網段其他服務），封鎖。
+					// Never parsed successfully = not the game protocol
+					// (another service on the same net); squelch it.
 					st.junk = true
 					st.buffer.Reset()
 					st.payloads = nil
@@ -369,10 +370,11 @@ func (t *GameServerPacketReader) openLog() error {
 		logger.Println(err)
 		return err
 	}
-	// 換線會建立新 reader；若沿用同名檔 O_TRUNC 會把先前捕獲（含 0x5209
-	// 快照）整個洗掉——曾造成 capture 無法回放（session 1783517744）。
-	// 每個 reader 一個檔：用 O_EXCL 開，撞名就換下一個 suffix，永不覆寫既有檔
-	// （兩個 reader 同一秒建立時，單純加時間戳仍會撞名並被 O_TRUNC 洗掉）。
+	// A channel switch creates a new reader; reusing the same filename with
+	// O_TRUNC would wipe the prior capture (including the 0x5209 snapshot).
+	// One file per reader: open with O_EXCL and bump the suffix on collision,
+	// never overwriting an existing file (a timestamp alone still collides
+	// when two readers are created in the same second).
 	base := fmt.Sprintf("packet_capture_%v", util.StartUnix)
 	var fd *os.File
 	var err error

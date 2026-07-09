@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// buildItemEntry 造一個 [Long][Byte 2][Bin 80] 序列當作一筆 item entry。
+// buildItemEntry builds a [Long][Byte 2][Bin 80] sequence as one item entry.
 func buildItemEntry(itemID uint32, rec uint32) []IMessageElem {
 	info := make([]byte, 80)
 	le.PutUint32(info[0:], rec)
@@ -20,8 +20,9 @@ func buildItemEntry(itemID uint32, rec uint32) []IMessageElem {
 	}
 }
 
-// buildItemEntryEnchant 造完整 item entry：
-// [Long][Byte 2][Bin 80][Bin 144][String opt][String]，鏡像真實 0x5209 結構。
+// buildItemEntryEnchant builds a full item entry:
+// [Long][Byte 2][Bin 80][Bin 144][String opt][String], mirroring the real
+// 0x5209 structure.
 func buildItemEntryEnchant(itemID uint32, rec uint32, opt string) []IMessageElem {
 	info := make([]byte, 80)
 	le.PutUint32(info[0:], rec)
@@ -45,7 +46,7 @@ func TestParseOptionInfo(t *testing.T) {
 		{"ENPFIX:4:21203;", 21203, 0},
 		{"ENSFIX:4:11107;", 0, 11107},
 		{"ENPFIX:4:21203;ENSFIX:4:11107;", 21203, 11107},
-		{"PRP:4:10000;ENPFIX:4:21203;MCMA:b:false;", 21203, 0}, // 夾雜其他鍵
+		{"PRP:4:10000;ENPFIX:4:21203;MCMA:b:false;", 21203, 0}, // mixed with other keys
 		{"ENPFIX:4:notanumber;", 0, 0},
 	}
 	for _, c := range cases {
@@ -57,8 +58,8 @@ func TestParseOptionInfo(t *testing.T) {
 }
 
 func TestParseExtEnchants_RealGlove(t *testing.T) {
-	// 真實 Bin(144)：杜克獵人手套（item 16009, capture 1783460656），遊戲內
-	// 顯示「[接頭]可魔力賦予（空）、[接尾]辛勤的」→ prefix 0 / suffix 30105。
+	// Real Bin(144): Duke Hunter gloves (item 16009, capture 1783460656),
+	// in-game "[prefix] empty, [suffix] Diligent" -> prefix 0 / suffix 30105.
 	ext, err := hex.DecodeString(
 		"012dd44168100000ac02000000000000401f0000401f0000401f0000000000000000000000000000" +
 			"01000000000000000000000000000000000000000000997500002c4300000000ffffffff" +
@@ -89,7 +90,7 @@ func TestParseExtEnchants_ShortOrEmpty(t *testing.T) {
 }
 
 func TestParseEntitySnapshot_EquipEnchantFromExtBin(t *testing.T) {
-	// 裝備：option 字串空，賦予在擴充 Bin 的 @60(接頭)/@62(接尾)。
+	// Equipment: option string empty, enchants in ext Bin @60(prefix)/@62(suffix).
 	ext := make([]byte, 144)
 	le.PutUint16(ext[60:], 20001) // prefix
 	le.PutUint16(ext[62:], 30105) // suffix
@@ -112,8 +113,8 @@ func TestParseEntitySnapshot_EquipEnchantFromExtBin(t *testing.T) {
 }
 
 func TestParseEntitySnapshot_MetalwareAndStats(t *testing.T) {
-	// 鏡像 capture 1783467845 的手套記錄：Bin80 → Bin144 → 2×String →
-	// Byte(4) → 4×Bin40（1 筆 kind=1 忽略 + 3 筆 kind=7 細工）。
+	// Mirrors the glove record from capture 1783467845: Bin80 -> Bin144 ->
+	// 2xString -> Byte(4) -> 4xBin40 (1 kind=1 ignored + 3 kind=7 metalware).
 	info := make([]byte, 80)
 	le.PutUint32(info[0:], 2)
 	le.PutUint32(info[4:], 16009)
@@ -132,8 +133,9 @@ func TestParseEntitySnapshot_MetalwareAndStats(t *testing.T) {
 		le.PutUint32(b[36:], aid)
 		return b
 	}
-	// 效果行記錄：kind=1 接尾（鏡像真實手套 Crit +1、條件 分解(10030) rank A）、
-	// kind=0 接頭（負值，鏡像日月服裝 魔攻 -20）、kind=10 聖水（最大傷害 +29）。
+	// Effect-line records: kind=1 suffix (real glove Crit +1, cond skill
+	// Disassemble(10030) rank A), kind=0 prefix (negative, magic att -20),
+	// kind=10 bless (max damage +29).
 	eff := func(kind uint32, code uint16, value int16) []byte {
 		b := make([]byte, 40)
 		le.PutUint32(b[0:], kind)
@@ -143,7 +145,7 @@ func TestParseEntitySnapshot_MetalwareAndStats(t *testing.T) {
 	}
 	roll := eff(1, 19, 1)
 	le.PutUint16(roll[36:], 10030) // cond skill
-	roll[39] = 6                   // cond rank A（u8 @39，鏡像真實 "2e 27 00 06"）
+	roll[39] = 6                   // cond rank A (u8 @39, mirrors real "2e 27 00 06")
 	msg := Message{
 		NewMessageElemString("嫩煎雞小羊01"),
 		NewMessageElemLong(0x1234), NewMessageElemByte(2),
@@ -192,11 +194,11 @@ func TestParseEntitySnapshot_MetalwareAndStats(t *testing.T) {
 }
 
 func TestParseEntitySnapshot_Enchant(t *testing.T) {
-	// 真實值取自 dilmeter_1783460656（嫩煎雞小羊01）：prefix 21203 / suffix 11107。
+	// Real values from dilmeter_1783460656: prefix 21203 / suffix 11107.
 	msg := Message{NewMessageElemString("嫩煎雞小羊01")}
 	msg = append(msg, buildItemEntryEnchant(62005, 2, "ENPFIX:4:21203;")...)
 	msg = append(msg, buildItemEntryEnchant(62005, 2, "ENSFIX:4:11107;")...)
-	msg = append(msg, buildItemEntry(16009, 2)...) // 舊三元素結構、無賦予
+	msg = append(msg, buildItemEntry(16009, 2)...) // legacy 3-element form, no enchant
 
 	snap, err := ParseEntitySnapshot(msg)
 	if err != nil {
@@ -217,7 +219,7 @@ func TestParseEntitySnapshot_Enchant(t *testing.T) {
 }
 
 func TestParseEntitySnapshot_Synthetic(t *testing.T) {
-	msg := Message{NewMessageElemString("小雞七號")} // 段 A 名稱
+	msg := Message{NewMessageElemString("小雞七號")} // name
 	msg = append(msg, NewMessageElemInt(10), NewMessageElemInt(10), NewMessageElemInt(2))
 	msg = append(msg, buildItemEntry(40026, 2)...)
 	msg = append(msg, buildItemEntry(12345, 86)...)
@@ -235,7 +237,7 @@ func TestParseEntitySnapshot_Synthetic(t *testing.T) {
 }
 
 func TestParseEntitySnapshot_Master(t *testing.T) {
-	// Master.Name 是含 "PET_AI:" 的寵物屬性字串的前一個 String。
+	// Master.Name is the String before the pet-props string ("PET_AI:").
 	msg := Message{
 		NewMessageElemString("小雞七號"), // name
 		NewMessageElemString(""),
@@ -252,7 +254,7 @@ func TestParseEntitySnapshot_Master(t *testing.T) {
 }
 
 func TestParseEntitySnapshot_NoMaster(t *testing.T) {
-	// 沒有寵物屬性字串（如自己角色）→ master 留空。
+	// No pet-props string (e.g. own character) -> master stays empty.
 	msg := Message{NewMessageElemString("我的角色"), NewMessageElemString("foo")}
 	snap, err := ParseEntitySnapshot(msg)
 	if err != nil {
@@ -325,12 +327,12 @@ func TestParseEntitySnapshot_RealFixture(t *testing.T) {
 }
 
 func TestParseEntitySnapshot_BagMapping(t *testing.T) {
-	// 袋子（pocket 2、IBOR 標記、Bin144@12=102）→ 內容物 pocket 102。
+	// Bag (pocket 2, IBOR marker, Bin144@12=102) -> content pocket 102.
 	bag := make([]byte, 80)
 	le.PutUint32(bag[0:], 2)
 	le.PutUint32(bag[4:], 5500008)
 	bagExt := make([]byte, 144)
-	le.PutUint32(bagExt[12:], 102) // Bin144 @12 = 內容 pocket
+	le.PutUint32(bagExt[12:], 102) // Bin144 @12 = content pocket
 	inBag := make([]byte, 80)
 	le.PutUint32(inBag[0:], 102)
 	le.PutUint32(inBag[4:], 1460011)

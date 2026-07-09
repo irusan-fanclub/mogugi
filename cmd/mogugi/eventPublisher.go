@@ -170,7 +170,8 @@ drainLoop:
 		return
 	}
 
-	// 連線重來，副本記錄作廢（斷在哪一行檔案自會呈現）。
+	// Connection restarted; the dungeon log is void (where it cut off is
+	// self-evident in the file).
 	t.dgnLog.Close()
 
 	logger.Printf("SessionReset: reason=%s", reason)
@@ -276,7 +277,8 @@ func (t *eventPublisher) flushNow() {
 	}
 	t.Unlock()
 
-	// 副本記錄檔（開著才會寫；自帶鎖，勿在持有 publisher 鎖時呼叫）。
+	// Dungeon log (writes only when open; has its own lock, so never call
+	// while holding the publisher lock).
 	t.dgnLog.Write(batch)
 }
 
@@ -404,7 +406,8 @@ func (t *eventPublisher) handleEntityAppear(p *packet.GamePacket) {
 		return
 	}
 
-	// 王級怪物以 race id 判定（比 BGM 準）：登場即記錄並追蹤其實體 id。
+	// Detect boss monsters by race id (more reliable than BGM): log on
+	// appearance and track the entity id.
 	if boss, ok := bossRaces[entity.RaceId]; ok {
 		t.Lock()
 		t.bossEntities[entity.Id] = boss
@@ -729,9 +732,9 @@ func (t *eventPublisher) handleEffectDelayed(p *packet.GamePacket) {
 
 	ttype := p.Msg[1].Data().(uint32)
 	if ttype != 318 {
-		// Not 星塵-family delayed damage (Blast 58100 / Flare 58101 /
-		// 連續攻擊 58009). The discriminator changed 317 -> 318 in the
-		// 2026-06 update; see packet_capture_1781767719.
+		// Not 星塵 (Stardust)-family delayed damage (Blast 58100 / Flare
+		// 58101 / combo 58009). The discriminator changed 317 -> 318 in
+		// the 2026-06 update; see packet_capture_1781767719.
 		return
 	}
 
@@ -907,9 +910,10 @@ func (t *eventPublisher) handleSetLocation(p *packet.GamePacket) {
 		logger.Printf("map change: %s (region=%d) pos=(%d,%d)", name, region, x, y)
 	}
 
-	// 白名單副本 → 另存事件檔；離開（含跳到其他地圖）→ 關檔。
-	// 副本內部子地圖切換（動態→動態、同一任務，如布里萊赫 35011→35013）
-	// 視為同一輪，不輪替檔案。
+	// Whitelisted dungeon -> tee to an event file; leaving (incl. warping
+	// elsewhere) -> close it. Sub-map switches within a dungeon (dynamic->
+	// dynamic, same mission, e.g. 布里萊赫/Brileith 35011->35013) count as
+	// the same run and do not rotate the file.
 	if code, ok := dungeonCodes[missionID]; ok && region >= 35000 {
 		if t.dgnLog.IsOpen() {
 			return
@@ -917,8 +921,8 @@ func (t *eventPublisher) handleSetLocation(p *packet.GamePacket) {
 		if owner == "" {
 			owner = "unknown"
 		}
-		// 進場前隊友早已 appear 過，開檔先補種 entityCache 快照，
-		// 否則檔內傷害事件對不回玩家名。
+		// Teammates already appeared before entry, so seed the file with an
+		// entityCache snapshot or damage events won't map to player names.
 		if err := t.dgnLog.Open(code, owner, p.At.Unix(), t.snapshotEvents()); err != nil {
 			logger.Println("dungeon-log open failed:", err)
 		}
@@ -927,14 +931,15 @@ func (t *eventPublisher) handleSetLocation(p *packet.GamePacket) {
 	}
 }
 
-// missionNames：副本任務代碼 → 顯示名（由 minimap jpg 命名對照 MinimapInfo
-// 得出，如 minimap_2024_mrd_* → 穆利亞斯；逐步擴充）。
+// missionNames: dungeon mission code -> display name (derived by matching
+// minimap jpg names against MinimapInfo, e.g. minimap_2024_mrd_* -> Mullias;
+// extended over time).
 var missionNames = map[string]string{
 	"mrd": "穆利亞斯",
 }
 
-// handleMissionState 記下 enter_<code> 任務代碼；緊接的動態 region 26009
-// 會用它命名副本。
+// handleMissionState records the enter_<code> mission code; the dynamic
+// region 26009 that follows uses it to name the dungeon.
 func (t *eventPublisher) handleMissionState(p *packet.GamePacket) {
 	if len(p.Msg) < 3 || p.Msg[2].Type() != packet.MessageElemTypeString {
 		return
@@ -947,7 +952,8 @@ func (t *eventPublisher) handleMissionState(p *packet.GamePacket) {
 	}
 }
 
-// handleMissionStart 記下副本任務 id（45004 在動態 region 的 26009 前送達）。
+// handleMissionStart records the dungeon mission id (45004 arrives before
+// the dynamic region's 26009).
 func (t *eventPublisher) handleMissionStart(p *packet.GamePacket) {
 	if len(p.Msg) < 1 || p.Msg[0].Type() != packet.MessageElemTypeInt {
 		return
@@ -958,16 +964,17 @@ func (t *eventPublisher) handleMissionStart(p *packet.GamePacket) {
 	t.Unlock()
 }
 
-// bossBGMNames：王戰 BGM 檔名 → 王名（Race.xml EnglishName 縮寫：
-// VT=Vertrag 佩塔克、BT=Bronntanas 布倫塔納斯、LM=Midir of Leannan 雷楠的米勒）。
+// bossBGMNames: boss-fight BGM filename -> boss name (Race.xml EnglishName
+// abbreviations: VT=Vertrag, BT=Bronntanas, LM=Midir of Leannan).
 var bossBGMNames = map[string]string{
 	"Boss_VT.mp3": "佩塔克",
 	"Boss_BT.mp3": "布倫塔納斯",
 	"Boss_LM.mp3": "雷楠的米勒",
 }
 
-// bossRaces：王級怪物 race id → 王名（Race.xml，含難度/型態變體）。
-// 目前收錄布里萊赫三王；其他副本的王逐步擴充。
+// bossRaces: boss monster race id -> boss name (Race.xml, including
+// difficulty/form variants). Currently the three 布里萊赫 (Brileith) bosses;
+// other dungeons' bosses added over time.
 var bossRaces = map[uint32]string{
 	5211: "佩塔克", 5216: "佩塔克", 5217: "佩塔克", 5229: "佩塔克",
 	5224: "古樹的佩塔克",
@@ -976,8 +983,8 @@ var bossRaces = map[uint32]string{
 	7615: "雷楠的米勒:悔恨",
 }
 
-// handleBGMPlay 以 BGM 切換偵測王戰開始/結束：切到 Boss_*.mp3 = 開打，
-// 從 Boss_* 切回其他曲子 = 結束。
+// handleBGMPlay detects boss-fight start/end by BGM change: switching to
+// Boss_*.mp3 = start, switching from Boss_* to another track = end.
 func (t *eventPublisher) handleBGMPlay(p *packet.GamePacket) {
 	if len(p.Msg) < 1 || p.Msg[0].Type() != packet.MessageElemTypeString {
 		return
@@ -1001,8 +1008,9 @@ func (t *eventPublisher) handleBGMPlay(p *packet.GamePacket) {
 	}
 }
 
-// regionName 回傳地圖名；>=35000 為動態副本實例（每次進入配發新 id），
-// 不在靜態表中，改用最近的任務 id / 任務代碼命名。
+// regionName returns the map name; >=35000 is a dynamic dungeon instance
+// (new id assigned each entry), not in the static table, so it is named from
+// the most recent mission id / mission code.
 func (t *eventPublisher) regionName(region uint32) string {
 	if n, ok := regionNames[region]; ok {
 		return n
@@ -1046,8 +1054,9 @@ func (t *eventPublisher) handleChangeStance(p *packet.GamePacket) {
 	})
 }
 
-// snapshotEvents 把 entityCache 重建成事件序列（appear + condition + 裝備），
-// 供新 WS 客戶端的 initial snapshot 與副本檔開檔補種共用。
+// snapshotEvents rebuilds the entityCache into an event sequence (appear +
+// condition + equip), shared by a new WS client's initial snapshot and the
+// dungeon file's open-time seeding.
 func (t *eventPublisher) snapshotEvents() []event.IEvent {
 	initial := []event.IEvent(nil)
 

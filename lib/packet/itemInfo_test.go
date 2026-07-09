@@ -14,14 +14,16 @@ func TestParseItemInfo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseItemInfo: %v", err)
 	}
-	// InventoryItem 含 slice，不能直接 ==；逐欄比對 parseItemInfo 會填的欄位。
+	// InventoryItem has slices, so no direct ==; compare the fields
+	// parseItemInfo fills one by one.
 	if got.ItemID != 40026 || got.Qty != 5 || got.Container != "main" || got.PosX != 3 || got.PosY != 1 {
 		t.Fatalf("got %+v", got)
 	}
 }
 
 func TestParseItemInfo_ContainerMapping(t *testing.T) {
-	// pocket id：2=main、寵物特例 20/86/100/101、小值=穿戴裝備欄、其餘=袋子。
+	// pocket id: 2=main, pet special cases 20/86/100/101, small=worn equip
+	// slot, rest=bag.
 	cases := map[uint32]string{2: "main", 20: "pet_equip", 86: "pet_bag", 100: "pet_subbag", 101: "pet_subbag",
 		5: "equip", 6: "equip", 13: "equip", 23: "quest", 61: "bag", 999: "bag"}
 	for rec, want := range cases {

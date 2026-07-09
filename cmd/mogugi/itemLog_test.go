@@ -36,7 +36,7 @@ func TestWriteAndReadItemIndex(t *testing.T) {
 	if err := writeEntityCSVTo(dir, snap); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	// 覆寫語意：同實體再寫一次，內容應被取代而非追加。
+	// Overwrite semantics: writing the same entity again replaces, not appends.
 	snap.Items = snap.Items[:1]
 	if err := writeEntityCSVTo(dir, snap); err != nil {
 		t.Fatalf("rewrite: %v", err)
@@ -60,7 +60,7 @@ func TestWriteAndReadItemIndex_Enchant(t *testing.T) {
 		Name: "嫩煎雞小羊01",
 		Items: []packet.InventoryItem{
 			{ItemID: 62005, Qty: 1, Container: "main", EnchantPrefix: 21203, EnchantSuffix: 11107},
-			{ItemID: 16009, Qty: 1, Container: "main"}, // 無賦予
+			{ItemID: 16009, Qty: 1, Container: "main"}, // no enchant
 		},
 	}
 	if err := writeEntityCSVTo(dir, snap); err != nil {
@@ -158,7 +158,8 @@ func TestWriteAndReadItemIndex_AllColumns(t *testing.T) {
 }
 
 func TestReadItemIndex_TrueNameFromMeta(t *testing.T) {
-	// 名字含非法字元時：檔名被消毒，但 # meta 列保留真實名字。
+	// When the name has illegal chars: the filename is sanitized but the
+	// # meta row keeps the true name.
 	dir := t.TempDir()
 	snap := &packet.EntitySnapshot{Name: "a/b:c", Master: "主人", Items: []packet.InventoryItem{{ItemID: 1}}}
 	if err := writeEntityCSVTo(dir, snap); err != nil {
@@ -174,7 +175,7 @@ func TestReadItemIndex_TrueNameFromMeta(t *testing.T) {
 }
 
 func TestReadItemIndex_LegacyCSV(t *testing.T) {
-	// 舊版 5 欄 CSV（無賦予欄）要能讀，賦予預設 0。
+	// Legacy 5-column CSV (no enchant columns) must still read, enchant defaults 0.
 	dir := t.TempDir()
 	legacy := "# master,someone\nitem_id,qty,container,pos_x,pos_y\n40026,1,main,3,0\n"
 	if err := os.WriteFile(filepath.Join(dir, "old.csv"), []byte(legacy), 0o644); err != nil {
