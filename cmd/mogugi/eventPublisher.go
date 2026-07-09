@@ -329,8 +329,10 @@ func (t *eventPublisher) handlePacket(p *packet.GamePacket) {
 	case packet.OpcodeMissionStart:
 		t.handleMissionStart(p)
 
-	case packet.OpcodeBGMPlay:
-		t.handleBGMPlay(p)
+	// BGM-based boss detection disabled (race-id detection is primary);
+	// handleBGMPlay kept for now.
+	// case packet.OpcodeBGMPlay:
+	// 	t.handleBGMPlay(p)
 
 	case packet.OpcodeSetLocation:
 		t.handleSetLocation(p)
