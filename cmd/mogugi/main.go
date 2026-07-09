@@ -254,9 +254,10 @@ func startConnectionWatchdog(ctx context.Context, pub *eventPublisher) {
 		}
 
 		newR, err := packet.NewGameServerPacketReader(&packet.GameServerPacketReaderOpt{
-			Ctx:     ctx,
-			NicName: nicName,
-			Filter:  pcaputil.CurrentFilter(),
+			Ctx:          ctx,
+			NicName:      nicName,
+			Filter:       pcaputil.CurrentFilter(),
+			VetLocalPort: pcaputil.IsClientLocalPort,
 		})
 		if err != nil {
 			logger.Println("watchdog: open new reader failed:", err)

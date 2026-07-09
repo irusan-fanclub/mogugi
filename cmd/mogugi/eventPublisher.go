@@ -37,12 +37,13 @@ type eventPublisher struct {
 	pendingEvents   []event.IEvent
 	lastSentAt      time.Time
 	lastPacketAt    time.Time
-	lastRegion      uint32            // 目前地圖 region id（26009），0=未知
-	lastMission     string            // 最近的副本任務代碼（22007 enter_<code>），如 mrd
-	lastMissionID   uint32            // 最近的副本任務 id（45004），查 dungeonNames
-	lastBGM         string            // 目前播放的 BGM（43302），Boss_* 表示王戰中
-	bossEntities    map[uint64]string // 場上王級實體 id → 王名（EntityAppear race 判定）
-	dgnLog          dungeonLog        // 白名單副本的獨立事件檔（自帶鎖）
+	lastRegion      uint32            // current region id (26009); 0 = unknown
+	lastRegionName  string            // resolved display name of lastRegion (for "from X" logging)
+	lastMission     string            // latest mission code (22007 enter_<code>), e.g. mrd
+	lastMissionID   uint32            // latest mission id (45004); resolves via dungeonNames
+	lastBGM         string            // currently playing BGM (43302); Boss_* means a boss fight
+	bossEntities    map[uint64]string // live boss entity id -> boss name (race-id detection)
+	dgnLog          dungeonLog        // per-run event file for whitelisted dungeons (own lock)
 }
 
 type eventClient struct {
@@ -880,6 +881,7 @@ func (t *eventPublisher) handleSetLocation(p *packet.GamePacket) {
 
 	t.Lock()
 	changed := region != t.lastRegion
+	prevName := t.lastRegionName
 	t.lastRegion = region
 	missionID := t.lastMissionID
 	var owner string
@@ -890,7 +892,20 @@ func (t *eventPublisher) handleSetLocation(p *packet.GamePacket) {
 	if !changed {
 		return
 	}
-	logger.Printf("map change: %s (region=%d) pos=(%d,%d)", t.regionName(region), region, x, y)
+
+	// Resolve the new name now and remember it: resolving the PREVIOUS
+	// region later would be wrong for dynamic instances (their name depends
+	// on lastMissionID, which the next dungeon already overwrote).
+	name := t.regionName(region)
+	t.Lock()
+	t.lastRegionName = name
+	t.Unlock()
+
+	if prevName != "" {
+		logger.Printf("map change: %s (region=%d) pos=(%d,%d) from %s", name, region, x, y, prevName)
+	} else {
+		logger.Printf("map change: %s (region=%d) pos=(%d,%d)", name, region, x, y)
+	}
 
 	// 白名單副本 → 另存事件檔；離開（含跳到其他地圖）→ 關檔。
 	// 副本內部子地圖切換（動態→動態、同一任務，如布里萊赫 35011→35013）

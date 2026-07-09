@@ -192,6 +192,43 @@ func PollClientConnections() ([]ClientConnection, error) {
 	return conns, nil
 }
 
+// clientPortCache is the set of Client.exe local TCP ports, used to vet
+// capture streams so traffic from other processes (e.g. a VM whose NAT
+// shares the host IP and happens to reach the same server net) is never
+// parsed or recorded. Guarded by clientPortMu; refreshed lazily.
+var (
+	clientPortMu  sync.Mutex
+	clientPorts   map[string]bool
+	clientPortsAt time.Time
+)
+
+// IsClientLocalPort reports whether the local TCP port belongs to a
+// Client.exe connection. On a cache miss the port table is re-polled once
+// (a brand-new dungeon/channel connection is vetted synchronously, so no
+// capture gap), then the negative answer is trusted until the next
+// refresh.
+func IsClientLocalPort(port string) bool {
+	clientPortMu.Lock()
+	defer clientPortMu.Unlock()
+
+	const maxAge = 2 * time.Second
+	if clientPorts != nil && time.Since(clientPortsAt) < maxAge && clientPorts[port] {
+		return true
+	}
+	// Miss or stale: refresh once and re-check.
+	conns, err := PollClientConnections()
+	if err != nil {
+		// Fail open: better to record extra traffic than lose game data.
+		return true
+	}
+	clientPorts = make(map[string]bool, len(conns))
+	for _, c := range conns {
+		clientPorts[c.LocalPort] = true
+	}
+	clientPortsAt = time.Now()
+	return clientPorts[port]
+}
+
 // current is the Client.exe connection the capture follows. Read and
 // written only by the watchdog goroutine (including the initial FindNic)
 // -- no lock; serialization is the caller's contract (see
@@ -288,10 +325,11 @@ func testNicForPackets(nicName string, filter string) bool {
 	defer cancel()
 
 	r, err := packet.NewGameServerPacketReader(&packet.GameServerPacketReaderOpt{
-		Ctx:     ctx,
-		NicName: nicName,
-		Filter:  filter,
-		Quiet:   true,
+		Ctx:          ctx,
+		NicName:      nicName,
+		Filter:       filter,
+		VetLocalPort: IsClientLocalPort,
+		Quiet:        true,
 	})
 
 	if err != nil {

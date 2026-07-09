@@ -32,6 +32,7 @@ type GameServerPacketReader struct {
 	fd     *os.File
 
 	closeOnce sync.Once
+	vetPort   func(port string) bool
 	// resetCh signals packetLoop to drop its partial parse buffer after a
 	// same-net channel switch (stale bytes from the old stream).
 	resetCh chan struct{}
@@ -52,6 +53,12 @@ type GameServerPacketReaderOpt struct {
 	NicName  string
 	// Filter is the BPF expression for live capture (ignored for files).
 	Filter string
+	// VetLocalPort, when set, is asked once per new TCP stream whether the
+	// local (dst) port belongs to the game client process. Rejected
+	// streams are neither parsed nor written to the pcapng capture —
+	// keeps other processes' traffic (e.g. a VM sharing the host IP via
+	// NAT) out of the recording. Nil accepts everything (file replay).
+	VetLocalPort func(port string) bool
 	// Quiet suppresses informational logs and skips opening the pcapng
 	// log file. Used by short-lived test readers (NIC discovery probes)
 	// so they don't spam the log or stomp on the live capture file.
@@ -110,6 +117,7 @@ func NewGameServerPacketReader(opt *GameServerPacketReaderOpt) (_ *GameServerPac
 		packetCh:  make(chan *GamePacket, packetQueueSize),
 		quiet:     opt.Quiet,
 		realtime:  opt.Realtime,
+		vetPort:   opt.VetLocalPort,
 		linkType:  layers.LinkTypeNull, // default, will be updated when opening
 		resetCh:   make(chan struct{}, 1),
 	}
@@ -449,10 +457,11 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 		dstPort layers.TCPPort
 	}
 	type tcpStreamState struct {
-		id      uint32
-		baseSeq uint32
-		nextSeq uint32
-		pending []pendingTcpLayer
+		id       uint32
+		baseSeq  uint32
+		nextSeq  uint32
+		pending  []pendingTcpLayer
+		rejected bool // not a Client.exe connection: don't parse, don't record
 	}
 	streams := map[streamKey]*tcpStreamState{}
 	nextStreamID := uint32(0)
@@ -482,10 +491,6 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 				}
 			}
 			prevCapTime = ci.Timestamp
-		}
-
-		if logHandle != nil {
-			_ = logHandle.WritePacket(ci, b)
 		}
 
 		// Poll pcap stats every 100 packets to detect kernel-level drops.
@@ -528,14 +533,29 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 				st = &tcpStreamState{id: nextStreamID, baseSeq: tcp.Seq}
 				nextStreamID++
 				streams[key] = st
-				if !t.quiet {
+				if t.vetPort != nil && !t.vetPort(fmt.Sprintf("%d", uint16(tcp.DstPort))) {
+					st.rejected = true
+					if !t.quiet {
+						logger.Printf("stream #%d rejected (local:%d not a Client.exe connection)", st.id, tcp.DstPort)
+					}
+				} else if !t.quiet {
 					logger.Printf("stream #%d: %v:%d -> local:%d", st.id, ip4.SrcIP, tcp.SrcPort, tcp.DstPort)
 				}
-				// 新連線的第一包常是 4-byte 加密 key，不含遊戲資料。
+				// A new connection's first packet is usually the 4-byte
+				// encryption key; it carries no game data.
 				if len(tcp.Payload) == 4 {
 					st.nextSeq = tcp.Seq + 4
 					continue
 				}
+			}
+			if st.rejected {
+				continue
+			}
+
+			// Record only accepted streams (after the vet, so foreign
+			// traffic never lands in the pcapng).
+			if logHandle != nil {
+				_ = logHandle.WritePacket(ci, b)
 			}
 
 			if st.nextSeq != 0 && tcp.Seq != st.nextSeq {

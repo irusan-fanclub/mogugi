@@ -39,8 +39,8 @@ type InventoryItem struct {
 	// bagContentPocket 是袋子提供的內容 pocket（Bin144 u32@12），僅供
 	// snapshot 後處理配對，不輸出。
 	bagContentPocket uint32
-	PosX      uint32
-	PosY      uint32
+	PosX             uint32
+	PosY             uint32
 	// EnchantPrefix / EnchantSuffix 是 OptionInfo 字串裡的賦予 id（ENPFIX /
 	// ENSFIX），0 表示無。名稱對照留待後續，先原樣帶 id。
 	EnchantPrefix uint32

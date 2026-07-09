@@ -239,7 +239,7 @@ func TestParseEntitySnapshot_Master(t *testing.T) {
 	msg := Message{
 		NewMessageElemString("小雞七號"), // name
 		NewMessageElemString(""),
-		NewMessageElemString("嵐嵐小雞"),                       // master
+		NewMessageElemString("嵐嵐小雞"),                           // master
 		NewMessageElemString("PET_AI:s:OasisRuleSupport.xml;"), // pet props
 	}
 	snap, err := ParseEntitySnapshot(msg)
@@ -266,9 +266,9 @@ func TestParseEntitySnapshot_NoMaster(t *testing.T) {
 type fixture struct {
 	RawMessageHex string `json:"raw_message_hex"`
 	Expected      struct {
-		Name  string `json:"name"`
+		Name   string `json:"name"`
 		Master string `json:"master"`
-		Items []struct {
+		Items  []struct {
 			ID        uint32 `json:"id"`
 			Qty       uint32 `json:"qty"`
 			Container string `json:"container"`
