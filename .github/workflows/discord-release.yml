@@ -88,7 +88,12 @@ jobs:
               allowed_mentions: { parse: [] }
             }')
 
-          if [ -n "$ZIP_NAME" ] && [ -f "_release/$ZIP_NAME" ]; then
+          # Discord webhook attachments cap at ~8 MB (non-boosted). Attach the
+          # zip only when it fits; otherwise post a text-only embed (the release
+          # URL already links the downloads) so a large binary doesn't 413.
+          max=8000000
+          if [ -n "$ZIP_NAME" ] && [ -f "_release/$ZIP_NAME" ] && \
+             [ "$(stat -c%s "_release/$ZIP_NAME")" -le "$max" ]; then
             curl -fsS -X POST \
               -F "payload_json=$payload;type=application/json" \
               -F "files[0]=@_release/$ZIP_NAME" \
