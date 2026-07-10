@@ -1,0 +1,46 @@
+package packet
+
+import "testing"
+
+func TestParseItemInfo(t *testing.T) {
+	info := make([]byte, 80)
+	le.PutUint32(info[0:], 2)     // rec_type = main
+	le.PutUint32(info[4:], 40026) // ItemId
+	le.PutUint32(info[36:], 5)    // Quantity
+	le.PutUint32(info[44:], 3)    // PosX
+	le.PutUint32(info[48:], 1)    // PosY
+
+	got, err := parseItemInfo(info)
+	if err != nil {
+		t.Fatalf("parseItemInfo: %v", err)
+	}
+	// InventoryItem has slices, so no direct ==; compare the fields
+	// parseItemInfo fills one by one.
+	if got.ItemID != 40026 || got.Qty != 5 || got.Container != "main" || got.PosX != 3 || got.PosY != 1 {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestParseItemInfo_ContainerMapping(t *testing.T) {
+	// pocket id: 2=main, pet special cases 20/86/100/101, small=worn equip
+	// slot, rest=bag.
+	cases := map[uint32]string{2: "main", 20: "pet_equip", 86: "pet_bag", 100: "pet_subbag", 101: "pet_subbag",
+		5: "equip", 6: "equip", 13: "equip", 23: "quest", 61: "bag", 999: "bag"}
+	for rec, want := range cases {
+		info := make([]byte, 80)
+		le.PutUint32(info[0:], rec)
+		got, err := parseItemInfo(info)
+		if err != nil {
+			t.Fatalf("rec=%d: %v", rec, err)
+		}
+		if got.Container != want {
+			t.Fatalf("rec=%d container=%q want %q", rec, got.Container, want)
+		}
+	}
+}
+
+func TestParseItemInfo_TooShort(t *testing.T) {
+	if _, err := parseItemInfo(make([]byte, 50)); err == nil {
+		t.Fatal("expected error for short Item.Info")
+	}
+}

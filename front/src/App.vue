@@ -1,7 +1,9 @@
 <template>
+  <license-gate v-if="!licenseActivated" @activated="onActivated" />
+  <template v-else>
     <v-sheet width="100vw" class="d-flex flex-wrap pl-1 pr-1">
         <v-sheet width="100svw" class="d-flex">
-            <span style="text-wrap-mode: nowrap;">dilmatulgi <span style="opacity:0.5; font-size:0.85em;">v{{ appVersion }}</span><template v-if="isStandalone">
+            <span style="text-wrap-mode: nowrap;">mogugi <span style="opacity:0.5; font-size:0.85em;">v{{ appVersion }}</span><span v-if="licenseUser" style="opacity:0.6; font-size:0.85em;"> · {{ licenseUser }}</span><template v-if="isStandalone">
                 <v-icon icon="mdi-check" color="success" />standalone
             </template><template v-else>, api
                 <span v-if="socketConnected"><v-icon icon="mdi-check" color="success" />connected</span>
@@ -59,6 +61,8 @@
         <v-tab value="applyDamageByEntity">Apply Damage (By Entity)</v-tab>
         <v-tab value="applyDamageBySkill">Apply Damage (By Skill)</v-tab>
         <v-tab value="entityList">Characters</v-tab>
+        <v-tab value="itemIndex">物品索引</v-tab>
+        <v-tab value="about">About</v-tab>
     </v-tabs>
 
     <v-tabs-window v-model="tab">
@@ -76,6 +80,28 @@
 
         <v-tabs-window-item value="entityList">
             <entity-list />
+        </v-tabs-window-item>
+
+        <v-tabs-window-item value="itemIndex">
+            <item-index />
+        </v-tabs-window-item>
+
+        <v-tabs-window-item value="about">
+            <v-sheet class="pa-6" style="max-width: 640px;">
+                <div class="text-h5 mb-4">mogugi <span style="opacity:0.5; font-size:0.7em;">v{{ appVersion }}</span></div>
+
+                <div class="mb-4">
+                    <div class="text-subtitle-2 mb-1" style="opacity:0.6;">中文</div>
+                    <p>本專案 fork 自 <strong>prilus/dilmatulgi</strong>，並在其基礎上進行二次開發。</p>
+                    <p style="opacity:0.7; font-size:0.9em;">在此感謝原作者 prilus。</p>
+                </div>
+
+                <div>
+                    <div class="text-subtitle-2 mb-1" style="opacity:0.6;">English</div>
+                    <p>This project is forked from <strong>prilus/dilmatulgi</strong> and further developed on top of it.</p>
+                    <p style="opacity:0.7; font-size:0.9em;">Thanks to the original author, prilus.</p>
+                </div>
+            </v-sheet>
         </v-tabs-window-item>
     </v-tabs-window>
 
@@ -107,6 +133,7 @@
     <v-snackbar v-model="resetSnackbar" :timeout="4000" color="info" location="bottom right">
         <v-icon icon="mdi-swap-horizontal" class="mr-2" />{{ resetSnackbarText }}
     </v-snackbar>
+  </template>
 </template>
 
 <script lang="ts">
@@ -121,8 +148,10 @@ import TakeDamageComponent from '@/components/takeDamage.vue';
 import ApplyDamageByEntityComponent from '@/components/applyDamageByEntity.vue';
 import ApplyDamageBySkillComponent from '@/components/applyDamageBySkill.vue';
 import EntityListComponent from "./components/entityList.vue";
+import ItemIndexComponent from "./components/itemIndex.vue";
 import ConfigDialogComponent from "./components/configDialog.vue";
 import FloatingWindowComponent from "./components/subComponents/floatingWindow.vue";
+import LicenseGateComponent from "./components/licenseGate.vue";
 
 export default defineComponent({
     name: "App",
@@ -131,8 +160,10 @@ export default defineComponent({
         ApplyDamageByEntity: ApplyDamageByEntityComponent,
         ApplyDamageBySkill: ApplyDamageBySkillComponent,
         EntityList: EntityListComponent,
+        ItemIndex: ItemIndexComponent,
         ConfigDialog: ConfigDialogComponent,
         FloatingWindow: FloatingWindowComponent,
+        LicenseGate: LicenseGateComponent,
     },
     setup() {
         const isLoading = inject('isLoading');
@@ -144,6 +175,11 @@ export default defineComponent({
         const skillNameMap = inject('skillNameMap');
         const condNameMap = inject('condNameMap');
         const itemNameMap = inject('itemNameMap');
+        const enchantNameMap = inject('enchantNameMap');
+        const enchantInfoMap = inject('enchantInfoMap');
+        const metalwareMap = inject('metalwareMap');
+        const manualFormMap = inject('manualFormMap');
+        const itemUpgradeMap = inject('itemUpgradeMap');
         const appEvent = inject('appEvent');
         const actorManager = inject('actorManager');
         const dcManager = inject('dcManager');
@@ -160,6 +196,22 @@ export default defineComponent({
         const resetSnackbarText = ref('');
 
         const isStandalone = __IS_STANDALONE__;
+        // Show the activation code screen when not yet activated; standalone builds have no backend and need no verification.
+        const licenseActivated = ref(isStandalone);
+        const licenseUser = ref('');
+        const fetchLicenseStatus = async () => {
+            try {
+                const r = await fetch('/api/license/status');
+                const d = await r.json();
+                licenseActivated.value = !!d.activated;
+                licenseUser.value = d.displayName || '';
+            } catch { /* keep locked if the backend is unreachable */ }
+        };
+        const onActivated = () => { licenseActivated.value = true; fetchLicenseStatus(); };
+        onMounted(() => {
+            if (licenseActivated.value) return;
+            fetchLicenseStatus();
+        });
         const appVersion = __APP_VERSION__;
 
         const socket = new SocketClient(`/ws`);
@@ -366,6 +418,56 @@ export default defineComponent({
                     itemNameMap.value[v.Id] = `${db.value.getCurLangString(v.Name)} ${v.Id}`;
                 }
             }
+            try {
+                // Enchant names/details (plain, no id suffix — used verbatim in
+                // the item index + tooltip). Tables may be absent/empty in dbs
+                // built from an older upstream sqlite → ids stay as fallback.
+                const list = await db.value.getOptionSets();
+
+                for (const v of list) {
+                    enchantNameMap.value[v.Id] = v.Name;
+                    enchantInfoMap.value[v.Id] = { name: v.Name, level: v.Level, desc: v.Description };
+                }
+            } catch (e) {
+                console.warn('optionset list unavailable (old bundled db?)', e);
+            }
+            try {
+                // 細緻工匠能力表（tooltip 用）。
+                const list = await db.value.getMetalwareAbilities();
+
+                for (const v of list) {
+                    metalwareMap.value[v.Id] = {
+                        name: v.Name, init: v.InitialValue ?? 0,
+                        per: v.ValuePerLevel ?? 0, max: v.BaseMaxLevel ?? 0,
+                        standard: v.Standard ?? 1, isFloat: v.IsFloat === 1,
+                        subDesc: v.SubDesc ?? '增加',
+                    };
+                }
+            } catch (e) {
+                console.warn('metalware ability list unavailable (old bundled db?)', e);
+            }
+            try {
+                // 衣服樣本/設計圖名稱表（FORMID → 完整名）。
+                const list = await db.value.getManualForms();
+
+                for (const v of list) {
+                    manualFormMap.value[v.Id] = {
+                        name: v.Name, productItemId: v.ProductItemId, level: v.Level,
+                    };
+                }
+            } catch (e) {
+                console.warn('manual form list unavailable (old bundled db?)', e);
+            }
+            try {
+                // 改造名稱表（UPR upgrade_id → 名稱）。
+                const list = await db.value.getItemUpgrades();
+
+                for (const v of list) {
+                    itemUpgradeMap.value[v.Id] = { name: v.Name, desc: v.Description };
+                }
+            } catch (e) {
+                console.warn('item upgrade list unavailable (old bundled db?)', e);
+            }
 
             if (!isStandalone) {
                 socket.connect();
@@ -376,6 +478,9 @@ export default defineComponent({
             isLoading,
             region,
             isStandalone,
+            licenseActivated,
+            licenseUser,
+            onActivated,
 
             socketConnected,
             msgBoxOpen,

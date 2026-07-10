@@ -1,7 +1,7 @@
 # Dev build script — fast iterate-and-test loop.
 #
-# Builds the frontend, copies it into cmd/dilmeterapi/static/ for go:embed,
-# and builds the backend into bin/dilmeterapi.exe.
+# Builds the frontend, copies it into cmd/mogugi/static/ for go:embed,
+# and builds the backend into bin/mogugi.exe.
 #
 # Does NOT touch version files or produce dist/ artifacts; for that, use
 # release.ps1.
@@ -47,7 +47,7 @@ if (-not $BackendOnly) {
     Pop-Location
 
     # Sync to go:embed dir.
-    $staticDir = "cmd/dilmeterapi/static"
+    $staticDir = "cmd/mogugi/static"
     if (Test-Path $staticDir) {
         Get-ChildItem -Path $staticDir -Exclude ".keep" | Remove-Item -Recurse -Force
     } else {
@@ -66,10 +66,10 @@ if ($Test -and -not $FrontendOnly) {
 
 # ── Backend ─────────────────────────────────────────────────────────────────
 if (-not $FrontendOnly) {
-    Write-Host "`n[backend] go build ./cmd/dilmeterapi..." -ForegroundColor Yellow
+    Write-Host "`n[backend] go build ./cmd/mogugi..." -ForegroundColor Yellow
     if (-not (Test-Path "bin")) { New-Item -ItemType Directory -Path "bin" | Out-Null }
-    $apiBin = "bin/dilmeterapi.exe"
-    go build -o $apiBin ./cmd/dilmeterapi
+    $apiBin = "bin/mogugi.exe"
+    go build -o $apiBin ./cmd/mogugi
     if ($LASTEXITCODE -ne 0) { Write-Host "backend build failed" -ForegroundColor Red; exit 1 }
     $info = Get-Item $apiBin
     Write-Host "  $apiBin ($([math]::Round($info.Length / 1MB, 2)) MB)" -ForegroundColor Green

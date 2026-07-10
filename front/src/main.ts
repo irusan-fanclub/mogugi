@@ -2,12 +2,16 @@ import { createApp } from "vue";
 import App from "@/App.vue";
 import * as store from '@/store';
 
-// mdi
 import '@mdi/font/css/materialdesignicons.css';
 
-// vuetify
 import 'vuetify/styles';
 import { createVuetify } from 'vuetify';
+
+import Highcharts from 'highcharts';
+Highcharts.setOptions({
+    accessibility: { enabled: false },
+    lang: { locale: 'en' },
+});
 
 
 const vuetify = createVuetify({

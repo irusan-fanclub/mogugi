@@ -7,18 +7,16 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/gopacket/gopacket/pcap"
-	"github.com/irusan-fanclub/mabidilmeter/lib/constants"
 	"github.com/irusan-fanclub/mabidilmeter/lib/event"
 	"github.com/irusan-fanclub/mabidilmeter/lib/license"
 	"github.com/irusan-fanclub/mabidilmeter/lib/packet"
@@ -35,20 +33,20 @@ const (
 //go:embed static
 var staticFiles embed.FS
 
-var logger = util.NewLogger("dilmeterapi")
+// Version is the build version. Override at link time via:
+//
+//	go build -ldflags "-X main.Version=x.y.z"
+var Version = "0.3.0"
+
+var logger = util.NewLogger("mogugi")
 var packetLogFilename = ""
 
 func main() {
-	logFilePath := filepath.Join(_logDir, fmt.Sprintf("dilmeter_%v.log", constants.SERVER_START_AT))
+	logFilePath := filepath.Join(_logDir, fmt.Sprintf("dilmeter_%v.log", util.StartUnix))
 	if err := util.LogInit(logFilePath); err != nil {
 		logger.Println("LogInit failed:", err)
 	}
 	logger.Printf("log file: %s", logFilePath)
-
-	if err := license.Verify(); err != nil {
-		logger.Println("license check failed:", err)
-		os.Exit(1)
-	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -58,7 +56,7 @@ func main() {
 		mode = os.Args[1]
 	}
 
-	logger.Printf("* dilmatulgi v%s %s", constants.Version, mode)
+	logger.Printf("* mogugi v%s %s (fork from dilmatulgi)", Version, mode)
 
 	switch mode {
 	case "list":
@@ -82,13 +80,30 @@ func main() {
 	<-ctx.Done()
 }
 
-// runLive: HTTP/WS server up immediately, watchdog discovers Client.exe.
-func runLive(ctx context.Context) {
-	logger.Println("live mode: waiting for Client.exe")
+// onLicenseActivated starts capture the moment the license becomes valid
+// (set by runLive, called by the activate handler). Guarded so scanning
+// starts exactly once.
+var onLicenseActivated func()
 
+// runLive: HTTP/WS server up immediately. TCP scanning (the watchdog) is
+// held back until the license is active — either already, or via the
+// activate endpoint — so we don't touch the network before activation.
+func runLive(ctx context.Context) {
 	pub := newEventPublisher(ctx, nil)
 	go runPacketWriter(ctx, pub)
-	go startConnectionWatchdog(ctx, pub)
+
+	var once sync.Once
+	onLicenseActivated = func() {
+		once.Do(func() {
+			logger.Println("live mode: license active, scanning for Client.exe")
+			go startConnectionWatchdog(ctx, pub)
+		})
+	}
+	if license.Status() {
+		onLicenseActivated()
+	} else {
+		logger.Println("live mode: waiting for license activation")
+	}
 	serve(pub)
 }
 
@@ -102,7 +117,6 @@ func runFile(ctx context.Context, fileName string, realtime bool) {
 		Realtime: realtime,
 	})
 	if err != nil {
-		messagebox(fmt.Sprintf("NewGameServerPacketReader failed: %v", err))
 		logger.Fatalln("NewGameServerPacketReader failed:", err)
 	}
 
@@ -122,7 +136,6 @@ func serve(pub *eventPublisher) {
 func listNics() {
 	nics, err := pcap.FindAllDevs()
 	if err != nil {
-		messagebox(fmt.Sprintf("FindAllDevs failed: %v", err))
 		logger.Fatalln("FindAllDevs failed:", err)
 	}
 
@@ -135,14 +148,15 @@ func listNics() {
 		fmt.Fprintln(&sb, "* nic", i, "name:", nic.Name, "ip:", ipStr)
 	}
 
-	s := sb.String()
-	messagebox(s)
-	logger.Println(s)
+	logger.Println(sb.String())
 }
 
 func runPacketWriter(ctx context.Context, pub *eventPublisher) {
+	// Deliberately never close ch: the publisher (flushNow) may send to it
+	// from another goroutine, and closing while it's still registered would
+	// panic. The client is dropped when its ctx is cancelled or the channel
+	// backs up; an abandoned channel is just GC'd.
 	ch := make(chan []event.IEvent, 10000)
-	defer close(ch)
 
 	pub.addClient(ctx, ch)
 	if err := startPacketWriter(ctx, ch); err != nil {
@@ -157,8 +171,10 @@ func websocketHandler(pub *eventPublisher) func(*websocket.Conn) {
 		defer wsCtxCancel()
 
 		// Generous buffer: WS send drains slower than the publisher emits under load.
+		// Never closed: flushNow sends from another goroutine, and close()
+		// racing that send would panic. wsCtxCancel unregisters the client
+		// (flushNow drops it on ctx.Done); the channel is then GC'd.
 		ch := make(chan []event.IEvent, 10000)
-		defer close(ch)
 
 		go pub.addClient(wsCtx, ch)
 		go drainIncoming(ws, wsCtx, wsCtxCancel)
@@ -196,39 +212,11 @@ func drainIncoming(ws *websocket.Conn, wsCtx context.Context, cancel context.Can
 }
 
 func startWebsocketServer(newClientCb func(*websocket.Conn)) {
-	remote, err := url.Parse("https://mabires.pril.cc")
-	if err != nil {
-		panic(err)
-	}
-
-	handler := func(p *httputil.ReverseProxy) func(http.ResponseWriter, *http.Request) {
-		return func(w http.ResponseWriter, r *http.Request) {
-			r.URL.Path = r.URL.Path[4:] // strip /res/
-			r.Host = remote.Host
-			p.ServeHTTP(w, r)
-		}
-	}
-
-	proxy := httputil.NewSingleHostReverseProxy(remote)
-	proxy.ModifyResponse = func(r *http.Response) error {
-		r.Header.Set("Access-Control-Allow-Origin", "*")
-		return nil
-	}
-
-	// /res/* — serve from ./resources if present, else reverse-proxy to remote.
-	resourceHandler := func(w http.ResponseWriter, r *http.Request) {
-		localPath := "./resources" + r.URL.Path[4:]
-		if _, err := os.Stat(localPath); err == nil {
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-			http.ServeFile(w, r, localPath)
-			return
-		}
-		handler(proxy)(w, r)
-	}
-
-	http.Handle("/ws", websocket.Handler(newClientCb))
-	http.HandleFunc("/api/packet_log", httpHandlerPacketLog)
-	http.HandleFunc("/res/", resourceHandler)
+	http.Handle("/ws", requireLicense(websocket.Handler(newClientCb)))
+	http.Handle("/api/packet_log", requireLicense(http.HandlerFunc(httpHandlerPacketLog)))
+	http.Handle("/api/item-index", requireLicense(http.HandlerFunc(httpHandlerItemIndex)))
+	http.HandleFunc("/api/license/status", httpHandlerLicenseStatus)
+	http.HandleFunc("/api/license/activate", httpHandlerLicenseActivate)
 
 	var staticFS = fs.FS(staticFiles)
 	htmlContent, err := fs.Sub(staticFS, "static")
@@ -243,27 +231,31 @@ func startWebsocketServer(newClientCb func(*websocket.Conn)) {
 	go func() {
 		err := http.ListenAndServe(fmt.Sprintf("127.0.0.1:%d", port), nil)
 		if err != nil {
-			messagebox(fmt.Sprintf("ListenAndServe failed: %v", err))
-			logger.Fatalln(err)
+			logger.Fatalf("ListenAndServe failed: %v", err)
 		}
 	}()
 
 	<-time.After(1 * time.Second)
 }
 
-// startConnectionWatchdog polls Client.exe TCP connections every 3s and
-// swaps the reader when the current triple disappears (channel switch).
-// A 60s packet-idle fallback catches cases the TCP poll might miss.
+// startConnectionWatchdog polls Client.exe TCP connections every 500ms and
+// keeps the live capture filter equal to the client's own local ports (see
+// pcaputil.FilterForConns). A new connection (mission instance, channel
+// switch) is captured as soon as the next poll widens the filter; a closed
+// one is dropped. Only the initial install and a 60s packet-idle fallback
+// rebuild the reader.
 func startConnectionWatchdog(ctx context.Context, pub *eventPublisher) {
-	pollTicker := time.NewTicker(3 * time.Second)
+	pollTicker := time.NewTicker(500 * time.Millisecond)
 	defer pollTicker.Stop()
 
 	idleTicker := time.NewTicker(10 * time.Second)
 	defer idleTicker.Stop()
 
 	var switching int32
+	installed := false
+	lastFilter := ""
 
-	swap := func(reason string) {
+	rebuild := func(reason string) {
 		if !atomic.CompareAndSwapInt32(&switching, 0, 1) {
 			return
 		}
@@ -274,17 +266,21 @@ func startConnectionWatchdog(ctx context.Context, pub *eventPublisher) {
 			logger.Println("watchdog: discover failed:", err)
 			return
 		}
+		conns, _ := pcaputil.PollClientConnections()
+		lastFilter = pcaputil.FilterForConns(conns)
 
 		newR, err := packet.NewGameServerPacketReader(&packet.GameServerPacketReaderOpt{
-			Ctx:     ctx,
-			NicName: nicName,
+			Ctx:          ctx,
+			NicName:      nicName,
+			Filter:       lastFilter,
+			VetLocalPort: pcaputil.IsClientLocalPort,
 		})
 		if err != nil {
 			logger.Println("watchdog: open new reader failed:", err)
 			return
 		}
-
 		pub.SwitchReader(newR, reason)
+		installed = true
 	}
 
 	for {
@@ -301,29 +297,22 @@ func startConnectionWatchdog(ctx context.Context, pub *eventPublisher) {
 			if len(conns) == 0 {
 				continue
 			}
-			alive := false
-			for _, c := range conns {
-				if c.ServerIP == constants.ServerIP &&
-					c.ServerPort == constants.ServerSrcPort &&
-					c.LocalPort == constants.ServerDstPort {
-					alive = true
-					break
-				}
-			}
-			if alive {
+			if !installed {
+				rebuild("initial")
 				continue
 			}
-			reason := "channel_switch"
-			if constants.ServerIP == "" {
-				// Empty triple = first-ever discovery, not a real switch.
-				reason = "initial"
-			} else {
-				logger.Printf("watchdog: current connection gone, %d candidate(s); switching", len(conns))
+			// Keep the filter equal to the current game server nets.
+			if want := pcaputil.FilterForConns(conns); want != "" && want != lastFilter {
+				if err := pub.SetReaderFilter(want); err != nil {
+					logger.Println("watchdog: set filter failed:", err)
+					continue
+				}
+				logger.Printf("watchdog: capture filter -> %s", want)
+				lastFilter = want
 			}
-			go swap(reason)
 
 		case <-idleTicker.C:
-			if time.Since(pub.LastPacketAt()) <= 60*time.Second {
+			if !installed || time.Since(pub.LastPacketAt()) <= 60*time.Second {
 				continue
 			}
 			conns, err := pcaputil.PollClientConnections()
@@ -331,7 +320,7 @@ func startConnectionWatchdog(ctx context.Context, pub *eventPublisher) {
 				continue
 			}
 			logger.Println("watchdog: idle 60s, fallback re-discover")
-			go swap("idle_fallback")
+			rebuild("idle_fallback")
 		}
 	}
 }
@@ -342,7 +331,7 @@ func startPacketWriter(ctx context.Context, ch <-chan []event.IEvent) error {
 		return err
 	}
 
-	packetLogBaseName := fmt.Sprintf("packet_log_%v.ndjson", constants.SERVER_START_AT)
+	packetLogBaseName := fmt.Sprintf("packet_log_%v.ndjson", util.StartUnix)
 	packetLogFilename = filepath.Join(_logDir, packetLogBaseName)
 
 	fd, err := os.OpenFile(packetLogFilename, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)

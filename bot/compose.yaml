@@ -1,0 +1,23 @@
+# mogugi license bot — Docker Compose.
+#
+#   docker compose up -d            # build + start in background
+#   docker compose logs -f          # follow logs
+#   docker compose down             # stop (named volume / DB is kept)
+#
+# Requires a .env file next to this file (see DEPLOY.md). The bot only makes
+# outbound connections (Discord gateway) — no ports are published.
+services:
+  bot:
+    build: .
+    container_name: mogugi-bot
+    restart: always
+    env_file: .env
+    # Pin the DB onto the named volume regardless of MOGUGI_DB in .env
+    # (environment overrides env_file), so data always persists.
+    environment:
+      MOGUGI_DB: /data/mogugi_keys.db
+    volumes:
+      - mogugi-db:/data
+
+volumes:
+  mogugi-db:

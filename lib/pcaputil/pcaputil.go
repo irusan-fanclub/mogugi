@@ -15,7 +15,6 @@ import (
 	"unsafe"
 
 	"github.com/gopacket/gopacket/pcap"
-	"github.com/irusan-fanclub/mabidilmeter/lib/constants"
 	"github.com/irusan-fanclub/mabidilmeter/lib/packet"
 	"github.com/irusan-fanclub/mabidilmeter/lib/util"
 	"golang.org/x/sys/windows"
@@ -63,8 +62,8 @@ type ClientConnection struct {
 // watchdog poll but never change for the process lifetime in practice
 // (NICs aren't hot-swapped while the meter is running).
 var (
-	nicCacheOnce        sync.Once
-	cachedInterfaceMap  map[string]string
+	nicCacheOnce          sync.Once
+	cachedInterfaceMap    map[string]string
 	cachedInterfaceNicMap map[string]string
 )
 
@@ -94,7 +93,7 @@ func ensureNicCache() {
 
 // displayWidth returns the column width of s in a monospaced font,
 // counting East Asian Wide / Fullwidth runes as 2 columns. Used to
-// align mixed-script names (English NIC names alongside 中文 / 한국어
+// align mixed-script names (English NIC names alongside CJK / Hangul
 // labels) in log output.
 func displayWidth(s string) int {
 	w := 0
@@ -111,18 +110,18 @@ func displayWidth(s string) int {
 func isWideRune(r rune) bool {
 	switch {
 	case r >= 0x1100 && r <= 0x115F, // Hangul Jamo
-		r >= 0x2E80 && r <= 0x303E,    // CJK Radicals / Symbols
-		r >= 0x3041 && r <= 0x33FF,    // Hiragana / Katakana / CJK symbols
-		r >= 0x3400 && r <= 0x4DBF,    // CJK Extension A
-		r >= 0x4E00 && r <= 0x9FFF,    // CJK Unified Ideographs
-		r >= 0xA000 && r <= 0xA4CF,    // Yi
-		r >= 0xAC00 && r <= 0xD7A3,    // Hangul Syllables
-		r >= 0xF900 && r <= 0xFAFF,    // CJK Compatibility Ideographs
-		r >= 0xFE30 && r <= 0xFE4F,    // CJK Compatibility Forms
-		r >= 0xFF00 && r <= 0xFF60,    // Fullwidth Forms
-		r >= 0xFFE0 && r <= 0xFFE6,    // Fullwidth signs
-		r >= 0x20000 && r <= 0x2FFFD,  // CJK Extensions B-F
-		r >= 0x30000 && r <= 0x3FFFD:  // CJK Extension G
+		r >= 0x2E80 && r <= 0x303E,   // CJK Radicals / Symbols
+		r >= 0x3041 && r <= 0x33FF,   // Hiragana / Katakana / CJK symbols
+		r >= 0x3400 && r <= 0x4DBF,   // CJK Extension A
+		r >= 0x4E00 && r <= 0x9FFF,   // CJK Unified Ideographs
+		r >= 0xA000 && r <= 0xA4CF,   // Yi
+		r >= 0xAC00 && r <= 0xD7A3,   // Hangul Syllables
+		r >= 0xF900 && r <= 0xFAFF,   // CJK Compatibility Ideographs
+		r >= 0xFE30 && r <= 0xFE4F,   // CJK Compatibility Forms
+		r >= 0xFF00 && r <= 0xFF60,   // Fullwidth Forms
+		r >= 0xFFE0 && r <= 0xFFE6,   // Fullwidth signs
+		r >= 0x20000 && r <= 0x2FFFD, // CJK Extensions B-F
+		r >= 0x30000 && r <= 0x3FFFD: // CJK Extension G
 		return true
 	}
 	return false
@@ -193,15 +192,88 @@ func PollClientConnections() ([]ClientConnection, error) {
 	return conns, nil
 }
 
-// ApplyConnectionFilter updates the global BPF filter to match the
-// given connection. Subsequent NewGameServerPacketReader calls will pick
-// up the new filter. Logging is left to the caller (FindNic only logs
-// the final successful triple).
+// Cached set of Client.exe local TCP ports, used to reject other
+// processes' streams (e.g. a VM sharing the host IP). Refreshed lazily.
+var (
+	clientPortMu  sync.Mutex
+	clientPorts   map[string]bool
+	clientPortsAt time.Time
+)
+
+// IsClientLocalPort reports whether the local TCP port belongs to a
+// Client.exe connection. Re-polls once on a miss/stale so a new
+// dungeon/channel connection is vetted without a capture gap.
+func IsClientLocalPort(port string) bool {
+	clientPortMu.Lock()
+	defer clientPortMu.Unlock()
+
+	const maxAge = 2 * time.Second
+	if clientPorts != nil && time.Since(clientPortsAt) < maxAge && clientPorts[port] {
+		return true
+	}
+	// Miss or stale: refresh once and re-check.
+	conns, err := PollClientConnections()
+	if err != nil {
+		// Fail open: better to record extra traffic than lose game data.
+		return true
+	}
+	clientPorts = make(map[string]bool, len(conns))
+	for _, c := range conns {
+		clientPorts[c.LocalPort] = true
+	}
+	clientPortsAt = time.Now()
+	return clientPorts[port]
+}
+
+// current is the Client.exe connection the capture follows. Read and
+// written only by the watchdog goroutine (including the initial FindNic)
+// -- no lock; serialization is the caller's contract (see
+// startConnectionWatchdog).
+var current ClientConnection
+
+// ApplyConnectionFilter records the connection the capture should follow.
+// Readers obtain the BPF filter via CurrentFilter().
 func ApplyConnectionFilter(c ClientConnection) {
-	constants.ServerIP = c.ServerIP
-	constants.ServerSrcPort = c.ServerPort
-	constants.ServerDstPort = c.LocalPort
-	constants.RebuildFilter()
+	current = c
+}
+
+// CurrentFilter returns the probe filter for the tracked connection: that
+// one server host, any port. Used by FindNic to test a candidate NIC.
+func CurrentFilter() string {
+	return fmt.Sprintf("tcp and host %s", current.ServerIP)
+}
+
+// FilterForConns builds the live capture filter from the given Client.exe
+// connections: the /24 of each game server, receive direction (`src net`).
+// Capturing the whole /24 (not the exact socket) is what lets a channel
+// switch or mission-instance connection be captured the instant it opens —
+// its new client local port isn't known until the next netstat poll, too
+// late for the server's 0x5209 snapshot. Web ports (443/80) are skipped so
+// CDN downloads aren't captured. Non-client streams on the /24 (a VM, other
+// processes) are dropped before parse/record by the reader's local-port
+// vet. Empty conns -> "" (caller keeps the last).
+func FilterForConns(conns []ClientConnection) string {
+	seen := map[string]bool{}
+	var nets []string
+	for _, c := range conns {
+		if c.ServerIP == "" || c.ServerPort == "443" || c.ServerPort == "80" {
+			continue
+		}
+		n := util.ServerNet24(c.ServerIP)
+		if seen[n] {
+			continue
+		}
+		seen[n] = true
+		nets = append(nets, n)
+	}
+	if len(nets) == 0 {
+		return ""
+	}
+	sort.Strings(nets)
+	for i, n := range nets {
+		nets[i] = "src net " + n
+	}
+	return "tcp and (" + strings.Join(nets, " or ") + ")"
 }
 
 func FindNic() (string, error) {
@@ -215,13 +287,11 @@ func FindNic() (string, error) {
 		return "", errors.New("no Client.exe network connections found")
 	}
 
-	// Snapshot the current filter so we can restore it if every
-	// candidate fails — otherwise constants.* would be left pointing at
-	// the last (wrong) candidate, and the watchdog's "alive" check would
-	// match it on the next poll.
-	savedIP := constants.ServerIP
-	savedSrcPort := constants.ServerSrcPort
-	savedDstPort := constants.ServerDstPort
+	// Snapshot the tracked connection so we can restore it if every
+	// candidate fails -- otherwise it would be left pointing at the last
+	// (wrong) candidate, and the watchdog's "alive" check would match it
+	// on the next poll.
+	saved := current
 
 	// Test high server-side ports first. Login / patch / lobby servers
 	// tend to use lower well-known ports (e.g. 11020), while game shards
@@ -250,31 +320,30 @@ func FindNic() (string, error) {
 	for _, c := range conns {
 		ApplyConnectionFilter(c)
 
-		if testNicForPackets(c.NicName) {
+		if testNicForPackets(c.NicName, CurrentFilter()) {
 			logger.Printf("Picked NIC %s (%s) -> %s:%s",
 				c.NicName, c.FriendlyName, c.ServerIP, c.ServerPort)
 			return c.NicName, nil
 		}
 	}
 
-	constants.ServerIP = savedIP
-	constants.ServerSrcPort = savedSrcPort
-	constants.ServerDstPort = savedDstPort
-	constants.RebuildFilter()
+	current = saved
 
 	return "", errors.New("no game packets found on any Client.exe connection")
 }
 
-func testNicForPackets(nicName string) bool {
+func testNicForPackets(nicName string, filter string) bool {
 	packetWaitTime := time.Second * 3
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	r, err := packet.NewGameServerPacketReader(&packet.GameServerPacketReaderOpt{
-		Ctx:     ctx,
-		NicName: nicName,
-		Quiet:   true,
+		Ctx:          ctx,
+		NicName:      nicName,
+		Filter:       filter,
+		VetLocalPort: IsClientLocalPort,
+		Quiet:        true,
 	})
 
 	if err != nil {
@@ -356,54 +425,6 @@ func buildInterfaceNicMap() map[string]string {
 	}
 
 	return result
-}
-
-func findNicByPackets() (string, error) {
-	// Original implementation: try each NIC until we find game server packets
-	packetWaitTime := time.Second * 5
-
-	nics, err := pcap.FindAllDevs()
-	if err != nil {
-		logger.Println(err)
-		return "", err
-	}
-
-	found := ""
-	for _, nic := range nics {
-		ctx, cancel := context.WithCancel(context.Background())
-
-		r, err := packet.NewGameServerPacketReader(&packet.GameServerPacketReaderOpt{
-			Ctx:     ctx,
-			NicName: nic.Name,
-		})
-
-		if err != nil {
-			logger.Println("findNic failed", err, nic.Name)
-			cancel()
-			continue
-		}
-
-		select {
-		case <-time.After(packetWaitTime):
-			logger.Println("findNic timeout", nic.Name)
-
-		case <-r.PacketCh():
-			found = nic.Name
-			logger.Println("findNic success", nic.Name)
-		}
-
-		cancel()
-		r.Close()
-	}
-
-	if found == "" {
-		err := errors.New("findNic failed: not found")
-		logger.Println(err)
-		return "", err
-	}
-
-	logger.Println("findNic success:", found)
-	return found, nil
 }
 
 func getTCPRows() ([]mibTCPRowOwnerPID, error) {

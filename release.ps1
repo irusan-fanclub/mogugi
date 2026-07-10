@@ -1,10 +1,10 @@
 # Release script for Mabidilmeter
 #
 # Builds frontend, backend (with version embedded via -ldflags),
-# and packages the result into dist/dilmeterapi-vX.Y.Z.zip.
+# and packages the result into dist/mogugi_<version>.zip.
 #
 # Usage:
-#   .\release.ps1                  # uses constants.go default version
+#   .\release.ps1                  # uses cmd/mogugi/main.go default version
 #   .\release.ps1 -Version 0.2.1   # build & package as 0.2.1
 
 param(
@@ -16,8 +16,8 @@ $ErrorActionPreference = "Stop"
 
 # ── Resolve version ───────────────────────────────────────────────────────────
 if ([string]::IsNullOrWhiteSpace($Version)) {
-    # Read default from lib/constants/const.go
-    $constsPath = "lib/constants/const.go"
+    # Read default from cmd/mogugi/main.go
+    $constsPath = "cmd/mogugi/main.go"
     $line = Select-String -Path $constsPath -Pattern '^var Version = "(.+)"' | Select-Object -First 1
     if (-not $line) {
         Write-Host "Could not find Version in $constsPath" -ForegroundColor Red
@@ -36,12 +36,12 @@ Write-Host "=== Mabidilmeter Release v$Version ===" -ForegroundColor Cyan
 
 . (Join-Path $PSScriptRoot 'keys-lib.ps1')
 try {
-    $lic = Get-LicenseKeyLDFlag
+    $lic = Get-LicenseLDFlag
 } catch {
     Write-Host $_.Exception.Message -ForegroundColor Red
     exit 1
 }
-Write-Host "Embedding $($lic.Count) license key hash(es)" -ForegroundColor Gray
+Write-Host "Embedding license public key + mac key" -ForegroundColor Gray
 
 # ── Frontend build ────────────────────────────────────────────────────────────
 Write-Host "`n[1/4] Building Frontend..." -ForegroundColor Yellow
@@ -68,7 +68,7 @@ if ($LASTEXITCODE -ne 0) { $ErrorActionPreference = $prevPref; Pop-Location; Wri
 $ErrorActionPreference = $prevPref
 
 # Copy to embed dir consumed by go:embed.
-$staticPath = "../cmd/dilmeterapi/static"
+$staticPath = "../cmd/mogugi/static"
 if (Test-Path $staticPath) {
     Get-ChildItem -Path $staticPath -Exclude ".keep" | Remove-Item -Recurse -Force
 } else {
@@ -96,11 +96,11 @@ Write-Host "`n[3/4] Building Backend (release flags)..." -ForegroundColor Yellow
 $binDir = "bin"
 if (-not (Test-Path $binDir)) { New-Item -ItemType Directory -Path $binDir | Out-Null }
 
-$ldflags = "-s -w -X github.com/irusan-fanclub/mabidilmeter/lib/constants.Version=$Version $($lic.LDFlag)"
-$apiBin  = "$binDir/dilmeterapi.exe"
+$ldflags = "-s -w -X main.Version=$Version $($lic.LDFlag)"
+$apiBin  = "$binDir/mogugi.exe"
 
-go build -ldflags $ldflags -trimpath -o $apiBin ./cmd/dilmeterapi
-if ($LASTEXITCODE -ne 0) { Write-Host "dilmeterapi build failed" -ForegroundColor Red; exit 1 }
+go build -ldflags $ldflags -trimpath -o $apiBin ./cmd/mogugi
+if ($LASTEXITCODE -ne 0) { Write-Host "mogugi build failed" -ForegroundColor Red; exit 1 }
 
 Write-Host "Built $apiBin" -ForegroundColor Green
 
@@ -110,8 +110,8 @@ Write-Host "`n[4/4] Packaging..." -ForegroundColor Yellow
 $distDir = "dist"
 if (-not (Test-Path $distDir)) { New-Item -ItemType Directory -Path $distDir | Out-Null }
 
-$releaseExe = "$distDir/dilmeterapi_mogu_$Version.exe"
-$releaseZip = "$distDir/dilmeterapi_mogu_$Version.zip"
+$releaseExe = "$distDir/mogugi_$Version.exe"
+$releaseZip = "$distDir/mogugi_$Version.zip"
 if (Test-Path $releaseExe) { Remove-Item $releaseExe -Force }
 if (Test-Path $releaseZip) { Remove-Item $releaseZip -Force }
 

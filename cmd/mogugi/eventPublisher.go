@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -36,6 +37,13 @@ type eventPublisher struct {
 	pendingEvents   []event.IEvent
 	lastSentAt      time.Time
 	lastPacketAt    time.Time
+	lastRegion      uint32            // current region id (26009); 0 = unknown
+	lastRegionName  string            // resolved display name of lastRegion (for "from X" logging)
+	lastMission     string            // latest mission code (22007 enter_<code>), e.g. mrd
+	lastMissionID   uint32            // latest mission id (45004); resolves via dungeonNames
+	lastBGM         string            // currently playing BGM (43302); Boss_* means a boss fight
+	bossEntities    map[uint64]string // live boss entity id -> boss name (race-id detection)
+	dgnLog          dungeonLog        // per-run event file for whitelisted dungeons (own lock)
 }
 
 type eventClient struct {
@@ -54,6 +62,7 @@ func newEventPublisher(ctx context.Context, r *packet.GameServerPacketReader) *e
 		entityCache:     make(entityCache),
 		currentClientId: 1,
 		pendingEvents:   make([]event.IEvent, 0, _maxPendingEvents),
+		bossEntities:    make(map[uint64]string),
 		lastSentAt:      time.Now(),
 		lastPacketAt:    time.Now(),
 	}
@@ -161,6 +170,10 @@ drainLoop:
 		return
 	}
 
+	// Connection restarted; the dungeon log is void (where it cut off is
+	// self-evident in the file).
+	t.dgnLog.Close()
+
 	logger.Printf("SessionReset: reason=%s", reason)
 	t.publish(&event.EventSessionReset{
 		EventBase: event.EventBase{
@@ -170,6 +183,17 @@ drainLoop:
 		},
 		Reason: reason,
 	})
+}
+
+// SetReaderFilter updates the current reader's live capture filter.
+func (t *eventPublisher) SetReaderFilter(filter string) error {
+	t.Lock()
+	r := t.r
+	t.Unlock()
+	if r == nil {
+		return nil
+	}
+	return r.SetFilter(filter)
 }
 
 // LastPacketAt returns the timestamp of the most recently received
@@ -222,29 +246,26 @@ func (t *eventPublisher) flushNow() {
 		}
 	}
 	t.Unlock()
+
+	// Dungeon log (writes only when open; has its own lock, so never call
+	// while holding the publisher lock).
+	t.dgnLog.Write(batch)
 }
 
 func (t *eventPublisher) loop() {
-	const debug = false
 	flushTicker := time.NewTicker(_eventFlushInterval / 2)
 	defer flushTicker.Stop()
 
 	for {
 		select {
 		case <-t.ctx.Done():
+			t.dgnLog.Close()
 			return
 
 		case <-flushTicker.C:
 			t.flushNow()
 
 		case p := <-t.packetCh:
-			if debug {
-				logger.Printf("packet op %s id %x", p.Op, p.Id)
-				for i, msg := range p.Msg {
-					logger.Println("* msg", i, msg.Type(), msg.String())
-				}
-			}
-
 			t.Lock()
 			t.lastPacketAt = time.Now()
 			t.Unlock()
@@ -302,9 +323,43 @@ func (t *eventPublisher) handlePacket(p *packet.GamePacket) {
 	case packet.OpcodeStatUpdatePublic:
 		t.handleStatUpdate(p)
 
+	case packet.OpcodeMissionState:
+		t.handleMissionState(p)
+
+	case packet.OpcodeMissionStart:
+		t.handleMissionStart(p)
+
+	// BGM-based boss detection disabled (race-id detection is primary);
+	// handleBGMPlay kept for now.
+	// case packet.OpcodeBGMPlay:
+	// 	t.handleBGMPlay(p)
+
+	case packet.OpcodeSetLocation:
+		t.handleSetLocation(p)
+
 	case packet.OpcodeChangeStance, packet.OpcodeChangeStanceRes:
 		t.handleChangeStance(p)
+
+	case packet.OpcodeChannelCharacterInfoR:
+		t.handleChannelCharacterInfo(p)
 	}
+}
+
+// handleChannelCharacterInfo parses an owner-only 0x5209 snapshot and writes
+// the entity's inventory to {exedir}/items_log/{entity}.csv. This is a
+// side-effect-only path (no client event); any failure is logged and ignored
+// so metering is never disturbed.
+func (t *eventPublisher) handleChannelCharacterInfo(p *packet.GamePacket) {
+	snap, err := packet.ParseEntitySnapshot(p.Msg)
+	if err != nil {
+		itemLogger.Printf("parse 0x5209 failed: %v", err)
+		return
+	}
+	if err := writeEntitySnapshot(snap); err != nil {
+		itemLogger.Printf("write csv failed: %v", err)
+		return
+	}
+	itemLogger.Printf("update %q (%d items)", snap.Name, len(snap.Items))
 }
 
 func (t *eventPublisher) handleEntityAppear(p *packet.GamePacket) {
@@ -312,6 +367,15 @@ func (t *eventPublisher) handleEntityAppear(p *packet.GamePacket) {
 	if err != nil {
 		logger.Println("ParseEntityAppearPacket failed:", err)
 		return
+	}
+
+	// Detect boss monsters by race id (more reliable than BGM): log on
+	// appearance and track the entity id.
+	if boss, ok := bossRaces[entity.RaceId]; ok {
+		t.Lock()
+		t.bossEntities[entity.Id] = boss
+		t.Unlock()
+		logger.Printf("boss appear: %s (race=%d id=%d)", boss, entity.RaceId, entity.Id)
 	}
 
 	if len(entity.Name) <= 0 || entity.Name[0] == '_' {
@@ -381,6 +445,13 @@ func (t *eventPublisher) handleEntityDisappear(p *packet.GamePacket) {
 	}
 
 	id := p.Msg[0].Data().(uint64)
+
+	t.Lock()
+	if boss, ok := t.bossEntities[id]; ok {
+		delete(t.bossEntities, id)
+		logger.Printf("boss gone: %s (id=%d)", boss, id)
+	}
+	t.Unlock()
 
 	t.Lock()
 	t.entityCache.disappear(id, p.At)
@@ -466,9 +537,6 @@ func (t *eventPublisher) handleEntitiesDisappear(p *packet.GamePacket) {
 			msg[1].Type() != packet.MessageElemTypeLong {
 
 			logger.Println("EntitiesDisappear: invalid packet")
-			for j, m := range p.Msg {
-				logger.Println("* msg", j, m.Type(), m.String())
-			}
 			break
 		}
 
@@ -623,8 +691,10 @@ func (t *eventPublisher) handleEffectDelayed(p *packet.GamePacket) {
 	}
 
 	ttype := p.Msg[1].Data().(uint32)
-	if ttype != 317 {
-		// Not a Chain Blade Blast
+	if ttype != 318 {
+		// Not 星塵 (Stardust)-family delayed damage (Blast 58100 / Flare
+		// 58101 / combo 58009). The discriminator changed 317 -> 318 in
+		// the 2026-06 update; see packet_capture_1781767719.
 		return
 	}
 
@@ -633,9 +703,6 @@ func (t *eventPublisher) handleEffectDelayed(p *packet.GamePacket) {
 		p.Msg[5].Type() != packet.MessageElemTypeLong ||
 		p.Msg[6].Type() != packet.MessageElemTypeShort {
 		logger.Printf("EffectDelayed: invalid packet op=%s id=%x", p.Op, p.Id)
-		for i, msg := range p.Msg {
-			logger.Println("* msg", i, msg.Type(), msg.String())
-		}
 		return
 	}
 
@@ -758,6 +825,189 @@ func (t *eventPublisher) handleStatUpdate(p *packet.GamePacket) {
 	})
 }
 
+// handleSetLocation logs a map change. 26009 carries (byte, region, x, y)
+// for the owner — sent on warp (moongate etc.) and on channel-in. Verified:
+// capture 1783536131, moongate ceoisland→tirchonaill = region 35011.
+func (t *eventPublisher) handleSetLocation(p *packet.GamePacket) {
+	if len(p.Msg) < 4 ||
+		p.Msg[1].Type() != packet.MessageElemTypeInt ||
+		p.Msg[2].Type() != packet.MessageElemTypeInt ||
+		p.Msg[3].Type() != packet.MessageElemTypeInt {
+		return
+	}
+	region := p.Msg[1].Data().(uint32)
+
+	t.Lock()
+	changed := region != t.lastRegion
+	prevName := t.lastRegionName
+	t.lastRegion = region
+	missionID := t.lastMissionID
+	missionCode := t.lastMission
+	var owner string
+	if e, ok := t.entityCache[p.Id]; ok {
+		owner = e.Name
+	}
+	t.Unlock()
+	if !changed {
+		return
+	}
+
+	// Resolve the new name now and remember it: resolving the PREVIOUS
+	// region later would be wrong for dynamic instances (their name depends
+	// on lastMissionID, which the next dungeon already overwrote).
+	name := t.regionName(region)
+	t.Lock()
+	t.lastRegionName = name
+	// Left the dungeon (back to a static region): drop the stale mission so
+	// it can't leak into the next region's log or name resolution.
+	if region < 35000 {
+		t.lastMission = ""
+		t.lastMissionID = 0
+	}
+	t.Unlock()
+
+	// mission kind: only meaningful inside a dungeon (dynamic region).
+	mission := ""
+	if region >= 35000 {
+		switch {
+		case missionCode != "" && missionID != 0:
+			mission = fmt.Sprintf(" mission=%s#%d", missionCode, missionID)
+		case missionCode != "":
+			mission = fmt.Sprintf(" mission=%s", missionCode)
+		case missionID != 0:
+			mission = fmt.Sprintf(" mission=#%d", missionID)
+		}
+	}
+
+	if prevName != "" {
+		logger.Printf("map change: %s (region=%d)%s from %s", name, region, mission, prevName)
+	} else {
+		logger.Printf("map change: %s (region=%d)%s", name, region, mission)
+	}
+
+	// Whitelisted dungeon -> tee to an event file; leaving (incl. warping
+	// elsewhere) -> close it. Sub-map switches within a dungeon (dynamic->
+	// dynamic, same mission, e.g. 布里萊赫/Brileith 35011->35013) count as
+	// the same run and do not rotate the file.
+	if code, ok := dungeonCodes[missionID]; ok && region >= 35000 {
+		if t.dgnLog.IsOpen() {
+			return
+		}
+		if owner == "" {
+			owner = "unknown"
+		}
+		// Teammates already appeared before entry, so seed the file with an
+		// entityCache snapshot or damage events won't map to player names.
+		if err := t.dgnLog.Open(code, owner, p.At.Unix(), t.snapshotEvents()); err != nil {
+			logger.Println("dungeon-log open failed:", err)
+		}
+	} else {
+		t.dgnLog.Close()
+	}
+}
+
+// missionNames: dungeon mission code -> display name (derived by matching
+// minimap jpg names against MinimapInfo, e.g. minimap_2024_mrd_* -> Mullias;
+// extended over time).
+var missionNames = map[string]string{
+	"mrd": "穆利亞斯",
+}
+
+// handleMissionState records the enter_<code> mission code; the dynamic
+// region 26009 that follows uses it to name the dungeon.
+func (t *eventPublisher) handleMissionState(p *packet.GamePacket) {
+	if len(p.Msg) < 3 || p.Msg[2].Type() != packet.MessageElemTypeString {
+		return
+	}
+	s, _ := p.Msg[2].Data().(string)
+	if code, ok := strings.CutPrefix(s, "enter_"); ok && code != "" {
+		t.Lock()
+		t.lastMission = code
+		t.Unlock()
+	}
+}
+
+// handleMissionStart records the dungeon mission id (45004 arrives before
+// the dynamic region's 26009).
+func (t *eventPublisher) handleMissionStart(p *packet.GamePacket) {
+	if len(p.Msg) < 1 || p.Msg[0].Type() != packet.MessageElemTypeInt {
+		return
+	}
+	id, _ := p.Msg[0].Data().(uint32)
+	t.Lock()
+	t.lastMissionID = id
+	t.Unlock()
+}
+
+// bossBGMNames: boss-fight BGM filename -> boss name (Race.xml EnglishName
+// abbreviations: VT=Vertrag, BT=Bronntanas, LM=Midir of Leannan).
+var bossBGMNames = map[string]string{
+	"Boss_VT.mp3": "佩塔克",
+	"Boss_BT.mp3": "布倫塔納斯",
+	"Boss_LM.mp3": "雷楠的米勒",
+}
+
+// bossRaces: boss monster race id -> boss name (Race.xml, including
+// difficulty/form variants). Currently the three 布里萊赫 (Brileith) bosses;
+// other dungeons' bosses added over time.
+var bossRaces = map[uint32]string{
+	5211: "佩塔克", 5216: "佩塔克", 5217: "佩塔克", 5229: "佩塔克",
+	5224: "古樹的佩塔克",
+	5225: "布倫塔納斯", 7602: "布倫塔納斯",
+	5218: "雷楠的米勒", 7603: "雷楠的米勒",
+	7615: "雷楠的米勒:悔恨",
+}
+
+// handleBGMPlay detects boss-fight start/end by BGM change: switching to
+// Boss_*.mp3 = start, switching from Boss_* to another track = end.
+func (t *eventPublisher) handleBGMPlay(p *packet.GamePacket) {
+	if len(p.Msg) < 1 || p.Msg[0].Type() != packet.MessageElemTypeString {
+		return
+	}
+	bgm, _ := p.Msg[0].Data().(string)
+	t.Lock()
+	prev := t.lastBGM
+	t.lastBGM = bgm
+	t.Unlock()
+	if bgm == prev {
+		return
+	}
+	if strings.HasPrefix(bgm, "Boss_") {
+		name := bossBGMNames[bgm]
+		if name == "" {
+			name = bgm
+		}
+		logger.Printf("boss fight start: %s", name)
+	} else if strings.HasPrefix(prev, "Boss_") {
+		logger.Printf("boss fight end (bgm -> %s)", bgm)
+	}
+}
+
+// regionName returns the map name; >=35000 is a dynamic dungeon instance
+// (new id assigned each entry), not in the static table, so it is named from
+// the most recent mission id / mission code.
+func (t *eventPublisher) regionName(region uint32) string {
+	if n, ok := regionNames[region]; ok {
+		return n
+	}
+	if region >= 35000 {
+		t.Lock()
+		id, code := t.lastMissionID, t.lastMission
+		t.Unlock()
+		if n, ok := dungeonNames[id]; ok {
+			return fmt.Sprintf("副本:%s", n)
+		}
+		if code != "" {
+			if n, ok := missionNames[code]; ok {
+				return fmt.Sprintf("副本:%s", n)
+			}
+			return fmt.Sprintf("副本:%s", code)
+		}
+		return "副本(動態區域)"
+	}
+	return "未知地圖"
+}
+
 func (t *eventPublisher) handleChangeStance(p *packet.GamePacket) {
 	// Stance change: either a bare byte or a byte followed by other
 	// fields depending on direction (request vs response).
@@ -779,15 +1029,10 @@ func (t *eventPublisher) handleChangeStance(p *packet.GamePacket) {
 	})
 }
 
-// addClient registers a new WebSocket client and sends it a snapshot of
-// the current entity cache so the UI can render without waiting for new
-// packets. Safe to call from its own goroutine.
-func (t *eventPublisher) addClient(ctx context.Context, ch chan<- []event.IEvent) uint32 {
-	t.Lock()
-	t.currentClientId++
-	clientId := t.currentClientId
-	t.Unlock()
-
+// snapshotEvents rebuilds the entityCache into an event sequence (appear +
+// condition + equip), shared by a new WS client's initial snapshot and the
+// dungeon file's open-time seeding.
+func (t *eventPublisher) snapshotEvents() []event.IEvent {
 	initial := []event.IEvent(nil)
 
 	t.Lock()
@@ -817,6 +1062,20 @@ func (t *eventPublisher) addClient(ctx context.Context, ch chan<- []event.IEvent
 		}
 	}
 	t.Unlock()
+
+	return initial
+}
+
+// addClient registers a new WebSocket client and sends it a snapshot of
+// the current entity cache so the UI can render without waiting for new
+// packets. Safe to call from its own goroutine.
+func (t *eventPublisher) addClient(ctx context.Context, ch chan<- []event.IEvent) uint32 {
+	t.Lock()
+	t.currentClientId++
+	clientId := t.currentClientId
+	t.Unlock()
+
+	initial := t.snapshotEvents()
 
 	if len(initial) > 0 {
 		logger.Printf("send initial data: client=%d events=%d", clientId, len(initial))
