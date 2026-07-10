@@ -83,6 +83,7 @@ jobs:
                 description: $desc,
                 url: $url,
                 color: 9024762,
+                fields: [{ name: "📥 下載", value: "[前往 GitHub Release 下載](\($url))" }],
                 footer: { text: "irusan-fanclub/mabidilmeter" }
               }],
               allowed_mentions: { parse: [] }
