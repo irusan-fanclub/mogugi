@@ -836,14 +836,13 @@ func (t *eventPublisher) handleSetLocation(p *packet.GamePacket) {
 		return
 	}
 	region := p.Msg[1].Data().(uint32)
-	x := p.Msg[2].Data().(uint32)
-	y := p.Msg[3].Data().(uint32)
 
 	t.Lock()
 	changed := region != t.lastRegion
 	prevName := t.lastRegionName
 	t.lastRegion = region
 	missionID := t.lastMissionID
+	missionCode := t.lastMission
 	var owner string
 	if e, ok := t.entityCache[p.Id]; ok {
 		owner = e.Name
@@ -859,12 +858,31 @@ func (t *eventPublisher) handleSetLocation(p *packet.GamePacket) {
 	name := t.regionName(region)
 	t.Lock()
 	t.lastRegionName = name
+	// Left the dungeon (back to a static region): drop the stale mission so
+	// it can't leak into the next region's log or name resolution.
+	if region < 35000 {
+		t.lastMission = ""
+		t.lastMissionID = 0
+	}
 	t.Unlock()
 
+	// mission kind: only meaningful inside a dungeon (dynamic region).
+	mission := ""
+	if region >= 35000 {
+		switch {
+		case missionCode != "" && missionID != 0:
+			mission = fmt.Sprintf(" mission=%s#%d", missionCode, missionID)
+		case missionCode != "":
+			mission = fmt.Sprintf(" mission=%s", missionCode)
+		case missionID != 0:
+			mission = fmt.Sprintf(" mission=#%d", missionID)
+		}
+	}
+
 	if prevName != "" {
-		logger.Printf("map change: %s (region=%d) pos=(%d,%d) from %s", name, region, x, y, prevName)
+		logger.Printf("map change: %s (region=%d)%s from %s", name, region, mission, prevName)
 	} else {
-		logger.Printf("map change: %s (region=%d) pos=(%d,%d)", name, region, x, y)
+		logger.Printf("map change: %s (region=%d)%s", name, region, mission)
 	}
 
 	// Whitelisted dungeon -> tee to an event file; leaving (incl. warping
