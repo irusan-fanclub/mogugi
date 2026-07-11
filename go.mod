@@ -1,4 +1,4 @@
-module github.com/irusan-fanclub/mabidilmeter
+module github.com/irusan-fanclub/mogugi
 
 go 1.23.0
 

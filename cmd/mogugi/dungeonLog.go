@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/irusan-fanclub/mabidilmeter/lib/event"
+	"github.com/irusan-fanclub/mogugi/lib/event"
 )
 
 // dungeonLogDirPath is the output dir for dungeon-event ndjson. A variable

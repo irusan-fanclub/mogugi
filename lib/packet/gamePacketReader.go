@@ -16,7 +16,7 @@ import (
 	"github.com/gopacket/gopacket/layers"
 	"github.com/gopacket/gopacket/pcap"
 	"github.com/gopacket/gopacket/pcapgo"
-	"github.com/irusan-fanclub/mabidilmeter/lib/util"
+	"github.com/irusan-fanclub/mogugi/lib/util"
 )
 
 type GameServerPacketReader struct {

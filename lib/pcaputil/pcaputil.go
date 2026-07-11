@@ -15,8 +15,8 @@ import (
 	"unsafe"
 
 	"github.com/gopacket/gopacket/pcap"
-	"github.com/irusan-fanclub/mabidilmeter/lib/packet"
-	"github.com/irusan-fanclub/mabidilmeter/lib/util"
+	"github.com/irusan-fanclub/mogugi/lib/packet"
+	"github.com/irusan-fanclub/mogugi/lib/util"
 	"golang.org/x/sys/windows"
 )
 

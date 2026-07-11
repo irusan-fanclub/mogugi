@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/irusan-fanclub/mabidilmeter/lib/event"
-	"github.com/irusan-fanclub/mabidilmeter/lib/packet"
+	"github.com/irusan-fanclub/mogugi/lib/event"
+	"github.com/irusan-fanclub/mogugi/lib/packet"
 )
 
 const (

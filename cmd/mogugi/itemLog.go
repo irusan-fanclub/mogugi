@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/irusan-fanclub/mabidilmeter/lib/packet"
-	"github.com/irusan-fanclub/mabidilmeter/lib/util"
+	"github.com/irusan-fanclub/mogugi/lib/packet"
+	"github.com/irusan-fanclub/mogugi/lib/util"
 )
 
 var itemLogger = util.NewLogger("itemlog")

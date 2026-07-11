@@ -19,7 +19,7 @@ var ErrExpired = errors.New("expired")
 
 // PublicKeyHex is the Ed25519 public key (hex) injected at build time:
 //
-//	-ldflags "-X github.com/irusan-fanclub/mabidilmeter/lib/license.PublicKeyHex=<hex>"
+//	-ldflags "-X github.com/irusan-fanclub/mogugi/lib/license.PublicKeyHex=<hex>"
 //
 // If not injected (dev build), all codes are rejected (fail closed).
 var PublicKeyHex = ""

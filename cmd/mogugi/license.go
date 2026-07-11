@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/irusan-fanclub/mabidilmeter/lib/license"
+	"github.com/irusan-fanclub/mogugi/lib/license"
 )
 
 // requireLicense wraps data endpoints: returns 403 if the license is not activated.

@@ -16,7 +16,7 @@ function Get-LicenseLDFlag {
         throw "$Path must define PublicKeyHex=<hex> and MacKeyHex=<hex>"
     }
 
-    $pkg = "github.com/irusan-fanclub/mabidilmeter/lib/license"
+    $pkg = "github.com/irusan-fanclub/mogugi/lib/license"
     [pscustomobject]@{
         LDFlag = "-X $pkg.PublicKeyHex=$($vals.PublicKeyHex) -X $pkg.MacKeyHex=$($vals.MacKeyHex)"
     }

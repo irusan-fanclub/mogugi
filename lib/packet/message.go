@@ -7,7 +7,7 @@ import (
 	"io"
 	"math"
 
-	"github.com/irusan-fanclub/mabidilmeter/lib/util"
+	"github.com/irusan-fanclub/mogugi/lib/util"
 )
 
 var be = binary.BigEndian

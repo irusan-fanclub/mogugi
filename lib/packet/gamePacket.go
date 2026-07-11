@@ -3,7 +3,7 @@ package packet
 import (
 	"time"
 
-	"github.com/irusan-fanclub/mabidilmeter/lib/util"
+	"github.com/irusan-fanclub/mogugi/lib/util"
 )
 
 var logger = util.NewLogger("packet")

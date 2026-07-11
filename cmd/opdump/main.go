@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/irusan-fanclub/mabidilmeter/lib/packet"
+	"github.com/irusan-fanclub/mogugi/lib/packet"
 )
 
 func main() {

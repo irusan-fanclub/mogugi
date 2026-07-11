@@ -1,4 +1,4 @@
-# Release script for Mabidilmeter
+# Release script for MOGUGI
 #
 # Builds frontend, backend (with version embedded via -ldflags),
 # and packages the result into dist/mogugi_<version>.zip.
@@ -32,7 +32,7 @@ if ($Version -notmatch '^\d+\.\d+\.\d+(-[\w.]+)?$') {
     exit 1
 }
 
-Write-Host "=== Mabidilmeter Release v$Version ===" -ForegroundColor Cyan
+Write-Host "=== MOGUGI Release v$Version ===" -ForegroundColor Cyan
 
 . (Join-Path $PSScriptRoot 'keys-lib.ps1')
 try {

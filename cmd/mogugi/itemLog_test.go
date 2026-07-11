@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/irusan-fanclub/mabidilmeter/lib/packet"
+	"github.com/irusan-fanclub/mogugi/lib/packet"
 )
 
 func TestSanitizeEntityName(t *testing.T) {
