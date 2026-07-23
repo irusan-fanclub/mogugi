@@ -33,6 +33,8 @@ export type eventEntityAppear = eventBase & {
     Lower: number;
     GuildName: string;
     OwnerId: string;
+    /** Summoner of a pet/summon (marionette, golem, ...); from the summon packet. */
+    SummonerId: string;
 }
 
 export type eventDamage = eventBase & {

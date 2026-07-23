@@ -359,3 +359,43 @@ func TestParseEntitySnapshot_BagMapping(t *testing.T) {
 		t.Fatalf("bag itself should not be in a bag: %d", snap.Items[0].BagItemID)
 	}
 }
+
+// The 0x5209 head mirrors the entity-appear packet: id, byte, name, "", "",
+// raceId. The race id is what tells a marionette apart from a pet.
+func TestParseEntitySnapshot_IdAndRace(t *testing.T) {
+	msg := Message{
+		NewMessageElemByte(1),
+		NewMessageElemLong(4767482418118415),
+		NewMessageElemByte(2),
+		NewMessageElemString("霸戮"),
+		NewMessageElemString(""),
+		NewMessageElemString(""),
+		NewMessageElemInt(990216),
+	}
+	snap, err := ParseEntitySnapshot(msg)
+	if err != nil {
+		t.Fatalf("ParseEntitySnapshot: %v", err)
+	}
+	if snap.Id != 4767482418118415 {
+		t.Errorf("Id=%d want 4767482418118415", snap.Id)
+	}
+	if snap.RaceId != 990216 {
+		t.Errorf("RaceId=%d want 990216", snap.RaceId)
+	}
+	if snap.Name != "霸戮" {
+		t.Errorf("Name=%q want 霸戮", snap.Name)
+	}
+}
+
+// A message that doesn't carry the head must leave both zero rather than pick
+// up whatever happens to sit at those offsets.
+func TestParseEntitySnapshot_IdAndRaceAbsent(t *testing.T) {
+	msg := Message{NewMessageElemString("我的角色"), NewMessageElemString("foo")}
+	snap, err := ParseEntitySnapshot(msg)
+	if err != nil {
+		t.Fatalf("ParseEntitySnapshot: %v", err)
+	}
+	if snap.Id != 0 || snap.RaceId != 0 {
+		t.Errorf("Id=%d RaceId=%d want 0/0", snap.Id, snap.RaceId)
+	}
+}

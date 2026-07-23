@@ -37,13 +37,22 @@ type eventPublisher struct {
 	pendingEvents   []event.IEvent
 	lastSentAt      time.Time
 	lastPacketAt    time.Time
-	lastRegion      uint32            // current region id (26009); 0 = unknown
-	lastRegionName  string            // resolved display name of lastRegion (for "from X" logging)
-	lastMission     string            // latest mission code (22007 enter_<code>), e.g. mrd
-	lastMissionID   uint32            // latest mission id (45004); resolves via dungeonNames
-	lastBGM         string            // currently playing BGM (43302); Boss_* means a boss fight
-	bossEntities    map[uint64]string // live boss entity id -> boss name (race-id detection)
-	dgnLog          dungeonLog        // per-run event file for whitelisted dungeons (own lock)
+	lastRegion      uint32                // current region id (26009); 0 = unknown
+	lastRegionName  string                // resolved display name of lastRegion (for "from X" logging)
+	lastMission     string                // latest mission code (22007 enter_<code>), e.g. mrd
+	lastMissionID   uint32                // latest mission id (45004); resolves via dungeonNames
+	lastBGM         string                // currently playing BGM (43302); Boss_* means a boss fight
+	bossEntities    map[uint64]string     // live boss entity id -> boss name (race-id detection)
+	summonOwners    map[uint64]summonLink // summoned entity id -> summoner (0x9025)
+	dgnLog          dungeonLog            // per-run event file for whitelisted dungeons (own lock)
+}
+
+// summonLink records who summoned an entity. Marionettes (人偶) carry no owner
+// in their appear packet — unlike pets — so 0x9025 is the only link back to the
+// player, and without it their damage is never credited to anyone.
+type summonLink struct {
+	ownerId uint64
+	at      int64
 }
 
 type eventClient struct {
@@ -63,6 +72,7 @@ func newEventPublisher(ctx context.Context, r *packet.GameServerPacketReader) *e
 		currentClientId: 1,
 		pendingEvents:   make([]event.IEvent, 0, _maxPendingEvents),
 		bossEntities:    make(map[uint64]string),
+		summonOwners:    make(map[uint64]summonLink),
 		lastSentAt:      time.Now(),
 		lastPacketAt:    time.Now(),
 	}
@@ -305,6 +315,9 @@ func (t *eventPublisher) handlePacket(p *packet.GamePacket) {
 	case packet.OpcodeSetFinisher:
 		t.handleSetFinisher(p)
 
+	case packet.OpcodeSummonCreated:
+		t.handleSummonCreated(p)
+
 	case packet.OpcodeCombatAction:
 		t.handleCombatAction(p)
 
@@ -355,11 +368,94 @@ func (t *eventPublisher) handleChannelCharacterInfo(p *packet.GamePacket) {
 		itemLogger.Printf("parse 0x5209 failed: %v", err)
 		return
 	}
+	if isSummonRace(snap.RaceId) {
+		return
+	}
 	if err := writeEntitySnapshot(snap); err != nil {
 		itemLogger.Printf("write csv failed: %v", err)
 		return
 	}
 	itemLogger.Printf("update %q (%d items)", snap.Name, len(snap.Items))
+}
+
+// isSummonRace reports whether a race id belongs to the summoned-unit block:
+// marionettes (小丑人偶 / 巨像人偶 / 人類型-精靈型-巨人型), alchemy hellhounds and the
+// like. They send a 0x5209 snapshot like any owned entity but hold no
+// inventory worth indexing, and their name is the bare entity id, so each one
+// would leave its own junk file behind. Player characters, pets, mounts and
+// partners all live outside this block.
+//
+// A race id of 0 means the snapshot head didn't parse; those are kept.
+func isSummonRace(raceId uint32) bool {
+	return raceId >= 990000 && raceId < 991000
+}
+
+// handleSummonCreated records a summon -> summoner link (0x9025: packet id is
+// the summoner, the single long is the summoned entity). It is broadcast for
+// every player, not just the local one.
+//
+// It lands a few seconds after the entity's appear packet — by then the summon
+// has usually already hit something — so the link is kept in a map that
+// toEventEntityAppear consults and the appear event is re-published, which is
+// the frontend's cue to move that damage onto the summoner. The reverse order
+// is handled too, in case the server ever sends it the other way round.
+func (t *eventPublisher) handleSummonCreated(p *packet.GamePacket) {
+	if len(p.Msg) < 1 || p.Msg[0].Type() != packet.MessageElemTypeLong {
+		return
+	}
+
+	if e := t.linkSummon(p.Msg[0].Data().(uint64), p.Id, p.At.Unix()); e != nil {
+		t.publish(e)
+	}
+}
+
+// linkSummon stores the link and returns a refreshed appear event when the
+// entity has already appeared (nil otherwise, or for an unusable link).
+func (t *eventPublisher) linkSummon(summonId, ownerId uint64, at int64) *event.EventEntityAppear {
+	if summonId == 0 || ownerId == 0 {
+		return nil
+	}
+
+	t.Lock()
+	defer t.Unlock()
+
+	t.summonOwners[summonId] = summonLink{ownerId: ownerId, at: at}
+	t.pruneSummonOwners(at)
+
+	e, ok := t.entityCache[summonId]
+	if !ok {
+		return nil
+	}
+
+	return toEventEntityAppear(e.appearAt, e.EntityInfo, t.summonerIdOf(summonId))
+}
+
+// pruneSummonOwners drops links whose entity has left the cache. The grace
+// period keeps links that arrived just before their appear packet.
+//
+// Caller must hold the lock.
+func (t *eventPublisher) pruneSummonOwners(now int64) {
+	const graceSec = int64(60)
+
+	for id, l := range t.summonOwners {
+		if _, ok := t.entityCache[id]; ok {
+			continue
+		}
+		if now-l.at > graceSec {
+			delete(t.summonOwners, id)
+		}
+	}
+}
+
+// summonerIdOf returns the summoner of an entity as a string, "" when unknown.
+//
+// Caller must hold the lock.
+func (t *eventPublisher) summonerIdOf(id uint64) string {
+	l, ok := t.summonOwners[id]
+	if !ok {
+		return ""
+	}
+	return strconv.FormatUint(l.ownerId, 10)
 }
 
 func (t *eventPublisher) handleEntityAppear(p *packet.GamePacket) {
@@ -388,7 +484,7 @@ func (t *eventPublisher) handleEntityAppear(p *packet.GamePacket) {
 	t.Lock()
 	t.entityCache.add(entity, p.At)
 
-	events = append(events, toEventEntityAppear(p.At.Unix(), entity))
+	events = append(events, toEventEntityAppear(p.At.Unix(), entity, t.summonerIdOf(entity.Id)))
 
 	for _, v := range entity.CharacterConditionMap {
 		if !t.entityCache.addOrUpdateCondition(entity.Id, v) {
@@ -514,9 +610,10 @@ func (t *eventPublisher) handleEntitiesAppear(p *packet.GamePacket) {
 
 		t.Lock()
 		t.entityCache.add(entity, p.At)
+		summonerId := t.summonerIdOf(entity.Id)
 		t.Unlock()
 
-		t.publish(toEventEntityAppear(p.At.Unix(), entity))
+		t.publish(toEventEntityAppear(p.At.Unix(), entity, summonerId))
 	}
 }
 
@@ -1037,7 +1134,7 @@ func (t *eventPublisher) snapshotEvents() []event.IEvent {
 
 	t.Lock()
 	for _, entity := range t.entityCache {
-		initial = append(initial, toEventEntityAppear(entity.appearAt, entity.EntityInfo))
+		initial = append(initial, toEventEntityAppear(entity.appearAt, entity.EntityInfo, t.summonerIdOf(entity.Id)))
 
 		for _, cond := range entity.characterConditionMap {
 			attackerId := ""
@@ -1092,7 +1189,7 @@ func (t *eventPublisher) addClient(ctx context.Context, ch chan<- []event.IEvent
 	return clientId
 }
 
-func toEventEntityAppear(now int64, p *packet.EntityInfo) *event.EventEntityAppear {
+func toEventEntityAppear(now int64, p *packet.EntityInfo, summonerId string) *event.EventEntityAppear {
 	ownerId := ""
 	if p.OwnerId != 0 {
 		ownerId = strconv.FormatUint(p.OwnerId, 10)
@@ -1104,14 +1201,15 @@ func toEventEntityAppear(now int64, p *packet.EntityInfo) *event.EventEntityAppe
 			At:      now,
 			Id:      strconv.FormatUint(p.Id, 10),
 		},
-		Name:      p.Name,
-		RaceId:    p.RaceId,
-		Height:    p.Height,
-		Weight:    p.Weight,
-		Upper:     p.Upper,
-		Lower:     p.Lower,
-		GuildName: p.GuildName,
-		OwnerId:   ownerId,
+		Name:       p.Name,
+		RaceId:     p.RaceId,
+		Height:     p.Height,
+		Weight:     p.Weight,
+		Upper:      p.Upper,
+		Lower:      p.Lower,
+		GuildName:  p.GuildName,
+		OwnerId:    ownerId,
+		SummonerId: summonerId,
 	}
 }
 

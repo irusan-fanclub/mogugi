@@ -25,6 +25,7 @@ export class DamageCollectorManager {
         // et -> filtered et -> filtered et로 chaining하는게 나을듯
         this._et.addEventListener("Damage", v);
         this._et.addEventListener("Clear", v);
+        this._et.addEventListener("Rebuild", v);
 
         return CustomReactive(v);
     }
@@ -37,6 +38,7 @@ export class DamageCollectorManager {
 
         this._et.addEventListener("Damage", v);
         this._et.addEventListener("Clear", v);
+        this._et.addEventListener("Rebuild", v);
 
         return CustomReactive(v);
     }
@@ -49,6 +51,7 @@ export class DamageCollectorManager {
 
         this._et.addEventListener("Damage", v);
         this._et.addEventListener("Clear", v);
+        this._et.addEventListener("Rebuild", v);
 
         return CustomReactive(v);
     }
@@ -56,11 +59,39 @@ export class DamageCollectorManager {
     public removeDamageCollector(collector: DamageCollectorBase): void {
         this._et.removeEventListener("Damage", collector);
         this._et.removeEventListener("Clear", collector);
+        this._et.removeEventListener("Rebuild", collector);
     }
 
     public clear(): void {
         this._damages = [];
         this._et.dispatchEvent(new CustomEvent("Clear"));
+    }
+
+    /**
+     * Moves already-collected damage from one attacker to another and rebuilds
+     * every collector. Needed because a summon's owner is only known a few
+     * seconds after it starts hitting. Returns false when nothing matched.
+     */
+    public reattribute(fromId: string, toId: string): boolean {
+        let changed = false;
+        for (const p of this._damages) {
+            if (p.Id !== fromId) {
+                continue;
+            }
+            p.Id = toId;
+            changed = true;
+        }
+
+        if (!changed) {
+            return false;
+        }
+
+        // Collectors aggregate incrementally, so a changed key can only be
+        // applied by replaying everything. One batched event, not one per
+        // damage — a long session holds tens of thousands of them.
+        this._et.dispatchEvent(new CustomEvent("Rebuild", { detail: this._damages }));
+
+        return true;
     }
 }
 
@@ -79,14 +110,18 @@ export abstract class DamageCollectorBase implements DamageEventListenerObject, 
     public constructor(private _filter: DamageCollectorFilter) {
     }
 
-    public handleEvent(e: CustomEvent<EntityDamage>): void {
+    public handleEvent(e: CustomEvent<EntityDamage | EntityDamage[]>): void {
         switch (e.type) {
             case "Damage":
-                this.handleDamage(e.detail);
+                this.handleDamage(e.detail as EntityDamage);
                 break;
 
             case "Clear":
                 this.handleClear();
+                break;
+
+            case "Rebuild":
+                this.handleRebuild(e.detail as EntityDamage[]);
                 break;
         }
     }
@@ -97,22 +132,36 @@ export abstract class DamageCollectorBase implements DamageEventListenerObject, 
         }
 
         this.onDamage(p);
-
-        if (!this.vueUpdateTimeout) {
-            this.vueUpdateTimeout = setTimeout(() => {
-                this.vueUpdate();
-            }, DamageCollectorBase.vueUpdateTick);
-        }
+        this.requestVueUpdate();
     }
 
     public handleClear(): void {
         this.onClear();
+        this.requestVueUpdate();
+    }
 
-        if (!this.vueUpdateTimeout) {
-            this.vueUpdateTimeout = setTimeout(() => {
-                this.vueUpdate();
-            }, DamageCollectorBase.vueUpdateTick);
+    /** Drops everything and re-aggregates from scratch. */
+    public handleRebuild(damages: EntityDamage[]): void {
+        this.onClear();
+
+        for (const p of damages) {
+            if (!this._filter(p)) {
+                continue;
+            }
+            this.onDamage(p);
         }
+
+        this.requestVueUpdate();
+    }
+
+    private requestVueUpdate(): void {
+        if (this.vueUpdateTimeout) {
+            return;
+        }
+
+        this.vueUpdateTimeout = setTimeout(() => {
+            this.vueUpdate();
+        }, DamageCollectorBase.vueUpdateTick);
     }
 
     protected abstract onDamage(p: EntityDamage): void;
@@ -518,7 +567,7 @@ type DamageCollectorFilter = (p: EntityDamage) => boolean;
 type DamageCollectorGroupKey = (p: EntityDamage) => string;
 
 // type DamageEventType = "TakeDamage" | "ApplyDamage";
-type DamageEventType = "Damage" | "Clear";
+type DamageEventType = "Damage" | "Clear" | "Rebuild";
 
 interface IDamageEventTarget extends EventTarget {
     addEventListener(type: DamageEventType, callback: DamageEventListenerObject, options?: boolean | AddEventListenerOptions): void

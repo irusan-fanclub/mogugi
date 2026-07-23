@@ -25,10 +25,18 @@ export class ActorManager {
         const entity = this.entityMap[event.Id];
 
         switch (event.EventId) {
-            case protocols.eventIdEntityAppear:
+            case protocols.eventIdEntityAppear: {
                 // TODO: entityAppear에서 master id, hp 가져오기, damage, cc 처리할 때 master id가 있으면 그쪽으로 보내야함
+                const prevSummonerId = entity.summonerId;
                 entity.onEntityAppear(event as protocols.eventEntityAppear);
+
+                // The summon packet arrives seconds after a marionette starts
+                // hitting, so move what it already dealt onto the summoner.
+                if (entity.summonerId && entity.summonerId !== prevSummonerId) {
+                    this._damageCollector.reattribute(entity.id, entity.summonerId);
+                }
                 break;
+            }
 
             case protocols.eventIdDamage:
                 {
@@ -56,6 +64,7 @@ export class ActorManager {
                             Lower: 1,
                             GuildName: "",
                             OwnerId: "",
+                            SummonerId: "",
                         });
 
                         targetEntity = this.entityMap[event_.TargetId];
@@ -365,6 +374,14 @@ export class EntityActor extends BaseActor {
         return this._ownerId;
     }
 
+    /** Summoner of a summoned unit (marionette, ...). Unlike a pet, its damage
+     *  counts as the summoner's own. */
+    protected _summonerId = '';
+    public get summonerId() {
+        this.vueUpdateTrack?.();
+        return this._summonerId;
+    }
+
     public get group() {
         this.vueUpdateTrack?.();
         return this._group;
@@ -402,6 +419,9 @@ export class EntityActor extends BaseActor {
         this._finisherId = '';
         this._guildName = event.GuildName;
         this._ownerId = event.OwnerId;
+        // The summon link can arrive after the first appear; keep the old one
+        // rather than clearing it.
+        this._summonerId = event.SummonerId || this._summonerId;
         this._body.Height = event.Height;
         this._body.Weight = event.Weight;
         this._body.Upper = event.Upper;
@@ -458,6 +478,11 @@ export class EntityActor extends BaseActor {
         if (attacker?.ownerId) {
             damage.PetId = attackerId;
             damage.Id = attacker.ownerId;
+        }
+        // A summon (marionette etc.) is the summoner's own damage — redirect it
+        // without the pet tag so the pet-free views keep counting it.
+        else if (attacker?.summonerId) {
+            damage.Id = attacker.summonerId;
         }
 
         this._totalApplyDamage += event.Damage;

@@ -4,6 +4,8 @@ import "strings"
 
 // EntitySnapshot is an entity's inventory snapshot extracted from 0x5209.
 type EntitySnapshot struct {
+	Id     uint64
+	RaceId uint32
 	Name   string
 	Master string
 	Items  []InventoryItem
@@ -23,6 +25,17 @@ const petPropsMarker = "PET_AI:"
 //     String (OptionInfo with ENPFIX/ENSFIX enchants), parsed when present.
 func ParseEntitySnapshot(msg Message) (*EntitySnapshot, error) {
 	snap := &EntitySnapshot{Items: []InventoryItem{}}
+
+	// Head mirrors the entity-appear packet: byte, id, byte, name, "", "",
+	// raceId. Both stay zero when the shape doesn't match, so callers that
+	// filter on them fall back to "unknown" rather than to a wrong value.
+	if len(msg) > 6 &&
+		msg[1].Type() == MessageElemTypeLong &&
+		msg[6].Type() == MessageElemTypeInt {
+
+		snap.Id, _ = msg[1].Data().(uint64)
+		snap.RaceId, _ = msg[6].Data().(uint32)
+	}
 
 	for _, e := range msg {
 		if e.Type() == MessageElemTypeString {

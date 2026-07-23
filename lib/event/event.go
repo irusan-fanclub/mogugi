@@ -49,6 +49,9 @@ type EventEntityAppear struct {
 	Lower     float32
 	GuildName string
 	OwnerId   string
+	// SummonerId is who summoned this entity (0x9025). Marionettes and other
+	// summons carry no owner in their appear packet, so this is their only link.
+	SummonerId string
 }
 
 type EventEntityDisappear struct {
