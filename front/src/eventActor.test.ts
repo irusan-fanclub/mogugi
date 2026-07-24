@@ -3,6 +3,8 @@ import { describe, it, expect } from 'vitest';
 import { ActorManager, type EntityDamage } from './eventActor';
 import { DamageCollectorManager } from './actionCollector';
 import * as protocols from './protocols';
+import { prettyEntityName } from './lib/util';
+import { ref } from 'vue';
 
 const PC_ID = '4503599630022047';
 const PET_ID = '4504699143373502';
@@ -229,5 +231,44 @@ describe('entities the meter never saw appear', () => {
         mgr.onEvent(appear({ Id: FRESH_MOB_ID, RaceId: 20001, Name: '灰狼' }));
 
         expect(mgr.entityMap[FRESH_MOB_ID].isPC).toBe(false);
+    });
+});
+
+describe('prettyEntityName for unidentified placeholders', () => {
+    const raceNameMap = ref<Record<number, string>>({});
+
+    function withHit(targetId: string) {
+        const dc = new DamageCollectorManager();
+        const mgr = new ActorManager(dc);
+        mgr.onEvent(appear({ Id: PC_ID, RaceId: 10002 }));
+        mgr.onEvent(damage(PC_ID, 59167, 100, targetId));
+        return mgr;
+    }
+
+    // Every unknown mob shares raceId 0, so naming by race would collapse them
+    // all into one identical label. Keep them distinct by the id tail.
+    it('gives each unknown mob a distinct label instead of unknownRace:0', () => {
+        const a = withHit(MOB_ID).entityMap[MOB_ID];
+        const b = withHit(FRESH_MOB_ID).entityMap[FRESH_MOB_ID];
+
+        const na = prettyEntityName(a, raceNameMap)!;
+        const nb = prettyEntityName(b, raceNameMap)!;
+        expect(na).not.toContain('unknownRace');
+        expect(na).not.toBe(nb);
+    });
+
+    it('labels the unknown group the same way as its entity', () => {
+        const mgr = withHit(MOB_ID);
+        const entity = mgr.entityMap[MOB_ID];
+        expect(prettyEntityName(entity.group, raceNameMap))
+            .toBe(prettyEntityName(entity, raceNameMap));
+    });
+
+    it('still names an identified monster by its race', () => {
+        const mgr = withHit(MOB_ID);
+        // Real mob appear packets carry a numeric name.
+        mgr.onEvent(appear({ Id: MOB_ID, RaceId: 20001, Name: MOB_ID }));
+        raceNameMap.value = { 20001: '灰狼' };
+        expect(prettyEntityName(mgr.entityMap[MOB_ID], raceNameMap)).toContain('灰狼');
     });
 });

@@ -123,6 +123,13 @@ export function prettyEntityName(entity: BaseActor | undefined, raceNameMap: Ref
         return entity.name;
     }
 
+    // Placeholder whose real race isn't known yet: race is a stand-in (0), so
+    // label by id — otherwise every unknown mob, and its group header, would
+    // collapse to the same "unknownRace:0".
+    if (entity.raceId === ActorManager.unknownRaceId) {
+        return `unknown:${entity.id}`;
+    }
+
     const raceName = raceNameMap.value[entity.raceId] || `unknownRace:${entity.raceId}`;
     if (entity instanceof GroupActor) {
         return raceName;

@@ -8,7 +8,7 @@
                 <v-expansion-panel-title>
                     <div class="d-flex align-center" style="width: 100%; gap: 4px;">
                         <span class="font-weight-medium">{{ prettyEntityName(v.actor) }}</span>
-                        <v-btn v-if="!v.actor.isPC" icon="mdi-close" size="x-small" variant="text"
+                        <v-btn v-if="canHide(v.actor)" icon="mdi-close" size="x-small" variant="text"
                             @click.stop="hideGroup(v.actor)" />
                         <v-spacer />
                         <span style="min-width: 48px; text-align: center; font-size: 0.85em; opacity: 0.7;">{{ groupDuration(v.groupedDamages) }}</span>
@@ -77,7 +77,7 @@ import { defineComponent, inject, computed, onUnmounted, type Ref } from "vue";
 
 import { getMabiNameColor, prettyEntityName, humanReadableNumber, formatDuration } from '@/lib/util';
 import type { EntityDamage, EntityActor } from '@/eventActor';
-import { GroupActor } from '@/eventActor';
+import { ActorManager, GroupActor } from '@/eventActor';
 import { GroupedDamageCollector } from '@/actionCollector';
 import { useDialogStack } from '@/lib/useDialogStack';
 import { filterByTimeRange, computeGroupedStats } from '@/lib/timeRangeFilter';
@@ -295,7 +295,16 @@ export default defineComponent({
             return duration > 0 ? totalDamage / duration : 0;
         };
 
+        // Hiding is by race, so it only makes sense for identified mobs.
+        // Every unidentified placeholder shares race 0 — hiding that would
+        // wipe out the whole batch of unknown mobs at once.
+        const canHide = (actor: GroupActor) =>
+            !actor.isPC && actor.raceId !== ActorManager.unknownRaceId;
+
         const hideGroup = (actor: GroupActor) => {
+            if (!canHide(actor)) {
+                return;
+            }
             const name = prettyName(actor) || actor.id;
             if (confirm(`隱藏 ${name}？`)) {
                 addHiddenRace(actor.raceId);
@@ -339,6 +348,7 @@ export default defineComponent({
             filteredGroupMap,
 
             visibleGroups,
+            canHide,
             hideGroup,
             showEntityDetailDamageList,
             showEntityGroupDetailDamageList,
