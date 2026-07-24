@@ -41,37 +41,27 @@ export class ActorManager {
             case protocols.eventIdDamage:
                 {
                     const event_ = event as protocols.eventDamage;
+
+                    // 유저 정보가 오기전에 대미지가 먼저오는 경우
+                    // @TODO: 추후에 local storage를 사용해 캐싱하는 식으로 변경
+                    //
+                    // Both stand-ins must exist before the hit is processed:
+                    // onApplyDamage bails out on an unknown target, and a new
+                    // entity's replay only restores the take-damage side, so
+                    // the hit would otherwise be lost. They're also created
+                    // before the event is recorded, or that replay would count
+                    // this very hit a second time.
+                    const attacker = entity ?? this.addPlaceholderEntity(event_.Id, event_.At);
+                    const target = this.entityMap[event_.TargetId]
+                        ?? this.addPlaceholderEntity(event_.TargetId, event_.At);
+
                     this.damages.push(event_);
 
-                    if (entity) {
-                        entity.onApplyDamage(event_);
-                        entity.group.onApplyDamage(event_);
-                    }
+                    attacker.onApplyDamage(event_);
+                    attacker.group.onApplyDamage(event_);
 
-                    let targetEntity = this.entityMap[event_.TargetId];
-                    if (!targetEntity) {
-                        // 유저 정보가 오기전에 대미지가 먼저오는 경우
-                        // @TODO: 추후에 local storage를 사용해 캐싱하는 식으로 변경
-                        this.onEntityAppear({
-                            Id: event_.TargetId,
-                            EventId: 1,
-                            At: Date.now() / 1000,
-                            Name: `unknown:${event_.TargetId}`,
-                            RaceId: 10001,
-                            Height: 1,
-                            Weight: 1,
-                            Upper: 1,
-                            Lower: 1,
-                            GuildName: "",
-                            OwnerId: "",
-                            SummonerId: "",
-                        });
-
-                        targetEntity = this.entityMap[event_.TargetId];
-                    }
-
-                    targetEntity.onTakeDamage(event_);
-                    targetEntity.group.onTakeDamage(event_);
+                    target.onTakeDamage(event_);
+                    target.group.onTakeDamage(event_);
                 }
                 break;
 
@@ -123,6 +113,48 @@ export class ActorManager {
                 entity.onUpdateBody(event as protocols.eventEntityUpdateBody);
                 break;
         }
+    }
+
+    /**
+     * Stands in for an entity whose appear packet hasn't been seen — it may
+     * still be on its way, or mogugi may have started after the entity was
+     * already there, in which case it never comes at all. A later appear
+     * overwrites the name and race.
+     */
+    private addPlaceholderEntity(id: string, at: number): EntityActor {
+        this.onEntityAppear({
+            Id: id,
+            EventId: 1,
+            At: at,
+            Name: `unknown:${id}`,
+            // Guessing wrong here would either hide a player from the damage
+            // tables or list a monster as one, so go by the id class rather
+            // than assuming.
+            RaceId: ActorManager.isPlayerId(id) ? 10001 : ActorManager.unknownRaceId,
+            Height: 1,
+            Weight: 1,
+            Upper: 1,
+            Lower: 1,
+            GuildName: "",
+            OwnerId: "",
+            SummonerId: "",
+        });
+
+        return this.entityMap[id];
+    }
+
+    /** Race of a placeholder whose real race isn't known yet. */
+    public static readonly unknownRaceId = 0;
+
+    /**
+     * Entity ids carry their kind in the top bits: 0x1000 is the player
+     * block, 0x1001 pets/partners/summons, 0x10f0 monsters and NPCs.
+     * Verified against 33,961 appear packets — the 0x1000 block holds the six
+     * player races and nothing else.
+     */
+    private static isPlayerId(id: string): boolean {
+        const v = Number(id);
+        return Number.isFinite(v) && Math.floor(v / 0x10000000000) === 0x1000;
     }
 
     public onEntityAppear(event: protocols.eventEntityAppear) {
@@ -190,7 +222,9 @@ export class ActorManager {
 
     private static groupTargetKey(event: protocols.eventEntityAppear): string {
         // pc 일 경우 group안에 entity가 여러개 생기지 않도록
-        if (this.pcRaceSet.has(event.RaceId)) {
+        // Placeholders group per entity too — their race is a stand-in, so
+        // grouping by it would pile every unidentified monster into one row.
+        if (this.pcRaceSet.has(event.RaceId) || event.RaceId === this.unknownRaceId) {
             return event.Id;
         }
 
@@ -210,7 +244,6 @@ export abstract class BaseActor implements IEventActor, IUpdateCallback {
     private static vueUpdateTick = 33;
 
     protected constructor(protected mgr: ActorManager, private _id: string, protected _raceId: number, protected _name: string) {
-        this._isPC = ActorManager.pcRaceSet.has(_raceId);
     }
 
     public get id() {
@@ -265,10 +298,11 @@ export abstract class BaseActor implements IEventActor, IUpdateCallback {
         return this._applyDamages;
     }
 
-    private _isPC = false;
+    /** Derived, not cached: a placeholder starts out as a character and only
+     *  learns its real race when the appear packet lands. */
     public get isPC() {
         this.vueUpdateTrack?.();
-        return this._isPC;
+        return ActorManager.pcRaceSet.has(this._raceId);
     }
 
     public onEntityAppear(event: protocols.eventEntityAppear): void {

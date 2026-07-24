@@ -8,6 +8,8 @@ const PC_ID = '4503599630022047';
 const PET_ID = '4504699143373502';
 const PUPPET_ID = '4767482418118415';
 const MOB_ID = '4767482418117579';
+// A second mob the meter has not seen an appear packet for yet.
+const FRESH_MOB_ID = '4767482418117582';
 
 function appear(partial: Partial<protocols.eventEntityAppear> & { Id: string, RaceId: number }): protocols.eventEntityAppear {
     return {
@@ -25,12 +27,12 @@ function appear(partial: Partial<protocols.eventEntityAppear> & { Id: string, Ra
     };
 }
 
-function damage(attackerId: string, skillId: number, amount: number): protocols.eventDamage {
+function damage(attackerId: string, skillId: number, amount: number, targetId = MOB_ID): protocols.eventDamage {
     return {
         EventId: 3,
         At: 1784805900,
         Id: attackerId,
-        TargetId: MOB_ID,
+        TargetId: targetId,
         SkillId: skillId,
         Damage: amount,
         IsCritical: false,
@@ -146,5 +148,86 @@ describe('damage attribution', () => {
         const petHit = collected(dc).find(d => d.PetId === PET_ID);
         expect(petHit?.Id).toBe(PC_ID);
         expect(collected(dc)).toHaveLength(2);
+    });
+});
+
+describe('entities the meter never saw appear', () => {
+    // mogugi started after the player was already in the map, so their own
+    // EntityAppear never arrives. Their damage must still be counted.
+    it('counts damage from a character-class attacker that never appeared', () => {
+        const dc = new DamageCollectorManager();
+        const mgr = new ActorManager(dc);
+        mgr.onEvent(appear({ Id: MOB_ID, RaceId: 4856 }));
+
+        mgr.onEvent(damage(PC_ID, 58101, 2597693));
+
+        expect(collected(dc)).toHaveLength(1);
+        expect(collected(dc)[0].Id).toBe(PC_ID);
+        expect(mgr.entityMap[PC_ID]?.isPC).toBe(true);
+    });
+
+    it('does not invent a player row for a monster-class attacker', () => {
+        const dc = new DamageCollectorManager();
+        const mgr = new ActorManager(dc);
+        mgr.onEvent(appear({ Id: PC_ID, RaceId: 10002 }));
+
+        mgr.onEvent(damage(FRESH_MOB_ID, 20001, 500));
+
+        // The hit is kept, but the stand-in must not pass for a player or the
+        // monster shows up in the DPS ranking.
+        expect(collected(dc)).toHaveLength(1);
+        expect(mgr.entityMap[FRESH_MOB_ID].isPC).toBe(false);
+    });
+
+    it('keeps each unidentified monster in its own group', () => {
+        const dc = new DamageCollectorManager();
+        const mgr = new ActorManager(dc);
+        mgr.onEvent(appear({ Id: PC_ID, RaceId: 10002 }));
+
+        mgr.onEvent(damage(PC_ID, 59167, 100, MOB_ID));
+        mgr.onEvent(damage(PC_ID, 59167, 100, FRESH_MOB_ID));
+
+        expect(mgr.entityMap[MOB_ID].group).not.toBe(mgr.entityMap[FRESH_MOB_ID].group);
+    });
+
+    it('replaces the placeholder when the real appear arrives, without double counting', () => {
+        const dc = new DamageCollectorManager();
+        const mgr = new ActorManager(dc);
+        mgr.onEvent(appear({ Id: MOB_ID, RaceId: 4856 }));
+
+        mgr.onEvent(damage(PC_ID, 58101, 2597693));
+        mgr.onEvent(appear({ Id: PC_ID, RaceId: 10002, Name: '蘑菇嫩煎雞' }));
+
+        expect(collected(dc)).toHaveLength(1);
+        expect(mgr.entityMap[PC_ID].name).toBe('蘑菇嫩煎雞');
+        expect(mgr.entityMap[PC_ID].isPC).toBe(true);
+    });
+
+    // The 死神 burst AoEs a batch of freshly spawned mobs; each mob's first
+    // hit used to be dropped because the placeholder target was only created
+    // after onApplyDamage had already bailed out.
+    it('counts the first hit on a target it has not seen yet', () => {
+        const dc = new DamageCollectorManager();
+        const mgr = new ActorManager(dc);
+        mgr.onEvent(appear({ Id: PC_ID, RaceId: 10002 }));
+
+        mgr.onEvent(damage(PC_ID, 59167, 518228, FRESH_MOB_ID));
+
+        expect(collected(dc)).toHaveLength(1);
+        expect(collected(dc)[0].Damage).toBe(518228);
+    });
+
+    it('stops treating a placeholder as a player once its real race arrives', () => {
+        const dc = new DamageCollectorManager();
+        const mgr = new ActorManager(dc);
+        mgr.onEvent(appear({ Id: PC_ID, RaceId: 10002 }));
+
+        // Placeholder target is created as a character; the real appear says wolf.
+        mgr.onEvent(damage(PC_ID, 59167, 100, FRESH_MOB_ID));
+        expect(mgr.entityMap[FRESH_MOB_ID]).toBeDefined();
+
+        mgr.onEvent(appear({ Id: FRESH_MOB_ID, RaceId: 20001, Name: '灰狼' }));
+
+        expect(mgr.entityMap[FRESH_MOB_ID].isPC).toBe(false);
     });
 });
