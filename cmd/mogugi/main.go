@@ -36,7 +36,7 @@ var staticFiles embed.FS
 // Version is the build version. Override at link time via:
 //
 //	go build -ldflags "-X main.Version=x.y.z"
-var Version = "0.4.0"
+var Version = "0.4.1"
 
 var logger = util.NewLogger("mogugi")
 var packetLogFilename = ""
