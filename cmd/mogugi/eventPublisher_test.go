@@ -101,3 +101,31 @@ func TestHandleBeautyRoomSkipsUnknownOwner(t *testing.T) {
 		t.Errorf("expected no files, got %d", len(entries))
 	}
 }
+
+func TestHandleBeautyRoomEmptyParseDoesNotWrite(t *testing.T) {
+	orig := itemsLogDirPath
+	itemsLogDirPath = t.TempDir()
+	defer func() { itemsLogDirPath = orig }()
+
+	p := &eventPublisher{entityCache: make(entityCache)}
+	p.entityCache[7] = &entityInfoExtend{EntityInfo: &packet.EntityInfo{Id: 7, Name: "測試角色"}}
+
+	// Header declares 39 items but carries no item records.
+	pk := &packet.GamePacket{
+		At: time.Now(),
+		Op: packet.OpcodeBeautyRoomList,
+		Id: 7,
+		Msg: packet.Message{
+			packet.NewMessageElemByte(1),
+			packet.NewMessageElemString("xxxxxxxxxxxxxxxxxxxx"),
+			packet.NewMessageElemInt(39),
+			packet.NewMessageElemLong(0),
+		},
+	}
+	p.handleBeautyRoom(pk)
+
+	entries, _ := os.ReadDir(itemsLogDirPath)
+	if len(entries) != 0 {
+		t.Errorf("expected no files after empty parse, got %d", len(entries))
+	}
+}

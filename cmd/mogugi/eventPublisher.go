@@ -380,6 +380,10 @@ func (t *eventPublisher) handleBeautyRoom(p *packet.GamePacket) {
 	if int(declared) != len(items) {
 		itemLogger.Printf("beauty room: declared %d items, parsed %d", declared, len(items))
 	}
+	// Schema drift guard: an all-miss parse must not wipe the last good CSV.
+	if declared > 0 && len(items) == 0 {
+		return
+	}
 
 	t.Lock()
 	var owner string
