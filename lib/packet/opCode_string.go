@@ -33,7 +33,6 @@ var OpCodeStringMap = map[uint32]string{
 	0x7922: "OpcodeSetFinisher2",
 	0x7926: "OpcodeCombatAction",
 	0x7D01: "OpcodeCombatAttackRes",
-	0x9025: "OpcodeSummonCreated",
 	0x9091: "OpcodeEffect",
 	0x9095: "OpcodeEffectDelayed",
 	0xA027: "OpcodeConditionUpdate",

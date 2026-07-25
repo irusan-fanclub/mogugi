@@ -27,13 +27,16 @@ export class ActorManager {
         switch (event.EventId) {
             case protocols.eventIdEntityAppear: {
                 // TODO: entityAppear에서 master id, hp 가져오기, damage, cc 처리할 때 master id가 있으면 그쪽으로 보내야함
-                const prevSummonerId = entity.summonerId;
+                const prevOwnerId = entity.ownerId;
                 entity.onEntityAppear(event as protocols.eventEntityAppear);
 
-                // The summon packet arrives seconds after a marionette starts
-                // hitting, so move what it already dealt onto the summoner.
-                if (entity.summonerId && entity.summonerId !== prevSummonerId) {
-                    this._damageCollector.reattribute(entity.id, entity.summonerId);
+                // A pet/summon that hit before its appear packet was collected
+                // under its own id (owner unknown then); now the owner is known,
+                // move that damage onto the owner. A summon (人偶) counts as the
+                // owner's own output, a real pet is tagged as pet damage.
+                if (entity.ownerId && entity.ownerId !== prevOwnerId) {
+                    const petId = ActorManager.isSummonRace(entity.raceId) ? '' : entity.id;
+                    this._damageCollector.reattribute(entity.id, entity.ownerId, petId);
                 }
                 break;
             }
@@ -137,10 +140,15 @@ export class ActorManager {
             Lower: 1,
             GuildName: "",
             OwnerId: "",
-            SummonerId: "",
         });
 
         return this.entityMap[id];
+    }
+
+    /** Marionette / golem / other summoned-unit race block (990xxx). Their
+     *  damage counts as the owner's own output, not pet damage. */
+    public static isSummonRace(raceId: number): boolean {
+        return raceId >= 990000 && raceId < 991000;
     }
 
     /** Race of a placeholder whose real race isn't known yet. */
@@ -408,14 +416,6 @@ export class EntityActor extends BaseActor {
         return this._ownerId;
     }
 
-    /** Summoner of a summoned unit (marionette, ...). Unlike a pet, its damage
-     *  counts as the summoner's own. */
-    protected _summonerId = '';
-    public get summonerId() {
-        this.vueUpdateTrack?.();
-        return this._summonerId;
-    }
-
     public get group() {
         this.vueUpdateTrack?.();
         return this._group;
@@ -452,10 +452,9 @@ export class EntityActor extends BaseActor {
         this._raceId = event.RaceId;
         this._finisherId = '';
         this._guildName = event.GuildName;
-        this._ownerId = event.OwnerId;
-        // The summon link can arrive after the first appear; keep the old one
-        // rather than clearing it.
-        this._summonerId = event.SummonerId || this._summonerId;
+        // Keep a previously-learned owner if a later appear omits it (a summon's
+        // first appears sometimes lack the owner before it is fully spawned).
+        this._ownerId = event.OwnerId || this._ownerId;
         this._body.Height = event.Height;
         this._body.Weight = event.Weight;
         this._body.Upper = event.Upper;
@@ -509,14 +508,14 @@ export class EntityActor extends BaseActor {
         }
 
         // apply의 경우 pet 대신 pc가 공격한 것 처럼 처리
+        // Redirect an owned unit's damage onto its owner. A summon (人偶) is the
+        // owner's own output, so leave it untagged; a real pet is tagged so the
+        // pet-free views can drop it.
         if (attacker?.ownerId) {
-            damage.PetId = attackerId;
             damage.Id = attacker.ownerId;
-        }
-        // A summon (marionette etc.) is the summoner's own damage — redirect it
-        // without the pet tag so the pet-free views keep counting it.
-        else if (attacker?.summonerId) {
-            damage.Id = attacker.summonerId;
+            if (!ActorManager.isSummonRace(attacker.raceId)) {
+                damage.PetId = attackerId;
+            }
         }
 
         this._totalApplyDamage += event.Damage;

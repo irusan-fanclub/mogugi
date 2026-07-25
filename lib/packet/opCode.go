@@ -41,7 +41,6 @@ const (
 	OpcodeSetFinisher2          OpCode = 31010 // 0x7922
 	OpcodeCombatAction          OpCode = 31014 // 0x7926
 	OpcodeCombatAttackRes       OpCode = 32001 // 0x7d01
-	OpcodeSummonCreated         OpCode = 36901 // 0x9025 (id = summoner, long summonId) — pet/marionette/golem spawn; broadcast for every player
 	OpcodeEffect                OpCode = 37009 // 0x9091
 	OpcodeEffectDelayed         OpCode = 37013 // 0x9095
 	OpcodeConditionUpdate       OpCode = 40999 // 0xa027 (reserved, verify)

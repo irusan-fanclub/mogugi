@@ -24,7 +24,6 @@ function appear(partial: Partial<protocols.eventEntityAppear> & { Id: string, Ra
         Lower: 1,
         GuildName: '',
         OwnerId: '',
-        SummonerId: '',
         ...partial,
     };
 }
@@ -74,12 +73,12 @@ describe('damage attribution', () => {
         expect(collected(dc)[0].PetId).toBe(PET_ID);
     });
 
-    // 人偶 (marionette): the appear packet carries no pet-owner, the link comes
-    // from the summon packet. Its damage is the summoner's own damage, so it
-    // must not be tagged as pet damage (the pet-free DPS chart would drop it).
-    it('redirects marionette damage to the summoner as own damage', () => {
+    // 人偶 (marionette): the appear packet's owner id is the summoner. Its
+    // damage is the owner's own output, so it must not be tagged as pet damage
+    // (the pet-free DPS chart would otherwise drop it).
+    it('redirects marionette damage to the owner as own damage', () => {
         const { dc, mgr } = setup();
-        mgr.onEvent(appear({ Id: PUPPET_ID, RaceId: 990216, SummonerId: PC_ID }));
+        mgr.onEvent(appear({ Id: PUPPET_ID, RaceId: 990216, OwnerId: PC_ID }));
         mgr.onEvent(damage(PUPPET_ID, 59169, 20053));
 
         expect(collected(dc)).toHaveLength(1);
@@ -96,31 +95,31 @@ describe('damage attribution', () => {
         expect(collected(dc)[0].Id).toBe(PUPPET_ID);
     });
 
-    it('picks up a summoner link that arrives after the first appear', () => {
+    it('picks up an owner that arrives after the first appear', () => {
         const { dc, mgr } = setup();
         mgr.onEvent(appear({ Id: PUPPET_ID, RaceId: 990216 }));
-        mgr.onEvent(appear({ Id: PUPPET_ID, RaceId: 990216, SummonerId: PC_ID }));
+        mgr.onEvent(appear({ Id: PUPPET_ID, RaceId: 990216, OwnerId: PC_ID }));
         mgr.onEvent(damage(PUPPET_ID, 59169, 20053));
 
         expect(collected(dc)).toHaveLength(1);
         expect(collected(dc)[0].Id).toBe(PC_ID);
     });
 
-    // The summon packet lands seconds after the marionette has already hit, so
-    // damage collected in between has to be moved onto the summoner.
-    it('re-attributes damage dealt before the summoner link arrived', () => {
+    // The appear packet lands after the marionette has already hit, so damage
+    // collected in between has to be moved onto the owner.
+    it('re-attributes damage dealt before the owner was known', () => {
         const { dc, mgr } = setup();
         mgr.onEvent(appear({ Id: PUPPET_ID, RaceId: 990216 }));
         mgr.onEvent(damage(PUPPET_ID, 59169, 20053));
         mgr.onEvent(damage(PUPPET_ID, 59169, 5698));
 
-        mgr.onEvent(appear({ Id: PUPPET_ID, RaceId: 990216, SummonerId: PC_ID }));
+        mgr.onEvent(appear({ Id: PUPPET_ID, RaceId: 990216, OwnerId: PC_ID }));
 
         expect(collected(dc).map(d => d.Id)).toEqual([PC_ID, PC_ID]);
         expect(collected(dc).every(d => d.PetId === '')).toBe(true);
     });
 
-    it('rebuilds collectors created before the summoner link arrived', () => {
+    it('rebuilds collectors created before the owner was known', () => {
         const { dc, mgr } = setup();
         const pcDc = dc.getGroupedDamageCollector(d => d.Id === PC_ID, d => d.TargetId);
 
@@ -129,11 +128,26 @@ describe('damage attribution', () => {
         mgr.onEvent(damage(PC_ID, 59164, 8990));
         expect(pcDc.totalDamage).toBe(8990);
 
-        mgr.onEvent(appear({ Id: PUPPET_ID, RaceId: 990216, SummonerId: PC_ID }));
+        mgr.onEvent(appear({ Id: PUPPET_ID, RaceId: 990216, OwnerId: PC_ID }));
 
         expect(pcDc.totalDamage).toBe(29043);
         expect(pcDc.count).toBe(2);
         expect(pcDc.groupedTotalDamages[MOB_ID]).toBe(29043);
+    });
+
+    // A real pet (not a summon race) that hit before its appear must be moved
+    // onto the owner AND tagged as pet damage, so the pet-free views drop it.
+    it('re-attributes a pre-appear pet hit onto the owner with the pet tag', () => {
+        const { dc, mgr } = setup();
+        mgr.onEvent(damage(PET_ID, 50249, 186));
+        expect(collected(dc)[0].Id).toBe(PET_ID);
+        expect(collected(dc)[0].PetId).toBe('');
+
+        mgr.onEvent(appear({ Id: PET_ID, RaceId: 490359, OwnerId: PC_ID }));
+
+        expect(collected(dc)).toHaveLength(1);
+        expect(collected(dc)[0].Id).toBe(PC_ID);
+        expect(collected(dc)[0].PetId).toBe(PET_ID);
     });
 
     it('leaves other entities untouched when re-attributing', () => {
@@ -144,7 +158,7 @@ describe('damage attribution', () => {
         mgr.onEvent(appear({ Id: PUPPET_ID, RaceId: 990216 }));
         mgr.onEvent(damage(PET_ID, 50249, 186));
         mgr.onEvent(damage(PUPPET_ID, 59169, 20053));
-        mgr.onEvent(appear({ Id: PUPPET_ID, RaceId: 990216, SummonerId: PC_ID }));
+        mgr.onEvent(appear({ Id: PUPPET_ID, RaceId: 990216, OwnerId: PC_ID }));
 
         expect(puppetDc.totalDamage).toBe(0);
         const petHit = collected(dc).find(d => d.PetId === PET_ID);

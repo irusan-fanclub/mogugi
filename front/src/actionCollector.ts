@@ -69,16 +69,20 @@ export class DamageCollectorManager {
 
     /**
      * Moves already-collected damage from one attacker to another and rebuilds
-     * every collector. Needed because a summon's owner is only known a few
-     * seconds after it starts hitting. Returns false when nothing matched.
+     * every collector. Needed because an owned unit's owner is only known once
+     * its appear packet arrives, which can be after it has already hit. When
+     * petId is given the moved damage is tagged as that pet's (so pet-free
+     * views drop it); an empty petId keeps it as the owner's own output.
+     * Returns false when nothing matched.
      */
-    public reattribute(fromId: string, toId: string): boolean {
+    public reattribute(fromId: string, toId: string, petId = ''): boolean {
         let changed = false;
         for (const p of this._damages) {
             if (p.Id !== fromId) {
                 continue;
             }
             p.Id = toId;
+            p.PetId = petId;
             changed = true;
         }
 

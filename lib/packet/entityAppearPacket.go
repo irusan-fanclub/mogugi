@@ -460,7 +460,7 @@ func ParseEntityAppearPacket(msg Message) (*EntityInfo, error) {
 	msg = msg[1:]
 
 	// Guild related
-	if len(msg) < 19 {
+	if len(msg) < 33 {
 		err := fmt.Errorf("entity appear data is too short %v", curPos())
 		logger.Println(err)
 		return nil, err
@@ -473,26 +473,147 @@ func ParseEntityAppearPacket(msg Message) (*EntityInfo, error) {
 	}
 
 	v.GuildName = msg[1].Data().(string)
-	msg = msg[19:]
+	msg = msg[33:]
 
-	// Pet related
+	// unknown field
+	if len(msg) < 1 {
+		err := fmt.Errorf("entity appear data is too short %v", curPos())
+		logger.Println(err)
+		return nil, err
+	}
+
+	if msg[0].Type() != MessageElemTypeByte {
+		err := fmt.Errorf("unk2Flag has unexpected type %v", msg[0].Type())
+		logger.Println(err)
+		return nil, err
+	}
+
+	unk2Flag := msg[0].Data().(uint8)
+	msg = msg[1:]
+
+	if unk2Flag != 0 {
+		if len(msg) < 1 {
+			err := fmt.Errorf("entity appear data is too short %v", curPos())
+			logger.Println(err)
+			return nil, err
+		}
+
+		msg = msg[1:]
+	}
+
+	// unknown field
 	if len(msg) < 2 {
 		err := fmt.Errorf("entity appear data is too short %v", curPos())
 		logger.Println(err)
 		return nil, err
 	}
 
-	if msg[1].Type() != MessageElemTypeLong {
-		err := fmt.Errorf("ownerId has unexpected type %v", msg[1].Type())
+	if msg[1].Type() != MessageElemTypeByte {
+		err := fmt.Errorf("unk3Flag has unexpected type %v", msg[1].Type())
 		logger.Println(err)
 		return nil, err
 	}
 
-	v.OwnerId = msg[1].Data().(uint64)
+	unk3Flag := msg[1].Data().(uint8)
 	msg = msg[2:]
 
-	// logger.Printf("Entity: Id=%d, Name=%s, RaceId=%d, GuildName=%s, OwnerId=%d\n",
-	// 	v.Id, v.Name, v.RaceId, v.GuildName, v.OwnerId)
+	if unk3Flag != 0 {
+		if len(msg) < 1 {
+			err := fmt.Errorf("entity appear data is too short %v", curPos())
+			logger.Println(err)
+			return nil, err
+		}
+
+		msg = msg[1:]
+	}
+
+	if len(msg) < 7 {
+		err := fmt.Errorf("entity appear data is too short %v", curPos())
+		logger.Println(err)
+		return nil, err
+	}
+
+	unk4Flag := msg[6].Data().(uint8)
+	msg = msg[7:]
+
+	if unk4Flag != 0 {
+		// 5, 5, 5, 5, 5, 5, 5
+		if len(msg) < 7 {
+			err := fmt.Errorf("entity appear data is too short %v", curPos())
+			logger.Println(err)
+			return nil, err
+		}
+
+		msg = msg[7:]
+	}
+
+	// unknown field
+	if len(msg) < 14 {
+		err := fmt.Errorf("entity appear data is too short %v", curPos())
+		logger.Println(err)
+		return nil, err
+	}
+
+	msg = msg[14:]
+
+	// 4, ...
+	if len(msg) < 2 {
+		err := fmt.Errorf("entity appear data is too short %v", curPos())
+		logger.Println(err)
+		return nil, err
+	}
+
+	if msg[0].Type() != MessageElemTypeLong {
+		err := fmt.Errorf("unk4 has unexpected type %v", msg[0].Type())
+		logger.Println(err)
+		return nil, err
+	}
+
+	// 4, 6...
+	if msg[1].Type() == MessageElemTypeString {
+		if len(msg) < 6 {
+			err := fmt.Errorf("entity appear data is too short %v", curPos())
+			logger.Println(err)
+			return nil, err
+		}
+
+		if msg[2].Type() == MessageElemTypeString {
+			// 4, 6, 6, 1, 1, 5, 1, ...  (post game-update format)
+			msg = msg[6:]
+		} else if msg[5].Type() == MessageElemTypeString {
+			// 4, 6, 2, 2, 2, 6, ...
+			msg = msg[5:]
+		} else {
+			err := fmt.Errorf("entity appear data is too short %v", curPos())
+			logger.Println(err)
+			return nil, err
+		}
+	}
+
+	// 4, ...
+	msg = msg[1:]
+
+	// Pet related.
+	// Owner id sits at msg[4] for a player owner, msg[3] for a monster/boss
+	// owner; auto-detect by which is a Long.
+	if len(msg) < 5 {
+		err := fmt.Errorf("entity appear data is too short %v", curPos())
+		logger.Println(err)
+		return nil, err
+	}
+
+	ownerIdIdx := -1
+	if msg[3].Type() == MessageElemTypeLong {
+		ownerIdIdx = 3
+	} else if msg[4].Type() == MessageElemTypeLong {
+		ownerIdIdx = 4
+	} else {
+		err := fmt.Errorf("ownerId not found (msg[3]=%v msg[4]=%v)", msg[3].Type(), msg[4].Type())
+		logger.Println(err)
+		return nil, err
+	}
+
+	v.OwnerId = msg[ownerIdIdx].Data().(uint64)
 
 	return v, nil
 }
