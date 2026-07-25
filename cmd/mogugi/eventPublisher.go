@@ -43,6 +43,7 @@ type eventPublisher struct {
 	lastMissionID   uint32            // latest mission id (45004); resolves via dungeonNames
 	lastBGM         string            // currently playing BGM (43302); Boss_* means a boss fight
 	bossEntities    map[uint64]string // live boss entity id -> boss name (race-id detection)
+	snapshotNames   map[uint64]string // entity id -> name from 0x5209 snapshots (survives cache eviction)
 	dgnLog          dungeonLog        // per-run event file for whitelisted dungeons (own lock)
 }
 
@@ -361,11 +362,26 @@ func (t *eventPublisher) handleChannelCharacterInfo(p *packet.GamePacket) {
 	if isSummonRace(snap.RaceId) {
 		return
 	}
+	if snap.Id != 0 && snap.Name != "" {
+		t.rememberSnapshotName(snap.Id, snap.Name)
+	}
 	if err := writeEntitySnapshot(snap); err != nil {
 		itemLogger.Printf("write csv failed: %v", err)
 		return
 	}
 	itemLogger.Printf("update %q (%d items)", snap.Name, len(snap.Items))
+}
+
+// rememberSnapshotName records an id -> name seen in a 0x5209 snapshot.
+// Beauty-room owner lookup falls back to it: when mogugi starts mid-session
+// the character never re-appears, so entityCache alone misses the owner.
+func (t *eventPublisher) rememberSnapshotName(id uint64, name string) {
+	t.Lock()
+	defer t.Unlock()
+	if t.snapshotNames == nil {
+		t.snapshotNames = make(map[uint64]string)
+	}
+	t.snapshotNames[id] = name
 }
 
 // handleBeautyRoom writes the 0x96CA beauty-room list to the item index as
@@ -389,6 +405,9 @@ func (t *eventPublisher) handleBeautyRoom(p *packet.GamePacket) {
 	var owner string
 	if e, ok := t.entityCache[p.Id]; ok {
 		owner = e.Name
+	}
+	if owner == "" {
+		owner = t.snapshotNames[p.Id]
 	}
 	t.Unlock()
 	if owner == "" {

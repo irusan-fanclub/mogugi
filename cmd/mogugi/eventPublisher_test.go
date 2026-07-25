@@ -88,6 +88,23 @@ func TestHandleBeautyRoomWritesCSV(t *testing.T) {
 	}
 }
 
+// Real-world case (capture 1784996977): mogugi starts mid-session, so the
+// character never sends an appear packet and entityCache misses it — but
+// its 0x5209 snapshot did arrive and carries the id→name mapping.
+func TestHandleBeautyRoomOwnerFromSnapshotName(t *testing.T) {
+	orig := itemsLogDirPath
+	itemsLogDirPath = t.TempDir()
+	defer func() { itemsLogDirPath = orig }()
+
+	p := &eventPublisher{entityCache: make(entityCache)}
+	p.rememberSnapshotName(7, "地獄哞菇")
+	p.handleBeautyRoom(beautyRoomPacket(7))
+
+	if _, err := os.ReadFile(filepath.Join(itemsLogDirPath, "美容室(地獄哞菇).csv")); err != nil {
+		t.Fatalf("csv not written via snapshot-name fallback: %v", err)
+	}
+}
+
 func TestHandleBeautyRoomSkipsUnknownOwner(t *testing.T) {
 	orig := itemsLogDirPath
 	itemsLogDirPath = t.TempDir()
