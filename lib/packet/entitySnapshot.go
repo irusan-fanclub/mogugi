@@ -57,6 +57,32 @@ func ParseEntitySnapshot(msg Message) (*EntitySnapshot, error) {
 		prevStr = s
 	}
 
+	snap.Items = scanItems(msg)
+
+	// Bag backfill: a bag item's Bin144 u32@12 = its content pocket
+	// (verified: festival-outfit bag->102, starlight bag->138). The IBOR
+	// key identifies "this is a bag", avoiding false matches from other
+	// items' leftover @12 values.
+	bagByPocket := map[uint32]uint32{}
+	for _, it := range snap.Items {
+		if _, isBag := metaIntValue(it.Metadata, "IBOR"); isBag && it.bagContentPocket != 0 {
+			bagByPocket[it.bagContentPocket] = it.ItemID
+		}
+	}
+	for i := range snap.Items {
+		if id, ok := bagByPocket[snap.Items[i].Pocket]; ok {
+			snap.Items[i].BagItemID = id
+		}
+	}
+
+	return snap, nil
+}
+
+// scanItems walks an element list and extracts every item run
+// (Long -> Byte(2) -> Bin(>=80), plus ext/OptionInfo/40-byte tails).
+// Shared by the 0x5209 snapshot and the 0x96CA beauty-room list.
+func scanItems(msg Message) []InventoryItem {
+	items := []InventoryItem{}
 	for i := 0; i+2 < len(msg); i++ {
 		if msg[i].Type() != MessageElemTypeLong {
 			continue
@@ -132,24 +158,7 @@ func ParseEntitySnapshot(msg Message) (*EntitySnapshot, error) {
 				}
 			}
 		}
-		snap.Items = append(snap.Items, it)
+		items = append(items, it)
 	}
-
-	// Bag backfill: a bag item's Bin144 u32@12 = its content pocket
-	// (verified: festival-outfit bag->102, starlight bag->138). The IBOR
-	// key identifies "this is a bag", avoiding false matches from other
-	// items' leftover @12 values.
-	bagByPocket := map[uint32]uint32{}
-	for _, it := range snap.Items {
-		if _, isBag := metaIntValue(it.Metadata, "IBOR"); isBag && it.bagContentPocket != 0 {
-			bagByPocket[it.bagContentPocket] = it.ItemID
-		}
-	}
-	for i := range snap.Items {
-		if id, ok := bagByPocket[snap.Items[i].Pocket]; ok {
-			snap.Items[i].BagItemID = id
-		}
-	}
-
-	return snap, nil
+	return items
 }
