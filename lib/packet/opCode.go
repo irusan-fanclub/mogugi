@@ -46,6 +46,7 @@ const (
 	OpcodeConditionUpdate       OpCode = 40999 // 0xa027 (reserved, verify)
 	OpcodeConditionUpdate2      OpCode = 41000 // 0xa028
 	OpcodePartyWindowUpdate     OpCode = 42044 // 0xa43c
+	OpcodeBeautyRoomList        OpCode = 38602 // 0x96ca beauty-room list: (byte, string account-id, int count, long 0), count item records (0x5209 shape), then style-state triples
 	OpcodeWalking               OpCode = 0xfd13021
 	OpcodeRunning               OpCode = 0xf44bba3
 )
