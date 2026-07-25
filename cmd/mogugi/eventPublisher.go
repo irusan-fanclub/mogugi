@@ -342,6 +342,9 @@ func (t *eventPublisher) handlePacket(p *packet.GamePacket) {
 
 	case packet.OpcodeChannelCharacterInfoR:
 		t.handleChannelCharacterInfo(p)
+
+	case packet.OpcodeBeautyRoomList:
+		t.handleBeautyRoom(p)
 	}
 }
 
@@ -360,6 +363,43 @@ func (t *eventPublisher) handleChannelCharacterInfo(p *packet.GamePacket) {
 	}
 	if err := writeEntitySnapshot(snap); err != nil {
 		itemLogger.Printf("write csv failed: %v", err)
+		return
+	}
+	itemLogger.Printf("update %q (%d items)", snap.Name, len(snap.Items))
+}
+
+// handleBeautyRoom writes the 0x96CA beauty-room list to the item index as
+// its own per-character entity file (美容室(<name>).csv), overwritten on
+// every open, like a 0x5209 snapshot.
+func (t *eventPublisher) handleBeautyRoom(p *packet.GamePacket) {
+	items, declared, err := packet.ParseBeautyRoomPacket(p.Msg)
+	if err != nil {
+		itemLogger.Printf("beauty room: ignore packet: %v", err)
+		return
+	}
+	if int(declared) != len(items) {
+		itemLogger.Printf("beauty room: declared %d items, parsed %d", declared, len(items))
+	}
+
+	t.Lock()
+	var owner string
+	if e, ok := t.entityCache[p.Id]; ok {
+		owner = e.Name
+	}
+	t.Unlock()
+	if owner == "" {
+		itemLogger.Printf("beauty room: owner of id=%d unknown, skip write (%d items parsed)", p.Id, len(items))
+		return
+	}
+
+	snap := &packet.EntitySnapshot{
+		Id:     p.Id,
+		Name:   fmt.Sprintf("美容室(%s)", owner),
+		Master: owner,
+		Items:  items,
+	}
+	if err := writeEntitySnapshot(snap); err != nil {
+		itemLogger.Printf("beauty room: write csv failed: %v", err)
 		return
 	}
 	itemLogger.Printf("update %q (%d items)", snap.Name, len(snap.Items))
