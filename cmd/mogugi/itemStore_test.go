@@ -1,7 +1,10 @@
 package main
 
 import (
+	"encoding/json"
+	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/irusan-fanclub/mogugi/lib/packet"
@@ -117,6 +120,80 @@ func TestSetAccount(t *testing.T) {
 		if e.Account != "acct-x" {
 			t.Fatalf("entity %s account=%q, want acct-x", e.Entity, e.Account)
 		}
+	}
+}
+
+func TestHttpHandlerItemIndexServesStore(t *testing.T) {
+	s := withTestItemDB(t)
+	if err := s.ReplaceStorage(entityMeta{Id: 1, Name: "角色A"}, "inventory", storeItems(1)); err != nil {
+		t.Fatal(err)
+	}
+	acct := entityMeta{Id: bankEntityId("acct"), Name: bankEntityName("acct")}
+	if err := s.ReplaceBankTab(acct, "分頁A", storeItems(2)); err != nil {
+		t.Fatal(err)
+	}
+
+	rr := httptest.NewRecorder()
+	httpHandlerItemIndex(rr, httptest.NewRequest("GET", "/api/item-index", nil))
+
+	if rr.Code != 200 {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, `"storage":"bank"`) {
+		t.Fatalf("body missing storage:bank field: %s", body)
+	}
+
+	var idx []IndexEntity
+	if err := json.Unmarshal([]byte(body), &idx); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(idx) != 2 {
+		t.Fatalf("entities = %d, want 2: %+v", len(idx), idx)
+	}
+	var sawInventory, sawBank bool
+	for _, e := range idx {
+		for _, it := range e.Items {
+			switch it.Storage {
+			case "inventory":
+				sawInventory = true
+			case "bank":
+				sawBank = true
+				if it.BagName != "分頁A" {
+					t.Fatalf("bank item bagName = %q, want 分頁A", it.BagName)
+				}
+			}
+		}
+	}
+	if !sawInventory || !sawBank {
+		t.Fatalf("expected both inventory and bank storage values, got %+v", idx)
+	}
+}
+
+func TestHttpHandlerItemIndexNilStoreServesEmptyArray(t *testing.T) {
+	orig := itemDB
+	itemDB = nil
+	defer func() { itemDB = orig }()
+
+	rr := httptest.NewRecorder()
+	httpHandlerItemIndex(rr, httptest.NewRequest("GET", "/api/item-index", nil))
+
+	if rr.Code != 200 {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.Bytes()
+	var idx []IndexEntity
+	if err := json.Unmarshal(body, &idx); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if idx == nil {
+		t.Fatal("decoded slice is nil, want non-nil empty slice")
+	}
+	if len(idx) != 0 {
+		t.Fatalf("entities = %d, want 0", len(idx))
+	}
+	if strings.TrimSpace(string(body)) != "[]" {
+		t.Fatalf("body = %q, want []", body)
 	}
 }
 
