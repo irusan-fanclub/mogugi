@@ -3,7 +3,7 @@
   <template v-else>
     <v-sheet width="100vw" class="d-flex flex-wrap pl-1 pr-1">
         <v-sheet width="100svw" class="d-flex">
-            <span style="text-wrap-mode: nowrap;">mogugi <span style="opacity:0.5; font-size:0.85em;">v{{ appVersion }}</span><span v-if="licenseUser" style="opacity:0.6; font-size:0.85em;"> · {{ licenseUser }}</span><template v-if="isStandalone">
+            <span style="text-wrap-mode: nowrap;">mogugi <span style="opacity:0.5; font-size:0.85em;">v{{ appVersion }}</span><span v-if="licenseUser" style="opacity:0.6; font-size:0.85em;"> · {{ licenseUser }}</span><span v-if="ownerName" style="opacity:0.6; font-size:0.85em;"> · 當前角色:{{ ownerName }}</span><template v-if="isStandalone">
                 <v-icon icon="mdi-check" color="success" />standalone
             </template><template v-else>, api
                 <span v-if="socketConnected"><v-icon icon="mdi-check" color="success" />connected</span>
@@ -141,7 +141,7 @@ import { defineComponent, onMounted, inject, ref } from "vue";
 
 import { useDialogStack } from '@/lib/useDialogStack';
 import { SocketClient } from '@/lib/socketClient';
-import { eventBase, eventIdMessageBox, eventIdSessionReset, eventMessageBox, eventSessionReset } from "./protocols";
+import { eventBase, eventIdMessageBox, eventIdSessionReset, eventIdOwnerCharacter, eventMessageBox, eventSessionReset, eventOwnerCharacter } from "./protocols";
 import { clearTimeRange } from '@/store';
 
 import TakeDamageComponent from '@/components/takeDamage.vue';
@@ -199,6 +199,7 @@ export default defineComponent({
         // Show the activation code screen when not yet activated; standalone builds have no backend and need no verification.
         const licenseActivated = ref(isStandalone);
         const licenseUser = ref('');
+        const ownerName = ref('');
         const fetchLicenseStatus = async () => {
             try {
                 const r = await fetch('/api/license/status');
@@ -222,6 +223,12 @@ export default defineComponent({
                     const e = event as eventMessageBox;
                     msgBoxOpen.value = true;
                     msgBoxText.value += `${e.Message}\n`;
+                    continue;
+                }
+
+                if (event.EventId === eventIdOwnerCharacter) {
+                    const e = event as eventOwnerCharacter;
+                    ownerName.value = e.Name;
                     continue;
                 }
 
@@ -480,6 +487,7 @@ export default defineComponent({
             isStandalone,
             licenseActivated,
             licenseUser,
+            ownerName,
             onActivated,
 
             socketConnected,

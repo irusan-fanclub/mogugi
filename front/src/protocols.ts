@@ -13,6 +13,7 @@ export const eventIdStatUpdate = 10;
 export const eventIdChat = 11;
 export const eventIdNotice = 12;
 export const eventIdChangeStance = 13;
+export const eventIdOwnerCharacter = 14;
 
 export const eventIdMessageBox = -1;
 export const eventIdSessionReset = -2;
@@ -107,6 +108,11 @@ export type eventNotice = eventBase & {
 export type eventChangeStance = eventBase & {
     EventId: 13;
     Stance: number;
+}
+
+export type eventOwnerCharacter = eventBase & {
+    EventId: 14;
+    Name: string;
 }
 
 export type eventMessageBox = eventBase & {

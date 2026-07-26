@@ -12,6 +12,7 @@ function holder(partial: Partial<Holder>): Holder {
         entity: 'TestChar',
         master: 'TestOwner',
         qty: 1,
+        storage: 'inventory',
         container: 'inv',
         x: 0,
         y: 0,

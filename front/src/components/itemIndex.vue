@@ -133,14 +133,23 @@ export default defineComponent({
         });
         const displayName = (h: Holder): string => buildDisplayName(h, deps());
 
-        // containerText: 背包欄顯示 — 包包名 > 已知系統空間名 > 分類 > 未知空間#pocket。
+        // containerText: 背包欄顯示 — 分頁/包包名 > 已知系統空間名 > 分類 > 未知空間#pocket。
         const containerText = (h: Holder): string => {
+            if (h.bagName) return h.bagName;
             if (h.bagItemId) return itemName(h.bagItemId);
             if (h.pocket && POCKET_NAMES[h.pocket]) return POCKET_NAMES[h.pocket];
             if (h.container === 'quest') return '任務';
             if (h.container === 'bag') return `未知空間#${h.pocket ?? '?'}`;
             return h.container;
         };
+
+        // STORAGE_NAMES: 存放處代碼 → 顯示名稱；未知代碼原樣顯示。
+        const STORAGE_NAMES: Record<string, string> = {
+            inventory: '物品欄',
+            beauty: '美容室',
+            bank: '銀行',
+        };
+        const storageText = (h: Holder): string => STORAGE_NAMES[h.storage] ?? h.storage;
 
         // metalwareText: 細工欄摘要（能力名 等級，以「 / 」串接）。
         const metalwareText = (h: Holder): string => {
@@ -217,6 +226,7 @@ export default defineComponent({
                 itemId: h.id,
                 entity: h.entity,
                 master: h.master,
+                storage: storageText(h),
                 container: containerText(h),
                 qty: h.qty,
                 pos: `(${h.x},${h.y})`,
@@ -232,6 +242,7 @@ export default defineComponent({
             { title: '細工', key: 'metalware' },
             { title: '角色', key: 'entity' },
             { title: 'Owner', key: 'master' },
+            { title: '存放處', key: 'storage' },
             { title: '背包', key: 'container' },
             { title: '數量', key: 'qty' },
             { title: '座標', key: 'pos' },

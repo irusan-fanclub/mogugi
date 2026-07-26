@@ -11,16 +11,17 @@ interface ItemExtra {
     blessEffects?: IndexEnchantEffect[];
     relicEffects?: IndexEnchantEffect[];
     bagItemId?: number;  // 所在袋子的 item id（0/undefined = 非袋內）
+    bagName?: string;    // 銀行分頁等具名容器的顯示名稱
     pocket?: number;     // 原始 pocket id
     colors?: string[];   // 六色 rrggbb hex
     metadata?: string;   // MetaData1 原始 KV 字串
 }
 export interface IndexItem extends ItemExtra {
-    id: number; qty: number; container: string; x: number; y: number;
+    id: number; qty: number; storage: string; container: string; x: number; y: number;
 }
 export interface IndexEntity { entity: string; master: string; items: IndexItem[] }
 export interface Holder extends ItemExtra {
-    id: number; entity: string; master: string; qty: number; container: string; x: number; y: number;
+    id: number; entity: string; master: string; qty: number; storage: string; container: string; x: number; y: number;
 }
 
 // parseItemMetadata 解析 MetaData1 KV 字串（"KEY:type:value;…"）成 map。
