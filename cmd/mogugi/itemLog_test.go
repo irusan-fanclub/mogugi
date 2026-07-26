@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/irusan-fanclub/mogugi/lib/packet"
@@ -201,6 +202,75 @@ func TestReadItemIndex_MissingDir(t *testing.T) {
 	}
 	if len(idx) != 0 {
 		t.Fatalf("want empty, got %+v", idx)
+	}
+}
+
+func TestWriteIndexEntityCSV(t *testing.T) {
+	s := testStore(t)
+	meta := entityMeta{Id: 500, Name: "小雞", Master: "主人"}
+	if err := s.ReplaceStorage(meta, "inventory", []packet.InventoryItem{
+		{ItemID: 40026, Qty: 1, Container: "main", PosX: 1, PosY: 0},
+	}); err != nil {
+		t.Fatalf("ReplaceStorage: %v", err)
+	}
+	// Same entity id as the inventory owner, so this one entity ends up
+	// holding both an inventory item and a bank item (bagName set).
+	if err := s.ReplaceBankTab(meta, "bagA", []packet.InventoryItem{
+		{ItemID: 99999, Qty: 2, Container: "bank", PosX: 0, PosY: 0},
+	}); err != nil {
+		t.Fatalf("ReplaceBankTab: %v", err)
+	}
+
+	idx, err := s.ReadIndex()
+	if err != nil {
+		t.Fatalf("ReadIndex: %v", err)
+	}
+	if len(idx) != 1 || len(idx[0].Items) != 2 {
+		t.Fatalf("want 1 entity with 2 items, got %+v", idx)
+	}
+
+	outDir := t.TempDir()
+	if err := writeIndexEntityCSV(outDir, idx[0]); err != nil {
+		t.Fatalf("writeIndexEntityCSV: %v", err)
+	}
+
+	path := filepath.Join(outDir, "小雞.csv")
+	ent, err := readOneEntityCSV(path)
+	if err != nil {
+		t.Fatalf("readOneEntityCSV: %v", err)
+	}
+	if ent.Entity != "小雞" || ent.Master != "主人" || len(ent.Items) != 2 {
+		t.Fatalf("unexpected entity: %+v", ent)
+	}
+	var found40026, found99999 bool
+	for _, it := range ent.Items {
+		switch it.ID {
+		case 40026:
+			found40026 = true
+			if it.Qty != 1 || it.Container != "main" {
+				t.Errorf("item 40026 mismatch: %+v", it)
+			}
+		case 99999:
+			found99999 = true
+			if it.Qty != 2 || it.Container != "bank" {
+				t.Errorf("item 99999 mismatch: %+v", it)
+			}
+		}
+	}
+	if !found40026 || !found99999 {
+		t.Fatalf("missing legacy items: %+v", ent.Items)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read raw csv: %v", err)
+	}
+	content := string(raw)
+	if !strings.Contains(content, "storage") || !strings.Contains(content, "bag_name") {
+		t.Fatalf("header missing storage/bag_name columns: %s", content)
+	}
+	if !strings.Contains(content, "bank") || !strings.Contains(content, "bagA") {
+		t.Fatalf("raw CSV missing bank storage and bag name: %s", content)
 	}
 }
 

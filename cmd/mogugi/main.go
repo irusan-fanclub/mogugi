@@ -84,6 +84,13 @@ func main() {
 			}
 		}
 		runFile(ctx, fileName, realtime)
+	case "itemcsv":
+		outDir := "items_log_export"
+		if len(os.Args) > 2 {
+			outDir = os.Args[2]
+		}
+		exportItemCSV(outDir)
+		return
 	default:
 		runLive(ctx)
 	}

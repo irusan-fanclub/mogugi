@@ -157,6 +157,26 @@ func decodeColors(s string) []string {
 	return strings.Split(s, "|")
 }
 
+// encodeIndexMetalware mirrors encodeMetalware but for the already-decoded
+// IndexMetalware struct (used when re-exporting from the SQLite index).
+func encodeIndexMetalware(list []IndexMetalware) string {
+	parts := make([]string, 0, len(list))
+	for _, m := range list {
+		parts = append(parts, fmt.Sprintf("%d:%d", m.ID, m.Level))
+	}
+	return strings.Join(parts, "|")
+}
+
+// encodeIndexEffects mirrors encodeEffects but for the already-decoded
+// IndexEnchantEffect struct.
+func encodeIndexEffects(list []IndexEnchantEffect) string {
+	parts := make([]string, 0, len(list))
+	for _, r := range list {
+		parts = append(parts, fmt.Sprintf("%d:%d:%d:%d", r.Code, r.Value, r.CondSkill, r.CondRank))
+	}
+	return strings.Join(parts, "|")
+}
+
 type IndexEntity struct {
 	Entity  string      `json:"entity"`
 	Master  string      `json:"master"`
@@ -282,6 +302,93 @@ func writeEntityCSVTo(dir string, snap *packet.EntitySnapshot) error {
 		return err
 	}
 	return os.Rename(tmpName, final) // atomic overwrite
+}
+
+// writeIndexEntityCSV writes one CSV for ent (from the SQLite item index) to
+// dir, atomically. Same # meta row and header as writeEntityCSVTo, plus two
+// appended columns (storage, bag_name); legacy readers ignore the extras.
+func writeIndexEntityCSV(dir string, ent IndexEntity) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	final := filepath.Join(dir, sanitizeEntityName(ent.Entity)+".csv")
+	tmp, err := os.CreateTemp(dir, ".tmp-*.csv")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+
+	w := csv.NewWriter(tmp)
+	_ = w.Write([]string{"# meta", ent.Entity, ent.Master})
+	_ = w.Write([]string{"item_id", "qty", "container", "pos_x", "pos_y", "enchant_prefix", "enchant_suffix",
+		"durability", "durability_max", "defense", "attack_min", "attack_max", "metalware", "suffix_effects",
+		"prefix_effects", "bless_effects", "protection", "colors", "metadata", "injury_min", "injury_max",
+		"balance", "critical", "bag_item_id", "pocket", "relic_effects", "storage", "bag_name"})
+	for _, it := range ent.Items {
+		_ = w.Write([]string{
+			strconv.FormatUint(uint64(it.ID), 10),
+			strconv.FormatUint(uint64(it.Qty), 10),
+			it.Container,
+			strconv.FormatUint(uint64(it.X), 10),
+			strconv.FormatUint(uint64(it.Y), 10),
+			strconv.FormatUint(uint64(it.EnchantPrefix), 10),
+			strconv.FormatUint(uint64(it.EnchantSuffix), 10),
+			strconv.FormatUint(uint64(it.Durability), 10),
+			strconv.FormatUint(uint64(it.DurabilityMax), 10),
+			strconv.FormatUint(uint64(it.Defense), 10),
+			strconv.FormatUint(uint64(it.AttackMin), 10),
+			strconv.FormatUint(uint64(it.AttackMax), 10),
+			encodeIndexMetalware(it.Metalware),
+			encodeIndexEffects(it.SuffixEffects),
+			encodeIndexEffects(it.PrefixEffects),
+			encodeIndexEffects(it.BlessEffects),
+			strconv.FormatUint(uint64(it.Protection), 10),
+			strings.Join(it.Colors, "|"),
+			it.Metadata,
+			strconv.FormatUint(uint64(it.InjuryMin), 10),
+			strconv.FormatUint(uint64(it.InjuryMax), 10),
+			strconv.FormatUint(uint64(it.Balance), 10),
+			strconv.FormatUint(uint64(it.Critical), 10),
+			strconv.FormatUint(uint64(it.BagItemID), 10),
+			strconv.FormatUint(uint64(it.Pocket), 10),
+			encodeIndexEffects(it.RelicEffects),
+			it.Storage,
+			it.BagName,
+		})
+	}
+	w.Flush()
+	if err := w.Error(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, final) // atomic overwrite
+}
+
+// exportItemCSV drives the `itemcsv` subcommand: reads the SQLite index and
+// writes one CSV per entity to dir, then prints a summary to stdout.
+func exportItemCSV(dir string) {
+	if itemDB == nil {
+		fmt.Println("itemcsv: item store unavailable")
+		return
+	}
+	idx, err := itemDB.ReadIndex()
+	if err != nil {
+		fmt.Println("itemcsv: ReadIndex failed:", err)
+		return
+	}
+	items := 0
+	for _, ent := range idx {
+		if err := writeIndexEntityCSV(dir, ent); err != nil {
+			fmt.Println("itemcsv: write failed for", ent.Entity, ":", err)
+			return
+		}
+		items += len(ent.Items)
+	}
+	fmt.Printf("itemcsv: exported %d entities, %d items -> %s\n", len(idx), items, dir)
 }
 
 // readItemIndexFrom reads all .csv under dir and returns the aggregation
