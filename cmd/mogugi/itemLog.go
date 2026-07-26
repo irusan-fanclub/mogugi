@@ -37,6 +37,7 @@ type IndexEnchantEffect struct {
 type IndexItem struct {
 	ID            uint32               `json:"id"`
 	Qty           uint32               `json:"qty"`
+	Storage       string               `json:"storage"`
 	Container     string               `json:"container"`
 	X             uint32               `json:"x"`
 	Y             uint32               `json:"y"`
@@ -53,6 +54,7 @@ type IndexItem struct {
 	Critical      uint32               `json:"critical,omitempty"`
 	BagItemID     uint32               `json:"bagItemId,omitempty"`
 	Pocket        uint32               `json:"pocket,omitempty"`
+	BagName       string               `json:"bagName,omitempty"`
 	AttackMax     uint32               `json:"attackMax,omitempty"`
 	Metalware     []IndexMetalware     `json:"metalware,omitempty"`
 	PrefixEffects []IndexEnchantEffect `json:"prefixEffects,omitempty"`
@@ -156,9 +158,10 @@ func decodeColors(s string) []string {
 }
 
 type IndexEntity struct {
-	Entity string      `json:"entity"`
-	Master string      `json:"master"`
-	Items  []IndexItem `json:"items"`
+	Entity  string      `json:"entity"`
+	Master  string      `json:"master"`
+	Account string      `json:"account,omitempty"`
+	Items   []IndexItem `json:"items"`
 }
 
 // windowsReserved lists Windows reserved device names, which fail as
