@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"fmt"
 	"hash/fnv"
+	"os"
+	"path/filepath"
 	"sort"
 	"time"
 
@@ -61,6 +63,11 @@ CREATE INDEX IF NOT EXISTS idx_items_item ON items(item_id);
 `
 
 func openItemStore(path string) (*itemStore, error) {
+	// sqlite refuses to create the db file inside a missing directory; the
+	// CSV writers used to MkdirAll items_log/, so this replaces that step.
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, err

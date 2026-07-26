@@ -17,6 +17,18 @@ func testStore(t *testing.T) *itemStore {
 	return s
 }
 
+// Regression: on a fresh install items_log/ doesn't exist yet (the CSV
+// writers used to MkdirAll it; that path no longer runs). openItemStore
+// must create missing parent directories itself.
+func TestOpenItemStoreCreatesMissingDirs(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sub", "dir", "items.db")
+	s, err := openItemStore(path)
+	if err != nil {
+		t.Fatalf("openItemStore with missing parents: %v", err)
+	}
+	t.Cleanup(s.Close)
+}
+
 func storeItems(ids ...uint32) []packet.InventoryItem {
 	out := make([]packet.InventoryItem, 0, len(ids))
 	for _, id := range ids {
