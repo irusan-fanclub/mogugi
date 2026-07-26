@@ -24,6 +24,7 @@ var OpCodeStringMap = map[uint32]string{
 	0x65AF: "OpcodeFlying",
 	0x6E29: "OpcodeChangeStanceRes",
 	0x6E2A: "OpcodeChangeStance",
+	0x7212: "OpcodeBankList",
 	0x7530: "OpcodeStatUpdatePrivate",
 	0x7532: "OpcodeStatUpdatePublic",
 	0x7534: "OpcodeEntityRelated",

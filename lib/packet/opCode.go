@@ -47,6 +47,7 @@ const (
 	OpcodeConditionUpdate2      OpCode = 41000 // 0xa028
 	OpcodePartyWindowUpdate     OpCode = 42044 // 0xa43c
 	OpcodeBeautyRoomList        OpCode = 38602 // 0x96ca beauty-room list: (byte, string account-id, int count, long 0), count item records (0x5209 shape), then style-state triples
+	OpcodeBankList              OpCode = 29202 // 0x7212 bank list, one packet per race page: (byte, byte page, long, byte, string account-id, string branch, string branch-name, long gold, int tabs), then per-tab sections
 	OpcodeWalking               OpCode = 0xfd13021
 	OpcodeRunning               OpCode = 0xf44bba3
 )
