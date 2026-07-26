@@ -350,23 +350,34 @@ func (t *eventPublisher) handlePacket(p *packet.GamePacket) {
 }
 
 // handleChannelCharacterInfo parses an owner-only 0x5209 snapshot and writes
-// the entity's inventory to {exedir}/items_log/{entity}.csv. This is a
-// side-effect-only path (no client event); any failure is logged and ignored
-// so metering is never disturbed.
+// the entity's inventory to the item store. This is a side-effect-only path
+// (no client event); any failure is logged and ignored so metering is never
+// disturbed.
 func (t *eventPublisher) handleChannelCharacterInfo(p *packet.GamePacket) {
 	snap, err := packet.ParseEntitySnapshot(p.Msg)
 	if err != nil {
 		itemLogger.Printf("parse 0x5209 failed: %v", err)
 		return
 	}
-	if isSummonRace(snap.RaceId) {
+	if !shouldStoreSnapshot(snap) {
 		return
 	}
 	if snap.Id != 0 && snap.Name != "" {
 		t.rememberSnapshotName(snap.Id, snap.Name)
 	}
-	if err := writeEntitySnapshot(snap); err != nil {
-		itemLogger.Printf("write csv failed: %v", err)
+	if itemDB == nil {
+		return
+	}
+	entityId := int64(snap.Id)
+	if len(snap.Items) == 0 {
+		if n, err := itemDB.CountItems(entityId, "inventory"); err == nil && n > 0 {
+			itemLogger.Printf("skip empty snapshot for %q (existing inventory kept)", snap.Name)
+			return
+		}
+	}
+	meta := entityMeta{Id: entityId, Name: snap.Name, Master: snap.Master, RaceId: snap.RaceId}
+	if err := itemDB.ReplaceStorage(meta, "inventory", snap.Items); err != nil {
+		itemLogger.Printf("write store failed: %v", err)
 		return
 	}
 	itemLogger.Printf("update %q (%d items)", snap.Name, len(snap.Items))
@@ -384,8 +395,8 @@ func (t *eventPublisher) rememberSnapshotName(id uint64, name string) {
 	t.snapshotNames[id] = name
 }
 
-// handleBeautyRoom writes the 0x96CA beauty-room list to the item index as
-// its own per-character entity file (美容室(<name>).csv), overwritten on
+// handleBeautyRoom writes the 0x96CA beauty-room list to the item store
+// under the character's own entity as storage="beauty", overwritten on
 // every open, like a 0x5209 snapshot.
 func (t *eventPublisher) handleBeautyRoom(p *packet.GamePacket) {
 	items, declared, err := packet.ParseBeautyRoomPacket(p.Msg)
@@ -396,15 +407,17 @@ func (t *eventPublisher) handleBeautyRoom(p *packet.GamePacket) {
 	if int(declared) != len(items) {
 		itemLogger.Printf("beauty room: declared %d items, parsed %d", declared, len(items))
 	}
-	// Schema drift guard: an all-miss parse must not wipe the last good CSV.
+	// Schema drift guard: an all-miss parse must not wipe existing data.
 	if declared > 0 && len(items) == 0 {
 		return
 	}
 
 	t.Lock()
 	var owner string
+	var raceId uint32
 	if e, ok := t.entityCache[p.Id]; ok {
 		owner = e.Name
+		raceId = e.RaceId
 	}
 	if owner == "" {
 		owner = t.snapshotNames[p.Id]
@@ -415,17 +428,15 @@ func (t *eventPublisher) handleBeautyRoom(p *packet.GamePacket) {
 		return
 	}
 
-	snap := &packet.EntitySnapshot{
-		Id:     p.Id,
-		Name:   fmt.Sprintf("美容室(%s)", owner),
-		Master: owner,
-		Items:  items,
-	}
-	if err := writeEntitySnapshot(snap); err != nil {
-		itemLogger.Printf("beauty room: write csv failed: %v", err)
+	if itemDB == nil {
 		return
 	}
-	itemLogger.Printf("update %q (%d items)", snap.Name, len(snap.Items))
+	meta := entityMeta{Id: int64(p.Id), Name: owner, RaceId: raceId}
+	if err := itemDB.ReplaceStorage(meta, "beauty", items); err != nil {
+		itemLogger.Printf("beauty room: write store failed: %v", err)
+		return
+	}
+	itemLogger.Printf("update %q beauty (%d items)", owner, len(items))
 }
 
 // isSummonRace reports whether a race id belongs to the summoned-unit block:
@@ -438,6 +449,32 @@ func (t *eventPublisher) handleBeautyRoom(p *packet.GamePacket) {
 // A race id of 0 means the snapshot head didn't parse; those are kept.
 func isSummonRace(raceId uint32) bool {
 	return raceId >= 990000 && raceId < 991000
+}
+
+// worldEntityIdBase marks the start of the world/NPC entity id block
+// (verified stable across sessions); owned entities never reach it. Guards
+// against writing "temporary display entity" overwrite bugs to the store.
+const worldEntityIdBase = (uint64(1) << 52) + 0xF0*(uint64(1) << 40)
+
+func isWorldEntityId(id uint64) bool { return id >= worldEntityIdBase }
+
+// shouldStoreSnapshot filters entities that must never enter the item store:
+// summons/marionettes, Fynni pets, event/mount/doll entities (race >=
+// 800000), unnamed entities, and world (non-owned) entities.
+func shouldStoreSnapshot(snap *packet.EntitySnapshot) bool {
+	if isSummonRace(snap.RaceId) {
+		return false
+	}
+	if snap.RaceId >= 33000 && snap.RaceId < 34000 {
+		return false
+	}
+	if snap.RaceId >= 800000 {
+		return false
+	}
+	if snap.Name == "" {
+		return false
+	}
+	return !isWorldEntityId(snap.Id)
 }
 
 func (t *eventPublisher) handleEntityAppear(p *packet.GamePacket) {

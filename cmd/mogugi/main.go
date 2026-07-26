@@ -41,12 +41,23 @@ var Version = "0.4.2"
 var logger = util.NewLogger("mogugi")
 var packetLogFilename = ""
 
+// itemDB is the SQLite item store; nil disables item-index writes entirely
+// (every writer nil-checks it) so a failed open never blocks metering.
+var itemDB *itemStore
+
 func main() {
 	logFilePath := filepath.Join(_logDir, fmt.Sprintf("dilmeter_%v.log", util.StartUnix))
 	if err := util.LogInit(logFilePath); err != nil {
 		logger.Println("LogInit failed:", err)
 	}
 	logger.Printf("log file: %s", logFilePath)
+
+	if db, err := openItemStore(filepath.Join(itemsLogDirPath, "items.db")); err != nil {
+		itemLogger.Printf("open item store failed: %v", err)
+	} else {
+		itemDB = db
+		defer itemDB.Close()
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
