@@ -133,7 +133,7 @@ export default defineComponent({
         });
         const displayName = (h: Holder): string => buildDisplayName(h, deps());
 
-        // containerText: 背包欄顯示 — 分頁/包包名 > 已知系統空間名 > 分類 > 未知空間#pocket。
+        // containerText: bag column display — bag/tab name > known system space name > category > unknown space#pocket.
         const containerText = (h: Holder): string => {
             if (h.bagName) return h.bagName;
             if (h.bagItemId) return itemName(h.bagItemId);
@@ -143,7 +143,7 @@ export default defineComponent({
             return h.container;
         };
 
-        // STORAGE_NAMES: 存放處代碼 → 顯示名稱；未知代碼原樣顯示。
+        // STORAGE_NAMES maps storage codes to display names; unknown codes show as-is.
         const STORAGE_NAMES: Record<string, string> = {
             inventory: '物品欄',
             beauty: '美容室',

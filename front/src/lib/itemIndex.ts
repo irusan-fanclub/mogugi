@@ -11,7 +11,7 @@ interface ItemExtra {
     blessEffects?: IndexEnchantEffect[];
     relicEffects?: IndexEnchantEffect[];
     bagItemId?: number;  // 所在袋子的 item id（0/undefined = 非袋內）
-    bagName?: string;    // 銀行分頁等具名容器的顯示名稱
+    bagName?: string;    // display name for named containers such as bank tabs
     pocket?: number;     // 原始 pocket id
     colors?: string[];   // 六色 rrggbb hex
     metadata?: string;   // MetaData1 原始 KV 字串
