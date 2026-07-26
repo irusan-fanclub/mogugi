@@ -16,6 +16,7 @@ const (
 	EventIdChat
 	EventIdNotice
 	EventIdChangeStance
+	EventIdOwnerCharacter
 )
 
 // System-level events use negative IDs so they can be filtered out
@@ -127,6 +128,12 @@ type EventNotice struct {
 type EventChangeStance struct {
 	EventBase
 	Stance uint8
+}
+
+// EventOwnerCharacter announces the local character (name may lag until known).
+type EventOwnerCharacter struct {
+	EventBase
+	Name string
 }
 
 type EventMessageBox struct {

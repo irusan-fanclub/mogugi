@@ -45,6 +45,8 @@ type eventPublisher struct {
 	bossEntities    map[uint64]string // live boss entity id -> boss name (race-id detection)
 	snapshotNames   map[uint64]string // entity id -> name from 0x5209 snapshots (survives cache eviction)
 	dgnLog          dungeonLog        // per-run event file for whitelisted dungeons (own lock)
+	ownerId         uint64            // local player's own entity id (0 = unknown)
+	ownerName       string            // local player's own character name ("" = unknown)
 }
 
 type eventClient struct {
@@ -362,6 +364,12 @@ func (t *eventPublisher) handleChannelCharacterInfo(p *packet.GamePacket) {
 		itemLogger.Printf("parse 0x5209 failed: %v", err)
 		return
 	}
+	// Own-character snapshots must update the owner even when the entity
+	// is filtered from storage below (world-id copies can't reach this id
+	// block, so checking it unconditionally here is safe).
+	if snap.Name != "" && isOwnCharacterId(snap.Id) {
+		t.setOwnerCharacter(snap.Id, snap.Name)
+	}
 	if !shouldStoreSnapshot(snap) {
 		return
 	}
@@ -513,6 +521,38 @@ func isSummonRace(raceId uint32) bool {
 const worldEntityIdBase = (uint64(1) << 52) + 0xF0*(uint64(1) << 40)
 
 func isWorldEntityId(id uint64) bool { return id >= worldEntityIdBase }
+
+// ownCharacterIdBase/ownCharacterIdBlockSize bound the local player's own
+// entity id; pets/mounts/summons sit in separate blocks above this range.
+const ownCharacterIdBase = uint64(1) << 52
+const ownCharacterIdBlockSize = uint64(1) << 40
+
+func isOwnCharacterId(id uint64) bool {
+	return id >= ownCharacterIdBase && id < ownCharacterIdBase+ownCharacterIdBlockSize
+}
+
+// setOwnerCharacter records the local player's id/name and publishes
+// EventOwnerCharacter on change. Repeat calls with the same values are a
+// no-op (dedupe).
+func (t *eventPublisher) setOwnerCharacter(id uint64, name string) {
+	t.Lock()
+	if t.ownerId == id && t.ownerName == name {
+		t.Unlock()
+		return
+	}
+	t.ownerId = id
+	t.ownerName = name
+	t.Unlock()
+
+	t.publish(&event.EventOwnerCharacter{
+		EventBase: event.EventBase{
+			EventId: event.EventIdOwnerCharacter,
+			At:      time.Now().Unix(),
+			Id:      strconv.FormatUint(id, 10),
+		},
+		Name: name,
+	})
+}
 
 // shouldStoreSnapshot filters entities that must never enter the item store:
 // summons/marionettes, Fynni pets, event/mount/doll entities (race >=
@@ -1019,6 +1059,11 @@ func (t *eventPublisher) handleSetLocation(p *packet.GamePacket) {
 		owner = e.Name
 	}
 	t.Unlock()
+
+	if owner != "" && isOwnCharacterId(p.Id) {
+		t.setOwnerCharacter(p.Id, owner)
+	}
+
 	if !changed {
 		return
 	}
@@ -1232,7 +1277,19 @@ func (t *eventPublisher) snapshotEvents() []event.IEvent {
 			initial = append(initial, toEventEquipItem(entity.appearAt, entity.Id, item))
 		}
 	}
+	ownerId, ownerName := t.ownerId, t.ownerName
 	t.Unlock()
+
+	if ownerName != "" {
+		initial = append(initial, &event.EventOwnerCharacter{
+			EventBase: event.EventBase{
+				EventId: event.EventIdOwnerCharacter,
+				At:      time.Now().Unix(),
+				Id:      strconv.FormatUint(ownerId, 10),
+			},
+			Name: ownerName,
+		})
+	}
 
 	return initial
 }

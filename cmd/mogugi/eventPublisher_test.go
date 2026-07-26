@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/irusan-fanclub/mogugi/lib/event"
 	"github.com/irusan-fanclub/mogugi/lib/packet"
 )
 
@@ -305,5 +306,38 @@ func TestHandleBankListWritesTabs(t *testing.T) {
 	n, _ := itemDB.CountItems(acctId, "bank")
 	if n != 62 { // 25 + 37 + 0
 		t.Fatalf("bank items = %d, want 62", n)
+	}
+}
+
+// setOwnerCharacter must dedupe repeat calls (no re-publish) and its value
+// must surface in snapshotEvents() for new WS clients.
+func TestSetOwnerCharacter(t *testing.T) {
+	// lastSentAt fresh so publish() doesn't auto-flush pendingEvents away.
+	p := &eventPublisher{entityCache: make(entityCache), lastSentAt: time.Now()}
+
+	p.setOwnerCharacter(1<<52|5, "測試角色")
+	p.Lock()
+	n := len(p.pendingEvents)
+	p.Unlock()
+	if n != 1 {
+		t.Fatalf("pendingEvents after first call = %d, want 1", n)
+	}
+
+	p.setOwnerCharacter(1<<52|5, "測試角色")
+	p.Lock()
+	n = len(p.pendingEvents)
+	p.Unlock()
+	if n != 1 {
+		t.Fatalf("pendingEvents after repeat call = %d, want 1 (deduped)", n)
+	}
+
+	found := false
+	for _, ev := range p.snapshotEvents() {
+		if oc, ok := ev.(*event.EventOwnerCharacter); ok && oc.Name == "測試角色" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("snapshotEvents() missing EventOwnerCharacter with owner name")
 	}
 }
