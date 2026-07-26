@@ -80,6 +80,7 @@ func TestShouldStoreSnapshot(t *testing.T) {
 		{Id: 1 << 52, RaceId: 805125, Name: "活動"},
 		{Id: 1 << 52, RaceId: 10002, Name: ""},
 		{Id: 4767482420171028, RaceId: 8002, Name: "展示複本"},
+		{Id: 0, RaceId: 10002, Name: "壞頭"},
 	} {
 		if shouldStoreSnapshot(bad) {
 			t.Errorf("must reject %+v", bad)
@@ -306,6 +307,73 @@ func TestHandleBankListWritesTabs(t *testing.T) {
 	n, _ := itemDB.CountItems(acctId, "bank")
 	if n != 62 { // 25 + 37 + 0
 		t.Fatalf("bank items = %d, want 62", n)
+	}
+}
+
+// emptyAccountBankPacket builds a minimal 0x7212 header (9 elements, zero
+// tabs) with an empty account string, to exercise the empty-account guard.
+func emptyAccountBankPacket() *packet.GamePacket {
+	return &packet.GamePacket{
+		At: time.Now(),
+		Op: packet.OpcodeBankList,
+		Id: 7,
+		Msg: packet.Message{
+			packet.NewMessageElemByte(1),
+			packet.NewMessageElemByte(0),
+			packet.NewMessageElemLong(0),
+			packet.NewMessageElemByte(0),
+			packet.NewMessageElemString(""),
+			packet.NewMessageElemString(""),
+			packet.NewMessageElemString(""),
+			packet.NewMessageElemLong(0),
+			packet.NewMessageElemInt(0),
+		},
+	}
+}
+
+func TestHandleBankListEmptyAccountSkipped(t *testing.T) {
+	withTestItemDB(t)
+
+	p := &eventPublisher{entityCache: make(entityCache)}
+	p.handleBankList(emptyAccountBankPacket())
+
+	idx, _ := itemDB.ReadIndex()
+	if len(idx) != 0 {
+		t.Errorf("expected no entities for empty account, got %d", len(idx))
+	}
+}
+
+// TestHandleBankListTwoPages replays both bank pages (now page-uniquely
+// masked, see bank_test.go) through the same account and checks the two
+// pages don't clobber each other's tabs via a shared bag_name.
+func TestHandleBankListTwoPages(t *testing.T) {
+	withTestItemDB(t)
+
+	p := &eventPublisher{entityCache: make(entityCache)}
+	msg0, _ := packetFixtureMessage(t, "0x7212_page0.json")
+	p.handleBankList(&packet.GamePacket{At: time.Now(), Op: packet.OpcodeBankList, Id: 7, Msg: msg0})
+	msg1, _ := packetFixtureMessage(t, "0x7212_page1.json")
+	p.handleBankList(&packet.GamePacket{At: time.Now(), Op: packet.OpcodeBankList, Id: 7, Msg: msg1})
+
+	b, _ := packet.ParseBankListPacket(msg0)
+	acctId := bankEntityId(b.Account)
+	n, err := itemDB.CountItems(acctId, "bank")
+	if err != nil || n != 136 { // 74 (page0) + 62 (page1)
+		t.Fatalf("bank items = %d, %v, want 136", n, err)
+	}
+
+	idx, err := itemDB.ReadIndex()
+	if err != nil || len(idx) != 1 {
+		t.Fatalf("ReadIndex: %v, %d entities", err, len(idx))
+	}
+	bags := map[string]bool{}
+	for _, it := range idx[0].Items {
+		bags[it.BagName] = true
+	}
+	// 4 page0 tabs + 3 page1 tabs, minus p1tab2 which is genuinely empty
+	// (0 items) and so contributes no item row / bag_name at all.
+	if len(bags) != 6 {
+		t.Errorf("distinct bagName values = %d, want 6 (page-unique tab names)", len(bags))
 	}
 }
 

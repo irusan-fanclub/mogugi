@@ -468,6 +468,10 @@ func (t *eventPublisher) handleBankList(p *packet.GamePacket) {
 	if itemDB == nil {
 		return
 	}
+	if b.Account == "" { // empty account would mint a junk 銀行() entity and wipe learned accounts
+		itemLogger.Printf("bank: empty account id, skip")
+		return
+	}
 
 	acct := entityMeta{Id: bankEntityId(b.Account), Name: bankEntityName(b.Account)}
 	tabOwners := make([]string, 0, len(b.Tabs))
@@ -556,8 +560,11 @@ func (t *eventPublisher) setOwnerCharacter(id uint64, name string) {
 
 // shouldStoreSnapshot filters entities that must never enter the item store:
 // summons/marionettes, Fynni pets, event/mount/doll entities (race >=
-// 800000), unnamed entities, and world (non-owned) entities.
+// 800000), unnamed entities, zero-id entities, and world (non-owned) entities.
 func shouldStoreSnapshot(snap *packet.EntitySnapshot) bool {
+	if snap.Id == 0 { // head-shape drift leaves Id unset; reject to avoid entity_id=0 clobbering
+		return false
+	}
 	if isSummonRace(snap.RaceId) {
 		return false
 	}

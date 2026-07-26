@@ -20,8 +20,8 @@ func TestParseBankListPage0(t *testing.T) {
 		t.Fatalf("tabs = %d, want 4", len(b.Tabs))
 	}
 	for i, tab := range b.Tabs {
-		if tab.Owner != fmtTab(i) {
-			t.Errorf("tab[%d].Owner = %q, want %q (masked)", i, tab.Owner, fmtTab(i))
+		if tab.Owner != fmtTab("p0tab", i) {
+			t.Errorf("tab[%d].Owner = %q, want %q (masked)", i, tab.Owner, fmtTab("p0tab", i))
 		}
 		if tab.Declared != wantCounts[i] || uint32(len(tab.Items)) != wantCounts[i] {
 			t.Errorf("tab[%d]: declared=%d parsed=%d want %d", i, tab.Declared, len(tab.Items), wantCounts[i])
@@ -37,7 +37,8 @@ func TestParseBankListPage0(t *testing.T) {
 	}
 }
 
-func fmtTab(i int) string { return "tab" + string(rune('0'+i)) }
+// fmtTab builds a page-prefixed masked tab-owner name (e.g. "p0tab0").
+func fmtTab(prefix string, i int) string { return prefix + string(rune('0'+i)) }
 
 func TestParseBankListPage1IncludesEmptyTab(t *testing.T) {
 	msg, _ := loadFixture(t, "testdata/0x7212_page1.json")

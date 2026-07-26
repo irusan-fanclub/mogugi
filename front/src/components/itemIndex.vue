@@ -247,7 +247,7 @@ export default defineComponent({
             { title: '數量', key: 'qty' },
             { title: '座標', key: 'pos' },
         ];
-        const COLS_STORAGE_KEY = 'itemIndexCols';
+        const COLS_STORAGE_KEY = 'itemIndexCols.v2';
         const defaultCols = allHeaders.map(h => h.key).filter(k => k !== 'metalware');
         const loadCols = (): string[] => {
             try {
