@@ -1,12 +1,37 @@
 package main
 
 import (
+	"bytes"
+	"encoding/hex"
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/irusan-fanclub/mogugi/lib/packet"
 )
+
+// packetFixtureMessage reads a lib/packet testdata fixture's raw_message_hex
+// and decodes it into a Message, for building test GamePackets in this package.
+func packetFixtureMessage(t *testing.T, name string) (packet.Message, error) {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("..", "..", "lib", "packet", "testdata", name))
+	if err != nil {
+		return nil, err
+	}
+	var fx struct {
+		RawMessageHex string `json:"raw_message_hex"`
+	}
+	if err := json.Unmarshal(b, &fx); err != nil {
+		return nil, err
+	}
+	raw, err := hex.DecodeString(fx.RawMessageHex)
+	if err != nil {
+		return nil, err
+	}
+	return packet.NewMessage(bytes.NewReader(raw))
+}
 
 // Marionettes and other summons send a 0x5209 snapshot like any owned entity,
 // but they carry no real inventory and would flood items_log with one file per
@@ -262,5 +287,23 @@ func TestHandleChannelCharacterInfoEmptySnapshotGuard(t *testing.T) {
 	n, err := itemDB.CountItems(int64(1<<52), "inventory")
 	if err != nil || n != 1 {
 		t.Fatalf("CountItems after empty snapshot = %d, %v, want 1 (kept)", n, err)
+	}
+}
+
+func TestHandleBankListWritesTabs(t *testing.T) {
+	origDB := itemDB
+	db, _ := openItemStore(filepath.Join(t.TempDir(), "items.db"))
+	itemDB = db
+	defer func() { db.Close(); itemDB = origDB }()
+
+	p := &eventPublisher{entityCache: make(entityCache)}
+	msg, _ := packetFixtureMessage(t, "0x7212_page1.json")
+	p.handleBankList(&packet.GamePacket{At: time.Now(), Op: packet.OpcodeBankList, Id: 7, Msg: msg})
+
+	b, _ := packet.ParseBankListPacket(msg)
+	acctId := bankEntityId(b.Account)
+	n, _ := itemDB.CountItems(acctId, "bank")
+	if n != 62 { // 25 + 37 + 0
+		t.Fatalf("bank items = %d, want 62", n)
 	}
 }

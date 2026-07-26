@@ -37,7 +37,7 @@ func TestParseBeautyRoomPacket_Synthetic(t *testing.T) {
 	msg := beautyHeader(1)
 	msg = append(msg, beautyItemElems(12001)...)
 
-	items, declared, err := ParseBeautyRoomPacket(msg)
+	items, declared, _, err := ParseBeautyRoomPacket(msg)
 	if err != nil {
 		t.Fatalf("ParseBeautyRoomPacket: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestParseBeautyRoomPacket_Synthetic(t *testing.T) {
 
 func TestParseBeautyRoomPacket_RejectsBadHeader(t *testing.T) {
 	// Too short.
-	if _, _, err := ParseBeautyRoomPacket(Message{NewMessageElemByte(1)}); err == nil {
+	if _, _, _, err := ParseBeautyRoomPacket(Message{NewMessageElemByte(1)}); err == nil {
 		t.Error("short message: want error")
 	}
 	// Wrong element types (0x5209-like head must not be accepted).
@@ -65,7 +65,7 @@ func TestParseBeautyRoomPacket_RejectsBadHeader(t *testing.T) {
 		NewMessageElemInt(1),
 		NewMessageElemLong(0),
 	}
-	if _, _, err := ParseBeautyRoomPacket(bad); err == nil {
+	if _, _, _, err := ParseBeautyRoomPacket(bad); err == nil {
 		t.Error("bad header types: want error")
 	}
 }
@@ -73,7 +73,7 @@ func TestParseBeautyRoomPacket_RejectsBadHeader(t *testing.T) {
 func TestParseBeautyRoomPacket_RealFixture(t *testing.T) {
 	msg, _ := loadFixture(t, "testdata/0x96CA_sample.json")
 
-	items, declared, err := ParseBeautyRoomPacket(msg)
+	items, declared, _, err := ParseBeautyRoomPacket(msg)
 	if err != nil {
 		t.Fatalf("ParseBeautyRoomPacket: %v", err)
 	}

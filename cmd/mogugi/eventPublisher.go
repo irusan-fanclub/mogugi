@@ -346,6 +346,9 @@ func (t *eventPublisher) handlePacket(p *packet.GamePacket) {
 
 	case packet.OpcodeBeautyRoomList:
 		t.handleBeautyRoom(p)
+
+	case packet.OpcodeBankList:
+		t.handleBankList(p)
 	}
 }
 
@@ -399,7 +402,7 @@ func (t *eventPublisher) rememberSnapshotName(id uint64, name string) {
 // under the character's own entity as storage="beauty", overwritten on
 // every open, like a 0x5209 snapshot.
 func (t *eventPublisher) handleBeautyRoom(p *packet.GamePacket) {
-	items, declared, err := packet.ParseBeautyRoomPacket(p.Msg)
+	items, declared, account, err := packet.ParseBeautyRoomPacket(p.Msg)
 	if err != nil {
 		itemLogger.Printf("beauty room: ignore packet: %v", err)
 		return
@@ -437,6 +440,59 @@ func (t *eventPublisher) handleBeautyRoom(p *packet.GamePacket) {
 		return
 	}
 	itemLogger.Printf("update %q beauty (%d items)", owner, len(items))
+
+	if account != "" {
+		if err := itemDB.SetAccountById(int64(p.Id), account); err != nil {
+			itemLogger.Printf("beauty room: set account failed: %v", err)
+		}
+	}
+}
+
+// handleBankList writes one 0x7212 bank page to the item store under a
+// synthetic per-account entity (a physical bank has no character owner),
+// and backfills the account onto the viewer, tab-owner, and bank entities.
+func (t *eventPublisher) handleBankList(p *packet.GamePacket) {
+	b, err := packet.ParseBankListPacket(p.Msg)
+	if err != nil {
+		itemLogger.Printf("bank: parse failed: %v", err)
+		return
+	}
+	if itemDB == nil {
+		return
+	}
+
+	acct := entityMeta{Id: bankEntityId(b.Account), Name: bankEntityName(b.Account)}
+	tabOwners := make([]string, 0, len(b.Tabs))
+	totalItems := 0
+	for _, tab := range b.Tabs {
+		tabOwners = append(tabOwners, tab.Owner)
+		// Schema drift guard: an all-miss parse must not wipe an existing tab.
+		if tab.Declared > 0 && len(tab.Items) == 0 {
+			itemLogger.Printf("bank: tab %q declared %d items, parsed 0, skip", tab.Owner, tab.Declared)
+			continue
+		}
+		if err := itemDB.ReplaceBankTab(acct, tab.Owner, tab.Items); err != nil {
+			itemLogger.Printf("bank: write tab %q failed: %v", tab.Owner, err)
+			continue
+		}
+		totalItems += len(tab.Items)
+	}
+
+	if err := itemDB.SetAccountById(int64(p.Id), b.Account); err != nil {
+		itemLogger.Printf("bank: set account for viewer failed: %v", err)
+	}
+	if err := itemDB.SetAccountByNames(b.Account, tabOwners); err != nil {
+		itemLogger.Printf("bank: set account for tab owners failed: %v", err)
+	}
+	if err := itemDB.SetAccountById(acct.Id, b.Account); err != nil {
+		itemLogger.Printf("bank: set account for bank entity failed: %v", err)
+	}
+
+	tail := b.Account
+	if len(tail) > 6 {
+		tail = tail[len(tail)-6:]
+	}
+	itemLogger.Printf("bank: page %d, %d tabs, %d items (account …%s)", b.Page, len(b.Tabs), totalItems, tail)
 }
 
 // isSummonRace reports whether a race id belongs to the summoned-unit block:

@@ -6,15 +6,17 @@ import "fmt"
 // header (byte, string account-id, int declared item count, long) followed
 // by item records in the 0x5209 shape, then a style-state table (ignored).
 // Returned items are normalized for the item index: Container "beauty",
-// Qty at least 1 (the packet carries qty 0 for beauty items).
-func ParseBeautyRoomPacket(msg Message) (items []InventoryItem, declared uint32, err error) {
+// Qty at least 1 (the packet carries qty 0 for beauty items). Account is the
+// header's account-id string, used for account backfill.
+func ParseBeautyRoomPacket(msg Message) (items []InventoryItem, declared uint32, account string, err error) {
 	if len(msg) < 4 ||
 		msg[0].Type() != MessageElemTypeByte ||
 		msg[1].Type() != MessageElemTypeString ||
 		msg[2].Type() != MessageElemTypeInt ||
 		msg[3].Type() != MessageElemTypeLong {
-		return nil, 0, fmt.Errorf("beauty room: unexpected header shape (n=%d)", len(msg))
+		return nil, 0, "", fmt.Errorf("beauty room: unexpected header shape (n=%d)", len(msg))
 	}
+	account, _ = msg[1].Data().(string)
 	declared, _ = msg[2].Data().(uint32)
 
 	items = scanItems(msg[4:])
@@ -24,5 +26,5 @@ func ParseBeautyRoomPacket(msg Message) (items []InventoryItem, declared uint32,
 			items[i].Qty = 1
 		}
 	}
-	return items, declared, nil
+	return items, declared, account, nil
 }
