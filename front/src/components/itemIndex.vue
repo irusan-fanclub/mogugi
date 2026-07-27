@@ -23,7 +23,8 @@
                 @click="exportCsv">匯出 CSV</v-btn>
             <span class="text-caption text-medium-emphasis">{{ entityCount }} 個實體 / {{ itemKindCount }} 種物品</span>
         </div>
-        <v-data-table :headers="headers" :items="rows" density="compact" :items-per-page="50">
+        <v-data-table :headers="headers" :items="rows" v-model:sort-by="sortBy" density="compact"
+            :items-per-page="50">
             <template #[`item.item`]="{ item }">
                 <v-tooltip v-if="item.tip" location="right" content-class="item-tip-content" :open-delay="150">
                     <template #activator="{ props }">
@@ -97,7 +98,7 @@ import {
     type TooltipDeps,
 } from '@/lib/itemTooltip';
 import type { EnchantInfo, ItemUpgrade, ManualForm, MetalwareAbility } from '@/store';
-import { buildCsv, downloadCsv } from '@/lib/csvExport';
+import { buildCsv, downloadCsv, sortRows, type SortSpec } from '@/lib/csvExport';
 
 export default defineComponent({
     setup() {
@@ -116,6 +117,8 @@ export default defineComponent({
         // 欄位過濾：角色 / Owner 可複選；與文字搜尋 AND 疊加。
         const entityFilter = ref<string[]>([]);
         const masterFilter = ref<string[]>([]);
+        // v-data-table 目前的排序狀態；CSV 匯出要照這個順序輸出。
+        const sortBy = ref<SortSpec[]>([]);
 
         // itemNameMap 的值格式為「名稱 id」，這裡去掉結尾的 id 只留名稱。
         const itemName = (id: number): string => {
@@ -281,7 +284,8 @@ export default defineComponent({
         const exportCsv = () => {
             const cols = headers.value;
             const header = cols.map(h => h.title);
-            const body = rows.value.map(r => cols.map(h => cellText(r, h.key)));
+            const sorted = sortRows(rows.value, sortBy.value);
+            const body = sorted.map(r => cols.map(h => cellText(r, h.key)));
             const csv = buildCsv(header, body);
             const now = new Date();
             const pad = (n: number) => String(n).padStart(2, '0');
@@ -296,7 +300,7 @@ export default defineComponent({
             entityCount, itemKindCount,
             entityFilter, masterFilter,
             entityOptions, masterOptions,
-            exportCsv,
+            sortBy, exportCsv,
         };
     },
 });
