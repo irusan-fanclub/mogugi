@@ -50,7 +50,14 @@ func TestDecodeCode_Valid(t *testing.T) {
 func TestDecodeCode_Tampered(t *testing.T) {
 	priv := setTestKey(t)
 	code := mintCode(t, priv, time.Now().Unix(), 1, "x")
-	bad := code[:len(code)-1] + string(rune(code[len(code)-1]^1))
+	// Flip one bit inside a payload byte: the last base64 char only carries
+	// padding bits, so tampering it may decode to the same bytes (flaky).
+	raw, err := base64.RawURLEncoding.DecodeString(code[len(codePrefix):])
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw[0] ^= 1
+	bad := codePrefix + base64.RawURLEncoding.EncodeToString(raw)
 	if _, err := decodeCode(bad); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("err=%v want ErrInvalid", err)
 	}

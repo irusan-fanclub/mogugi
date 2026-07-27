@@ -32,6 +32,9 @@ const (
 	activationWindow = 30 * time.Minute
 	// clockSkew: tolerance for issuedAt values that are slightly in the future.
 	clockSkew = 5 * time.Minute
+	// validityWindow: how long an activated code stays valid after issuance;
+	// past this, Status/Identity report not-activated and a fresh code is needed.
+	validityWindow = 30 * 24 * time.Hour
 )
 
 // codeInfo is the verified content of a MOGUGI code.

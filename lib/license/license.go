@@ -13,8 +13,8 @@ import (
 type ed25519PrivAlias = ed25519.PrivateKey
 
 // Status reports whether this installation is activated: license.dat must exist and its
-// code signature, MAC, and machine fingerprint must all pass. The 30-minute window is
-// NOT checked here — once activated, the license is permanently valid.
+// code signature, MAC, and machine fingerprint must all pass, and the code must still be
+// inside its 30-day validity window (measured from the signed issuedAt).
 func Status() bool {
 	// Fail closed if the MAC key is missing or malformed: without a usable key
 	// we cannot verify tamper resistance, so no license may validate.
@@ -25,7 +25,11 @@ func Status() bool {
 	if err != nil {
 		return false
 	}
-	if _, err := decodeCode(d.Code); err != nil {
+	info, err := decodeCode(d.Code)
+	if err != nil {
+		return false
+	}
+	if codeExpired(info.IssuedAt, time.Now().Unix()) {
 		return false
 	}
 	if !hmac.Equal([]byte(d.MAC), []byte(computeMAC(*d))) {
@@ -73,12 +77,13 @@ func Activate(code string) error {
 // there is nothing to invalidate on. Tests that mutate these package vars call
 // resetIdentityCache to clear it.
 var (
-	identityMu    sync.Mutex
-	identityKey   identityCacheKey
-	identityValid bool
-	cachedUserID  string
-	cachedName    string
-	cachedOK      bool
+	identityMu     sync.Mutex
+	identityKey    identityCacheKey
+	identityValid  bool
+	cachedUserID   string
+	cachedName     string
+	cachedIssuedAt int64
+	cachedOK       bool
 )
 
 type identityCacheKey struct {
@@ -106,19 +111,23 @@ func Identity() (userID string, displayName string, ok bool) {
 
 		identityMu.Lock()
 		if identityValid && identityKey == key {
-			u, n, o := cachedUserID, cachedName, cachedOK
+			u, n, iss, o := cachedUserID, cachedName, cachedIssuedAt, cachedOK
 			identityMu.Unlock()
+			// Expiry can cross over while the cached file is unchanged.
+			if o && codeExpired(iss, time.Now().Unix()) {
+				return "", "", false
+			}
 			return u, n, o
 		}
 		identityMu.Unlock()
 	}
 
-	u, n, o := verifyIdentity()
+	u, n, iss, o := verifyIdentity()
 
 	if haveKey {
 		identityMu.Lock()
 		identityKey, identityValid = key, true
-		cachedUserID, cachedName, cachedOK = u, n, o
+		cachedUserID, cachedName, cachedIssuedAt, cachedOK = u, n, iss, o
 		identityMu.Unlock()
 	}
 	return u, n, o
@@ -126,23 +135,35 @@ func Identity() (userID string, displayName string, ok bool) {
 
 // verifyIdentity does the full read + verify chain once (Status()-equivalent
 // checks plus decode), without Status()'s extra read+verify round trip.
-func verifyIdentity() (userID string, displayName string, ok bool) {
+func verifyIdentity() (userID string, displayName string, issuedAt int64, ok bool) {
 	if _, ok := macKey(); !ok {
-		return "", "", false
+		return "", "", 0, false
 	}
 	d, err := readLicenseData()
 	if err != nil {
-		return "", "", false
+		return "", "", 0, false
 	}
 	info, err := decodeCode(d.Code)
 	if err != nil {
-		return "", "", false
+		return "", "", 0, false
 	}
 	if !hmac.Equal([]byte(d.MAC), []byte(computeMAC(*d))) {
-		return "", "", false
+		return "", "", 0, false
 	}
 	if d.MachineID != currentMachineID() {
-		return "", "", false
+		return "", "", 0, false
 	}
-	return strconv.FormatUint(info.UserID, 10), info.DisplayName, true
+	if codeExpired(info.IssuedAt, time.Now().Unix()) {
+		return "", "", info.IssuedAt, false
+	}
+	return strconv.FormatUint(info.UserID, 10), info.DisplayName, info.IssuedAt, true
+}
+
+// codeExpired reports whether a code's signed issuedAt is past the 30-day
+// validity window, or unreasonably far in the future.
+func codeExpired(issuedAt, now int64) bool {
+	if now-issuedAt > int64(validityWindow.Seconds()) {
+		return true
+	}
+	return issuedAt-now > int64(clockSkew.Seconds())
 }

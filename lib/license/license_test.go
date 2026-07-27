@@ -157,3 +157,58 @@ func TestStatus_OldCodeStillValidOnceStored(t *testing.T) {
 		t.Fatal("Status=false; window should not be checked once the code is stored")
 	}
 }
+
+// writeActivatedAt installs an activated license whose code was issued at the
+// given time, bypassing Activate's 30-minute first-activation window.
+func writeActivatedAt(t *testing.T, priv ed25519PrivAlias, issuedAt int64) {
+	t.Helper()
+	code := mintCode(t, priv, issuedAt, 42, "u")
+	d := licenseData{Code: code, ActivatedAt: issuedAt, MachineID: currentMachineID()}
+	d.MAC = computeMAC(d)
+	if err := writeLicenseData(d); err != nil {
+		t.Fatal(err)
+	}
+	resetIdentityCache()
+}
+
+func TestStatus_WithinValidityWindow(t *testing.T) {
+	priv := setupActivated(t)
+	writeActivatedAt(t, priv, time.Now().Add(-29*24*time.Hour).Unix())
+	if !Status() {
+		t.Fatal("Status=false for a 29-day-old code, want true")
+	}
+	if _, _, ok := Identity(); !ok {
+		t.Fatal("Identity ok=false for a 29-day-old code, want true")
+	}
+}
+
+func TestStatus_ExpiredAfterValidityWindow(t *testing.T) {
+	priv := setupActivated(t)
+	writeActivatedAt(t, priv, time.Now().Add(-31*24*time.Hour).Unix())
+	if Status() {
+		t.Fatal("Status=true for a 31-day-old code, want false (expired)")
+	}
+	if _, _, ok := Identity(); ok {
+		t.Fatal("Identity ok=true for a 31-day-old code, want false (expired)")
+	}
+}
+
+func TestCodeExpiredBoundaries(t *testing.T) {
+	now := time.Now().Unix()
+	cases := []struct {
+		name     string
+		issuedAt int64
+		want     bool
+	}{
+		{"fresh", now, false},
+		{"just inside", now - int64(validityWindow.Seconds()) + 60, false},
+		{"just outside", now - int64(validityWindow.Seconds()) - 60, true},
+		{"future beyond skew", now + int64(clockSkew.Seconds()) + 60, true},
+		{"future within skew", now + int64(clockSkew.Seconds()) - 60, false},
+	}
+	for _, c := range cases {
+		if got := codeExpired(c.issuedAt, now); got != c.want {
+			t.Errorf("%s: codeExpired=%v want %v", c.name, got, c.want)
+		}
+	}
+}
