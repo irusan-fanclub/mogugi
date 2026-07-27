@@ -19,6 +19,8 @@
                     </v-list-item>
                 </v-list>
             </v-menu>
+            <v-btn size="small" variant="text" prepend-icon="mdi-file-delimited-outline"
+                @click="exportCsv">匯出 CSV</v-btn>
             <span class="text-caption text-medium-emphasis">{{ entityCount }} 個實體 / {{ itemKindCount }} 種物品</span>
         </div>
         <v-data-table :headers="headers" :items="rows" density="compact" :items-per-page="50">
@@ -95,6 +97,7 @@ import {
     type TooltipDeps,
 } from '@/lib/itemTooltip';
 import type { EnchantInfo, ItemUpgrade, ManualForm, MetalwareAbility } from '@/store';
+import { buildCsv, downloadCsv } from '@/lib/csvExport';
 
 export default defineComponent({
     setup() {
@@ -235,6 +238,15 @@ export default defineComponent({
             }));
         });
 
+        type IndexRow = (typeof rows.value)[number];
+        // cellText: every row field above is already the display-ready value
+        // the table cell shows (formatters are applied in `rows`), so CSV
+        // export just needs to stringify it.
+        const cellText = (row: IndexRow, key: string): string => {
+            const v = (row as unknown as Record<string, unknown>)[key];
+            return v == null ? '' : String(v);
+        };
+
         // 欄位顯示開關：勾選狀態存 localStorage；細工欄預設隱藏。
         const allHeaders = [
             { title: '物品', key: 'item' },
@@ -265,12 +277,26 @@ export default defineComponent({
         watch(visibleCols, v => localStorage.setItem(COLS_STORAGE_KEY, JSON.stringify(v)), { deep: true });
         const headers = computed(() => allHeaders.filter(h => visibleCols.value.includes(h.key)));
 
+        // exportCsv: dump exactly what's on screen — visible columns x filtered rows.
+        const exportCsv = () => {
+            const cols = headers.value;
+            const header = cols.map(h => h.title);
+            const body = rows.value.map(r => cols.map(h => cellText(r, h.key)));
+            const csv = buildCsv(header, body);
+            const now = new Date();
+            const pad = (n: number) => String(n).padStart(2, '0');
+            const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`
+                + `-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+            downloadCsv(`物品索引_${ts}.csv`, csv);
+        };
+
         onMounted(reload);
         return {
             query, loading, reload, rows, headers, allHeaders, visibleCols,
             entityCount, itemKindCount,
             entityFilter, masterFilter,
             entityOptions, masterOptions,
+            exportCsv,
         };
     },
 });
