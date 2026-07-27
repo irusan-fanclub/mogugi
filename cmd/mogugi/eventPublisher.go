@@ -40,7 +40,8 @@ type eventPublisher struct {
 	lastRegion      uint32            // current region id (26009); 0 = unknown
 	lastRegionName  string            // resolved display name of lastRegion (for "from X" logging)
 	lastMission     string            // latest mission code (22007 enter_<code>), e.g. mrd
-	lastMissionID   uint32            // latest mission id (45004); resolves via dungeonNames
+	lastMissionID   uint32            // latest mission id (36000 kind-7 quest entry); resolves via dungeonNames
+	lastMissionName string            // mission display name carried by the same 36000 entry
 	lastBGM         string            // currently playing BGM (43302); Boss_* means a boss fight
 	bossEntities    map[uint64]string // live boss entity id -> boss name (race-id detection)
 	snapshotNames   map[uint64]string // entity id -> name from 0x5209 snapshots (survives cache eviction)
@@ -331,6 +332,9 @@ func (t *eventPublisher) handlePacket(p *packet.GamePacket) {
 
 	case packet.OpcodeMissionStart:
 		t.handleMissionStart(p)
+
+	case packet.OpcodeQuestInfo:
+		t.handleQuestInfo(p)
 
 	// BGM-based boss detection disabled (race-id detection is primary);
 	// handleBGMPlay kept for now.
@@ -1086,6 +1090,7 @@ func (t *eventPublisher) handleSetLocation(p *packet.GamePacket) {
 	if region < 35000 {
 		t.lastMission = ""
 		t.lastMissionID = 0
+		t.lastMissionName = ""
 	}
 	t.Unlock()
 
@@ -1148,6 +1153,36 @@ func (t *eventPublisher) handleMissionState(p *packet.GamePacket) {
 		t.lastMission = code
 		t.Unlock()
 	}
+}
+
+// questKindDungeonMission is the 36000 quest-journal entry kind for dungeon
+// missions (other kinds carry daily quests etc. whose ids are not mission ids).
+const questKindDungeonMission = 7
+
+// handleQuestInfo records the dungeon mission id + display name from a
+// kind-7 quest-journal entry (36000), which precedes the dynamic-region
+// 26009. This replaced 45004 as the mission-id source after the 2026-07-23
+// game update dropped that packet.
+func (t *eventPublisher) handleQuestInfo(p *packet.GamePacket) {
+	if len(p.Msg) < 7 ||
+		p.Msg[4].Type() != packet.MessageElemTypeByte ||
+		p.Msg[5].Type() != packet.MessageElemTypeInt ||
+		p.Msg[6].Type() != packet.MessageElemTypeString {
+		return
+	}
+	if kind, _ := p.Msg[4].Data().(uint8); kind != questKindDungeonMission {
+		return
+	}
+	id, _ := p.Msg[5].Data().(uint32)
+	if id == 0 {
+		return
+	}
+	name, _ := p.Msg[6].Data().(string)
+
+	t.Lock()
+	t.lastMissionID = id
+	t.lastMissionName = name
+	t.Unlock()
 }
 
 // handleMissionStart records the dungeon mission id (45004 arrives before
@@ -1215,10 +1250,13 @@ func (t *eventPublisher) regionName(region uint32) string {
 	}
 	if region >= 35000 {
 		t.Lock()
-		id, code := t.lastMissionID, t.lastMission
+		id, code, missionName := t.lastMissionID, t.lastMission, t.lastMissionName
 		t.Unlock()
 		if n, ok := dungeonNames[id]; ok {
 			return fmt.Sprintf("副本:%s", n)
+		}
+		if missionName != "" {
+			return fmt.Sprintf("副本:%s", missionName)
 		}
 		if code != "" {
 			if n, ok := missionNames[code]; ok {
