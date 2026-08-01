@@ -14,12 +14,27 @@ import os
 import sqlite3
 import struct
 import time
+from datetime import datetime, timedelta, timezone
 
 import discord
 from discord import app_commands
 from nacl.signing import SigningKey
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+TZ = timezone(timedelta(hours=8))  # log in UTC+8 whatever the container clock is
+
+
+class _TZFormatter(logging.Formatter):
+    def formatTime(self, record, datefmt=None):
+        return datetime.fromtimestamp(record.created, TZ).strftime(
+            datefmt or "%Y-%m-%d %H:%M:%S+08"
+        )
+
+
+_handler = logging.StreamHandler()
+_handler.setFormatter(_TZFormatter("%(asctime)s %(levelname)s %(message)s"))
+logging.basicConfig(level=logging.INFO, handlers=[_handler])
+# Gateway RESUMED/heartbeat chatter is noise; keep warnings and errors.
+logging.getLogger("discord").setLevel(logging.WARNING)
 log = logging.getLogger("mogugi-bot")
 
 # --- config (from environment) ---
@@ -126,4 +141,5 @@ async def getkey(interaction: discord.Interaction):
 
 
 if __name__ == "__main__":
-    client.run(TOKEN)
+    # log_handler=None: keep our formatter, else discord.py adds a duplicate one.
+    client.run(TOKEN, log_handler=None)
