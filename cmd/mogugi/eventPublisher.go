@@ -37,17 +37,24 @@ type eventPublisher struct {
 	pendingEvents   []event.IEvent
 	lastSentAt      time.Time
 	lastPacketAt    time.Time
-	lastRegion      uint32            // current region id (26009); 0 = unknown
-	lastRegionName  string            // resolved display name of lastRegion (for "from X" logging)
-	lastMission     string            // latest mission code (22007 enter_<code>), e.g. mrd
-	lastMissionID   uint32            // latest mission id (36000 kind-7 quest entry); resolves via dungeonNames
-	lastMissionName string            // mission display name carried by the same 36000 entry
-	lastBGM         string            // currently playing BGM (43302); Boss_* means a boss fight
-	bossEntities    map[uint64]string // live boss entity id -> boss name (race-id detection)
-	snapshotNames   map[uint64]string // entity id -> name from 0x5209 snapshots (survives cache eviction)
-	dgnLog          dungeonLog        // per-run event file for whitelisted dungeons (own lock)
-	ownerId         uint64            // local player's own entity id (0 = unknown)
-	ownerName       string            // local player's own character name ("" = unknown)
+	lastRegion      uint32               // current region id (26009); 0 = unknown
+	lastRegionName  string               // resolved display name of lastRegion (for "from X" logging)
+	lastMission     string               // latest mission code (22007 enter_<code>), e.g. mrd
+	lastMissionID   uint32               // latest mission id (36000 kind-7 quest entry); resolves via dungeonNames
+	lastMissionName string               // mission display name carried by the same 36000 entry
+	lastBGM         string               // currently playing BGM (43302); Boss_* means a boss fight
+	bossEntities    map[uint64]string    // live boss entity id -> boss name (race-id detection)
+	snapshotNames   map[uint64]string    // entity id -> name from 0x5209 snapshots (survives cache eviction)
+	dynRegions      map[uint32]dynRegion // dynamic region id -> static region it clones (0xA9A0)
+	dgnLog          dungeonLog           // per-run event file for whitelisted dungeons (own lock)
+	ownerId         uint64               // local player's own entity id (0 = unknown)
+	ownerName       string               // local player's own character name ("" = unknown)
+}
+
+// dynRegion is the static region a dynamic dungeon instance was cloned from.
+type dynRegion struct {
+	baseId   uint32
+	baseName string
 }
 
 type eventClient struct {
@@ -341,6 +348,11 @@ func (t *eventPublisher) handlePacket(p *packet.GamePacket) {
 	// case packet.OpcodeBGMPlay:
 	// 	t.handleBGMPlay(p)
 
+	// Must precede the 26009 that warps us in, and it does (1.1s earlier in
+	// capture 1785312528).
+	case packet.OpcodeDynamicRegionList:
+		t.handleDynamicRegionList(p)
+
 	case packet.OpcodeSetLocation:
 		t.handleSetLocation(p)
 
@@ -526,7 +538,7 @@ func isSummonRace(raceId uint32) bool {
 // worldEntityIdBase marks the start of the world/NPC entity id block
 // (verified stable across sessions); owned entities never reach it. Guards
 // against writing "temporary display entity" overwrite bugs to the store.
-const worldEntityIdBase = (uint64(1) << 52) + 0xF0*(uint64(1) << 40)
+const worldEntityIdBase = (uint64(1) << 52) + 0xF0*(uint64(1)<<40)
 
 func isWorldEntityId(id uint64) bool { return id >= worldEntityIdBase }
 
@@ -1047,6 +1059,69 @@ func (t *eventPublisher) handleStatUpdate(p *packet.GamePacket) {
 	})
 }
 
+// _dynRegionHead / _dynRegionEntry are the 0xA9A0 layout: a fixed head of
+// (long eid, int from, int to, int x, int y, int ?, int count) then count
+// entries of (int id, string name, int flags, int baseId, string baseName,
+// int lighting, byte, string variation, byte).
+const (
+	_dynRegionHead  = 7
+	_dynRegionEntry = 9
+)
+
+// handleDynamicRegionList records the dynamic-region table 0xA9A0 sends
+// when a dungeon instance is created. Every copy carries the full table, so it
+// replaces what was stored. Verified: capture 1785312528, 喀輪巴斯 = 35012
+// NTD_dungeon (小怪房) + 35031 TR_main_field_01 (王房).
+func (t *eventPublisher) handleDynamicRegionList(p *packet.GamePacket) {
+	if len(p.Msg) < _dynRegionHead || p.Msg[6].Type() != packet.MessageElemTypeInt {
+		return
+	}
+	count := int(p.Msg[6].Data().(uint32))
+	if len(p.Msg) < _dynRegionHead+count*_dynRegionEntry {
+		return
+	}
+
+	m := make(map[uint32]dynRegion, count)
+	for i := range count {
+		e := p.Msg[_dynRegionHead+i*_dynRegionEntry:]
+		if e[0].Type() != packet.MessageElemTypeInt ||
+			e[3].Type() != packet.MessageElemTypeInt ||
+			e[4].Type() != packet.MessageElemTypeString {
+			return
+		}
+		m[e[0].Data().(uint32)] = dynRegion{
+			baseId:   e[3].Data().(uint32),
+			baseName: e[4].Data().(string),
+		}
+	}
+
+	t.Lock()
+	t.dynRegions = m
+	t.Unlock()
+}
+
+// mapChangeLine composes the map-change log line. base and mission are the
+// already-rendered ", base=…" / " mission=…" fragments, empty when unknown.
+func mapChangeLine(name string, region uint32, base, mission, prevName string) string {
+	s := fmt.Sprintf("map change: %s (region=%d%s)%s", name, region, base, mission)
+	if prevName != "" {
+		s += " from " + prevName
+	}
+	return s
+}
+
+// regionBaseSuffix renders the static region a dynamic region was cloned from,
+// e.g. ", base=TR_main_field_01(4016)". Empty when 0xA9A0 didn't list it.
+func (t *eventPublisher) regionBaseSuffix(region uint32) string {
+	t.Lock()
+	b, ok := t.dynRegions[region]
+	t.Unlock()
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf(", base=%s(%d)", b.baseName, b.baseId)
+}
+
 // handleSetLocation logs a map change. 26009 carries (byte, region, x, y)
 // for the owner — sent on warp (moongate etc.) and on channel-in. Verified:
 // capture 1783536131, moongate ceoisland→tirchonaill = region 35011.
@@ -1091,6 +1166,9 @@ func (t *eventPublisher) handleSetLocation(p *packet.GamePacket) {
 		t.lastMission = ""
 		t.lastMissionID = 0
 		t.lastMissionName = ""
+		// Dynamic ids are recycled, so a table whose dungeon we already left
+		// must not annotate the next instance if its 0xA9A0 goes missing.
+		t.dynRegions = nil
 	}
 	t.Unlock()
 
@@ -1107,11 +1185,7 @@ func (t *eventPublisher) handleSetLocation(p *packet.GamePacket) {
 		}
 	}
 
-	if prevName != "" {
-		logger.Printf("map change: %s (region=%d)%s from %s", name, region, mission, prevName)
-	} else {
-		logger.Printf("map change: %s (region=%d)%s", name, region, mission)
-	}
+	logger.Print(mapChangeLine(name, region, t.regionBaseSuffix(region), mission, prevName))
 
 	// Whitelisted dungeon -> tee to an event file; leaving (incl. warping
 	// elsewhere) -> close it. Sub-map switches within a dungeon (dynamic->

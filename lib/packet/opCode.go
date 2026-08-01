@@ -29,6 +29,7 @@ const (
 	OpcodeQuestInfo             OpCode = 36000 // 0x8ca0 quest-journal entry: (int, long, byte, long, byte kind, int id, string name, ...); kind 7 = dungeon mission, precedes the dynamic-region 26009
 	OpcodeBGMPlay               OpCode = 43302 // (string "Xxx.mp3", int) — play BGM; Boss_*.mp3 marks a boss-fight start (43303 = preload list)
 	OpcodeSetLocation           OpCode = 26009 // 0x6599 own warp/spawn: (byte 1, region, x, y) — sent on map change & channel-in
+	OpcodeDynamicRegionList     OpCode = 43424 // 0xA9A0 warp into a dungeon instance + the whole instance's region table: (long eid, int fromRegion, int toRegion, int x, int y, int 16, int count) then count × (int dynamicId, string name, int flags, int baseId, string baseName, int lighting, byte, string variationPath, byte). TW multi-region form of Aura's 0x9571 EnterDynamicRegion
 	OpcodeForceWalk             OpCode = 25995 // 0x659b
 	OpcodeFlying                OpCode = 26031 // 0x65af
 	OpcodeChangeStanceRes       OpCode = 28201 // 0x6e29

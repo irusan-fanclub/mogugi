@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -166,6 +167,46 @@ func setLocationPacket(id uint64, region uint32) *packet.GamePacket {
 			packet.NewMessageElemInt(100),
 			packet.NewMessageElemInt(200),
 		},
+	}
+}
+
+// dynRegionFixture is one entry of a 0xA9A0 dynamic-region table.
+type dynRegionFixture struct {
+	id       uint32
+	baseId   uint32
+	baseName string
+}
+
+// dynamicRegionInfoPacket builds a 0xA9A0 in the shape captured on 2026-07-29
+// (喀輪巴斯, 2 entries) and 2026-07-27 (布里萊赫, 3 entries).
+func dynamicRegionInfoPacket(warpTo uint32, entries ...dynRegionFixture) *packet.GamePacket {
+	msg := packet.Message{
+		packet.NewMessageElemLong(4503599630022047), // creature entity id
+		packet.NewMessageElemInt(4016),              // warp-from region
+		packet.NewMessageElemInt(warpTo),            // warp-to (dynamic) region
+		packet.NewMessageElemInt(40000),             // x
+		packet.NewMessageElemInt(38416),             // y
+		packet.NewMessageElemInt(16),                // unknown, 16 in every sample
+		packet.NewMessageElemInt(uint32(len(entries))),
+	}
+	for _, e := range entries {
+		msg = append(msg,
+			packet.NewMessageElemInt(e.id),
+			packet.NewMessageElemString(fmt.Sprintf("DynamicRegion%d", e.id)),
+			packet.NewMessageElemInt(0x80000001),
+			packet.NewMessageElemInt(e.baseId),
+			packet.NewMessageElemString(e.baseName),
+			packet.NewMessageElemInt(200),
+			packet.NewMessageElemByte(0),
+			packet.NewMessageElemString("data/world/"+e.baseName+"/region_variation_715500.xml"),
+			packet.NewMessageElemByte(1),
+		)
+	}
+	return &packet.GamePacket{
+		At:  time.Now(),
+		Op:  packet.OpcodeDynamicRegionList,
+		Id:  3458764513820540928,
+		Msg: msg,
 	}
 }
 
@@ -499,5 +540,79 @@ func TestDungeonLogOpensFromQuestInfo(t *testing.T) {
 	}
 	if p.lastMissionID != 0 || p.lastMissionName != "" {
 		t.Error("mission id/name not cleared after leaving the dungeon")
+	}
+}
+
+// 0xA9A0 carries the whole dynamic-region table of a dungeon instance, so a
+// map change into any of its regions can name the static region it clones.
+func TestRegionBaseSuffixFromDynamicRegionList(t *testing.T) {
+	p := &eventPublisher{entityCache: make(entityCache)}
+
+	p.handleDynamicRegionList(dynamicRegionInfoPacket(35012,
+		dynRegionFixture{35012, 4022, "NTD_dungeon"},
+		dynRegionFixture{35031, 4016, "TR_main_field_01"},
+	))
+
+	if got, want := p.regionBaseSuffix(35012), ", base=NTD_dungeon(4022)"; got != want {
+		t.Errorf("regionBaseSuffix(35012) = %q, want %q", got, want)
+	}
+	if got, want := p.regionBaseSuffix(35031), ", base=TR_main_field_01(4016)"; got != want {
+		t.Errorf("regionBaseSuffix(35031) = %q, want %q", got, want)
+	}
+	if got := p.regionBaseSuffix(35099); got != "" {
+		t.Errorf("regionBaseSuffix(unlisted) = %q, want empty", got)
+	}
+}
+
+// The entry count is a real field, not a fixed 2: 布里萊赫 lists three stages.
+func TestDynamicRegionListReadsEveryEntry(t *testing.T) {
+	p := &eventPublisher{entityCache: make(entityCache)}
+
+	p.handleDynamicRegionList(dynamicRegionInfoPacket(35032,
+		dynRegionFixture{35032, 4062, "MRD_1S"},
+		dynRegionFixture{35033, 4063, "MRD_2S"},
+		dynRegionFixture{35034, 4064, "MRD_3S"},
+	))
+
+	for region, want := range map[uint32]string{
+		35032: ", base=MRD_1S(4062)",
+		35033: ", base=MRD_2S(4063)",
+		35034: ", base=MRD_3S(4064)",
+	} {
+		if got := p.regionBaseSuffix(region); got != want {
+			t.Errorf("regionBaseSuffix(%d) = %q, want %q", region, got, want)
+		}
+	}
+}
+
+// Dynamic ids are recycled across runs, so a table left over from the last
+// dungeon must not annotate the next one if its 0xA9A0 was missed.
+func TestDynamicRegionListClearedOnLeavingDungeon(t *testing.T) {
+	p := &eventPublisher{entityCache: make(entityCache)}
+
+	p.handleDynamicRegionList(dynamicRegionInfoPacket(35012,
+		dynRegionFixture{35012, 4022, "NTD_dungeon"},
+	))
+	p.handleSetLocation(setLocationPacket(1, 35012))
+	p.handleSetLocation(setLocationPacket(1, 4016))
+
+	if got := p.regionBaseSuffix(35012); got != "" {
+		t.Errorf("regionBaseSuffix after leaving = %q, want empty", got)
+	}
+}
+
+// The base-region annotation belongs inside the (region=…) parens, so a
+// dungeon line still reads as one location.
+func TestMapChangeLine(t *testing.T) {
+	got := mapChangeLine("副本:喀輪巴斯", 35031, ", base=TR_main_field_01(4016)", " mission=#715500", "副本:喀輪巴斯")
+	want := "map change: 副本:喀輪巴斯 (region=35031, base=TR_main_field_01(4016)) mission=#715500 from 副本:喀輪巴斯"
+	if got != want {
+		t.Errorf("mapChangeLine =\n %q\nwant\n %q", got, want)
+	}
+
+	got = mapChangeLine("托利峽谷", 4016, "", "", "")
+	want = "map change: 托利峽谷 (region=4016)"
+	if got != want {
+		t.Errorf("mapChangeLine (static, no previous) =\n %q\nwant\n %q", got, want)
 	}
 }

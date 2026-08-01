@@ -42,6 +42,7 @@ var OpCodeStringMap = map[uint32]string{
 	0xA028: "OpcodeConditionUpdate2",
 	0xA43C: "OpcodePartyWindowUpdate",
 	0xA926: "OpcodeBGMPlay",
+	0xA9A0: "OpcodeDynamicRegionList",
 	0xAFCC: "OpcodeMissionStart",
 	0xF44BBA3: "OpcodeRunning",
 	0xFD13021: "OpcodeWalking",
