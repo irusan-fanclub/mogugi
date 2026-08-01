@@ -37,18 +37,19 @@ type eventPublisher struct {
 	pendingEvents   []event.IEvent
 	lastSentAt      time.Time
 	lastPacketAt    time.Time
-	lastRegion      uint32               // current region id (26009); 0 = unknown
-	lastRegionName  string               // resolved display name of lastRegion (for "from X" logging)
-	lastMission     string               // latest mission code (22007 enter_<code>), e.g. mrd
-	lastMissionID   uint32               // latest mission id (36000 kind-7 quest entry); resolves via dungeonNames
-	lastMissionName string               // mission display name carried by the same 36000 entry
-	lastBGM         string               // currently playing BGM (43302); Boss_* means a boss fight
-	bossEntities    map[uint64]string    // live boss entity id -> boss name (race-id detection)
-	snapshotNames   map[uint64]string    // entity id -> name from 0x5209 snapshots (survives cache eviction)
-	dynRegions      map[uint32]dynRegion // dynamic region id -> static region it clones (0xA9A0)
-	dgnLog          dungeonLog           // per-run event file for whitelisted dungeons (own lock)
-	ownerId         uint64               // local player's own entity id (0 = unknown)
-	ownerName       string               // local player's own character name ("" = unknown)
+	lastRegion      uint32                      // current region id (26009); 0 = unknown
+	lastRegionName  string                      // resolved display name of lastRegion (for "from X" logging)
+	lastMission     string                      // latest mission code (22007 enter_<code>), e.g. mrd
+	lastMissionID   uint32                      // latest mission id (36000 kind-7 quest entry); resolves via dungeonNames
+	lastMissionName string                      // mission display name carried by the same 36000 entry
+	lastBGM         string                      // currently playing BGM (43302); Boss_* means a boss fight
+	bossEntities    map[uint64]string           // live boss entity id -> boss name (race-id detection)
+	snapshotNames   map[uint64]string           // entity id -> name from 0x5209 snapshots (survives cache eviction)
+	dynRegions      map[uint32]dynRegion        // dynamic region id -> static region it clones (0xA9A0)
+	statTables      map[uint64]packet.StatTable // entity id -> stat table (0x5209 base + 0x7530/2 deltas)
+	dgnLog          dungeonLog                  // per-run event file for whitelisted dungeons (own lock)
+	ownerId         uint64                      // local player's own entity id (0 = unknown)
+	ownerName       string                      // local player's own character name ("" = unknown)
 }
 
 // dynRegion is the static region a dynamic dungeon instance was cloned from.
@@ -333,6 +334,12 @@ func (t *eventPublisher) handlePacket(p *packet.GamePacket) {
 
 	case packet.OpcodeStatUpdatePublic:
 		t.handleStatUpdate(p)
+		t.handleStatTable(p)
+
+	// Owner-only, and the only source of stat *changes* — the full table
+	// arrives once, in the 0x5209 snapshot.
+	case packet.OpcodeStatUpdatePrivate:
+		t.handleStatTable(p)
 
 	case packet.OpcodeMissionState:
 		t.handleMissionState(p)
@@ -375,6 +382,8 @@ func (t *eventPublisher) handlePacket(p *packet.GamePacket) {
 // (no client event); any failure is logged and ignored so metering is never
 // disturbed.
 func (t *eventPublisher) handleChannelCharacterInfo(p *packet.GamePacket) {
+	t.handleStatTable(p)
+
 	snap, err := packet.ParseEntitySnapshot(p.Msg)
 	if err != nil {
 		itemLogger.Printf("parse 0x5209 failed: %v", err)
@@ -1098,6 +1107,52 @@ func (t *eventPublisher) handleDynamicRegionList(p *packet.GamePacket) {
 	t.Lock()
 	t.dynRegions = m
 	t.Unlock()
+}
+
+// handleStatTable keeps a per-entity stat table. 0x5209 seeds it (the only
+// packet carrying the base values); 0x7530 / 0x7532 overlay the deltas that
+// follow, since a delta never resends an unchanged stat.
+func (t *eventPublisher) handleStatTable(p *packet.GamePacket) {
+	var (
+		id uint64
+		st packet.StatTable
+	)
+	if p.Op == packet.OpcodeChannelCharacterInfoR {
+		if len(p.Msg) < 2 || p.Msg[1].Type() != packet.MessageElemTypeLong {
+			return
+		}
+		id, st = p.Msg[1].Data().(uint64), packet.ParseStatSnapshot(p.Msg)
+	} else {
+		id, st = p.Id, packet.ParseStatUpdate(p.Msg)
+	}
+	if id == 0 || len(st) == 0 {
+		return
+	}
+
+	t.Lock()
+	if t.statTables == nil {
+		t.statTables = make(map[uint64]packet.StatTable)
+	}
+	cur, ok := t.statTables[id]
+	if !ok {
+		cur = make(packet.StatTable, len(st))
+		t.statTables[id] = cur
+	}
+	cur.Merge(st)
+	t.Unlock()
+}
+
+// panelOf returns the character-window values derived from an entity's stat
+// table, or false when no stats have been seen for it. Nothing consumes it
+// yet — it is the accessor the UI will read once a stat panel exists.
+func (t *eventPublisher) panelOf(id uint64) (packet.Panel, bool) {
+	t.Lock()
+	defer t.Unlock()
+	st, ok := t.statTables[id]
+	if !ok {
+		return packet.Panel{}, false
+	}
+	return st.Panel(), true
 }
 
 // mapChangeLine composes the map-change log line. base and mission are the

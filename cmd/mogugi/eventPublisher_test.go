@@ -616,3 +616,64 @@ func TestMapChangeLine(t *testing.T) {
 		t.Errorf("mapChangeLine (static, no previous) =\n %q\nwant\n %q", got, want)
 	}
 }
+
+// statSnapshotPacket builds a 0x5209 whose stat block starts at element 30
+// (stat 26); element [1] is the entity the snapshot belongs to.
+func statSnapshotPacket(id uint64, stats ...packet.IMessageElem) *packet.GamePacket {
+	msg := make(packet.Message, 30)
+	for i := range msg {
+		msg[i] = packet.NewMessageElemInt(0)
+	}
+	msg[1] = packet.NewMessageElemLong(id)
+	return &packet.GamePacket{
+		At: time.Now(), Op: packet.OpcodeChannelCharacterInfoR, Id: 1,
+		Msg: append(msg, stats...),
+	}
+}
+
+func statDeltaPacket(id uint64, pairs ...packet.IMessageElem) *packet.GamePacket {
+	msg := packet.Message{packet.NewMessageElemByte(3), packet.NewMessageElemInt(uint32(len(pairs) / 2))}
+	return &packet.GamePacket{
+		At: time.Now(), Op: packet.OpcodeStatUpdatePrivate, Id: id,
+		Msg: append(msg, pairs...),
+	}
+}
+
+// Only the 0x5209 snapshot carries the base stats, only the deltas that follow
+// carry the current equipment — the panel needs both merged.
+func TestPanelMergesSnapshotAndDeltas(t *testing.T) {
+	p := &eventPublisher{entityCache: make(entityCache)}
+	const id = uint64(4503599630022047)
+
+	p.handleStatTable(statSnapshotPacket(id,
+		packet.NewMessageElemInt(89557),     // 26 戰鬥力
+		packet.NewMessageElemShort(11),      // 27
+		packet.NewMessageElemFloat(8018.95), // 28 生命
+		packet.NewMessageElemFloat(13361.9), // 29
+		packet.NewMessageElemFloat(3611),    // 30 生命上限 base
+		packet.NewMessageElemFloat(4407.95), // 31 生命上限 加成
+	))
+	// Equipment swap: only the mod is resent, the base never is.
+	p.handleStatTable(statDeltaPacket(id,
+		packet.NewMessageElemInt(31), packet.NewMessageElemFloat(4474.96),
+	))
+
+	panel, ok := p.panelOf(id)
+	if !ok {
+		t.Fatal("no panel for the entity")
+	}
+	if got := panel.LifeMax; got < 8085.9 || got > 8086.0 {
+		t.Errorf("生命上限 = %v, want 8085.96 (3611 base + 4474.96 mod)", got)
+	}
+	if panel.CombatPower != 89557 {
+		t.Errorf("戰鬥力 = %v, want 89557 (kept from the snapshot)", panel.CombatPower)
+	}
+}
+
+func TestPanelOfUnknownEntity(t *testing.T) {
+	p := &eventPublisher{entityCache: make(entityCache)}
+
+	if _, ok := p.panelOf(123); ok {
+		t.Error("panelOf reported a panel for an entity with no stats")
+	}
+}
