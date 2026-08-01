@@ -2,6 +2,7 @@ package license
 
 import (
 	"errors"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -210,5 +211,31 @@ func TestCodeExpiredBoundaries(t *testing.T) {
 		if got := codeExpired(c.issuedAt, now); got != c.want {
 			t.Errorf("%s: codeExpired=%v want %v", c.name, got, c.want)
 		}
+	}
+}
+
+// `go run` builds into a fresh temp dir every time, so a dev run would never
+// find the license.dat it wrote on the previous run. MOGUGI_LICENSE_DIR points
+// the lookup at a stable directory instead.
+func TestLicenseFilePathEnvOverride(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("MOGUGI_LICENSE_DIR", dir)
+
+	if got, want := licenseFilePath(), filepath.Join(dir, licenseFileName); got != want {
+		t.Errorf("licenseFilePath() = %q, want %q", got, want)
+	}
+}
+
+// The test hook still wins, so tests keep their own sandbox even when the
+// developer has the env var set in their shell.
+func TestLicenseFilePathOverrideBeatsEnv(t *testing.T) {
+	t.Setenv("MOGUGI_LICENSE_DIR", t.TempDir())
+	sandbox := t.TempDir()
+	old := pathOverride
+	pathOverride = sandbox
+	t.Cleanup(func() { pathOverride = old })
+
+	if got, want := licenseFilePath(), filepath.Join(sandbox, licenseFileName); got != want {
+		t.Errorf("licenseFilePath() = %q, want %q", got, want)
 	}
 }
