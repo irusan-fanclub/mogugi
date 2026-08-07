@@ -55,10 +55,14 @@ function pickName(taken: Set<string>): string {
     }
 }
 
-export function randomAlias(realName: string): void {
+// knownRealNames is the roster on screen. Without it a single re-roll could
+// hand out an alias equal to some other player's still-unaliased real name,
+// which is exactly the confusion this feature exists to remove.
+export function randomAlias(realName: string, knownRealNames: string[] = []): void {
     const taken = new Set(Object.entries(aliasMap.value)
         .filter(([k]) => k !== realName)
         .map(([, v]) => v));
+    for (const n of knownRealNames) taken.add(n);
     taken.add(realName);
     setAlias(realName, pickName(taken));
 }

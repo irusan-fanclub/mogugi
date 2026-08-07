@@ -76,6 +76,22 @@ describe('randomAlias', () => {
         randomAlias('甲');
         expect(aliasOf('乙')).toBe('哞哞叫');
     });
+
+    // Without the roster, a re-roll can land on a player who is on screen
+    // under their real name and has no alias yet — two rows, one name.
+    it('avoids the real names of everyone else on screen', () => {
+        const roster = [FUNNY_NAMES[0], FUNNY_NAMES[1], FUNNY_NAMES[2], '玩家X'];
+        for (let i = 0; i < 50; i++) {
+            clearAllAliases();
+            randomAlias('玩家X', roster);
+            expect(roster).not.toContain(aliasOf('玩家X'));
+        }
+    });
+
+    it('still works when no roster is passed', () => {
+        randomAlias('玩家X');
+        expect(aliasOf('玩家X')).toBeDefined();
+    });
 });
 
 describe('randomizeAll', () => {
