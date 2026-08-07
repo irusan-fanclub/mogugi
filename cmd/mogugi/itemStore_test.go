@@ -324,6 +324,40 @@ func TestMigrateAccountHashesIsIdempotent(t *testing.T) {
 	}
 }
 
+// A character may legitimately be named 銀行(...). Renaming is keyed on the
+// negative synthetic id, so such a character must keep its own name.
+func TestMigrateAccountHashesRenamesOnlyBankEntities(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "items.db")
+	s, err := openItemStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const raw = "bernie7214415"
+	if _, err := s.db.Exec(
+		`INSERT INTO entities (id, name, master, race_id, account, updated_at)
+		 VALUES (?, ?, '', 10002, ?, 0)`, int64(99), "銀行(騙人的)", raw); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	s2, err := openItemStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s2.Close)
+	var name, account string
+	if err := s2.db.QueryRow(`SELECT name, account FROM entities WHERE id=99`).
+		Scan(&name, &account); err != nil {
+		t.Fatal(err)
+	}
+	if name != "銀行(騙人的)" {
+		t.Fatalf("character name = %q, want it left alone", name)
+	}
+	if account != accountHash(raw) {
+		t.Fatalf("character account = %q, want %q", account, accountHash(raw))
+	}
+}
+
 // An empty account must not be hashed into a junk value.
 func TestMigrateAccountHashesSkipsEmptyAccounts(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "items.db")

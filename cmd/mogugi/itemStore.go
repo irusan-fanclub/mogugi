@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/irusan-fanclub/mogugi/lib/packet"
@@ -323,7 +322,10 @@ func migrateAccountHashes(db *sql.DB) error {
 	for _, r := range pending {
 		h := accountHash(r.account)
 		name := r.name
-		if strings.HasPrefix(name, "銀行(") && strings.HasSuffix(name, ")") {
+		// Only bank entities are renamed. bankEntityId mints them with a
+		// negative id; packet-sourced character ids are never negative, so
+		// this cannot mis-fire on a character who happens to be named 銀行(…).
+		if r.id < 0 {
 			name = "bank_" + h
 		}
 		if _, err := db.Exec(`UPDATE entities SET account=?, name=? WHERE id=?`,
