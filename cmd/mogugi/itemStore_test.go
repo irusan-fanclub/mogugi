@@ -265,3 +265,89 @@ func TestIsAccountHash(t *testing.T) {
 		}
 	}
 }
+
+// A database written by an older build holds the raw account id and a
+// 銀行(尾碼) name. Opening it must rewrite both, and doing so twice must
+// change nothing further.
+func TestMigrateAccountHashesIsIdempotent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "items.db")
+	s, err := openItemStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const raw = "bernie7214415"
+	id := bankEntityId(raw)
+	if _, err := s.db.Exec(
+		`INSERT INTO entities (id, name, master, race_id, account, updated_at)
+		 VALUES (?, ?, '', 0, ?, 0)`, id, "銀行(214415)", raw); err != nil {
+		t.Fatal(err)
+	}
+	// A normal character row that also learned the account.
+	if _, err := s.db.Exec(
+		`INSERT INTO entities (id, name, master, race_id, account, updated_at)
+		 VALUES (?, ?, '', 10002, ?, 0)`, int64(42), "地域磨菇", raw); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	want := accountHash(raw)
+	for pass := 1; pass <= 2; pass++ {
+		s2, err := openItemStore(path)
+		if err != nil {
+			t.Fatalf("pass %d: %v", pass, err)
+		}
+		var name, account string
+		if err := s2.db.QueryRow(`SELECT name, account FROM entities WHERE id=?`, id).
+			Scan(&name, &account); err != nil {
+			t.Fatalf("pass %d: %v", pass, err)
+		}
+		if account != want {
+			t.Fatalf("pass %d: bank account = %q, want %q", pass, account, want)
+		}
+		if name != "bank_"+want {
+			t.Fatalf("pass %d: bank name = %q, want %q", pass, name, "bank_"+want)
+		}
+
+		var charName, charAccount string
+		if err := s2.db.QueryRow(`SELECT name, account FROM entities WHERE id=42`).
+			Scan(&charName, &charAccount); err != nil {
+			t.Fatalf("pass %d: %v", pass, err)
+		}
+		if charAccount != want {
+			t.Fatalf("pass %d: character account = %q, want %q", pass, charAccount, want)
+		}
+		// Only bank entities get renamed; a character keeps its own name.
+		if charName != "地域磨菇" {
+			t.Fatalf("pass %d: character name = %q, want 地域磨菇", pass, charName)
+		}
+		s2.Close()
+	}
+}
+
+// An empty account must not be hashed into a junk value.
+func TestMigrateAccountHashesSkipsEmptyAccounts(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "items.db")
+	s, err := openItemStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(
+		`INSERT INTO entities (id, name, master, race_id, account, updated_at)
+		 VALUES (7, '地域磨菇', '', 10002, '', 0)`); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	s2, err := openItemStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s2.Close)
+	var account string
+	if err := s2.db.QueryRow(`SELECT account FROM entities WHERE id=7`).Scan(&account); err != nil {
+		t.Fatal(err)
+	}
+	if account != "" {
+		t.Fatalf("empty account became %q", account)
+	}
+}

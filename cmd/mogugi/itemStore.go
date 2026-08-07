@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/irusan-fanclub/mogugi/lib/packet"
@@ -83,6 +84,10 @@ func openItemStore(path string) (*itemStore, error) {
 		}
 	}
 	if _, err := db.Exec(itemStoreSchema); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := migrateAccountHashes(db); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -282,4 +287,49 @@ func isAccountHash(s string) bool {
 
 func bankEntityName(account string) string {
 	return "bank_" + accountHash(account)
+}
+
+// migrateAccountHashes rewrites raw account ids left by older builds into
+// their hash, renaming bank entities to match. Values that already look like
+// a hash are skipped, which makes this idempotent.
+func migrateAccountHashes(db *sql.DB) error {
+	type row struct {
+		id      int64
+		name    string
+		account string
+	}
+	// Collect first: the store runs with MaxOpenConns(1), so writing while
+	// the SELECT cursor is open would deadlock.
+	var pending []row
+	rows, err := db.Query(`SELECT id, name, account FROM entities WHERE account <> ''`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.id, &r.name, &r.account); err != nil {
+			rows.Close()
+			return err
+		}
+		if !isAccountHash(r.account) {
+			pending = append(pending, r)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for _, r := range pending {
+		h := accountHash(r.account)
+		name := r.name
+		if strings.HasPrefix(name, "銀行(") && strings.HasSuffix(name, ")") {
+			name = "bank_" + h
+		}
+		if _, err := db.Exec(`UPDATE entities SET account=?, name=? WHERE id=?`,
+			h, name, r.id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
