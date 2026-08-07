@@ -1,7 +1,9 @@
 <template>
     <div class="pa-2">
         <div class="d-flex align-center flex-wrap mb-2" style="gap: 8px">
-            <v-text-field v-model="query" label="搜尋（名稱 / 賦予 / 細工 / ID）" hide-details density="compact" clearable
+            <v-text-field v-model="query" label="搜尋（名稱 / 賦予 / 細工 / ID，或 /正則/）"
+                :error="!!searchError" :error-messages="searchError"
+                :hide-details="!searchError" density="compact" clearable
                 style="max-width: 300px" />
             <v-autocomplete v-model="entityFilter" :items="entityOptions" label="角色" hide-details
                 density="compact" clearable multiple chips closable-chips style="min-width: 200px; max-width: 320px" />
@@ -92,7 +94,7 @@
 
 <script lang="ts">
 import { defineComponent, ref, computed, inject, onMounted, watch, type Ref } from 'vue';
-import { buildItemIndex, type IndexEntity, type Holder } from '@/lib/itemIndex';
+import { buildItemIndex, parseSearchQuery, type IndexEntity, type Holder } from '@/lib/itemIndex';
 import {
     buildTip, displayName as buildDisplayName, isRelicPocket, POCKET_NAMES,
     type TooltipDeps,
@@ -193,11 +195,20 @@ export default defineComponent({
         });
         const itemKindCount = computed(() => idx.value.size);
 
-        const allHolders = (): Holder[] => {
+        const allHolders = computed<Holder[]>(() => {
             const out: Holder[] = [];
             for (const holders of idx.value.values()) out.push(...holders);
             return out;
-        };
+        });
+
+        // searchText walks the enchant and metalware tables, so recomputing it
+        // per keystroke over ~10k holders is wasteful. Cache it and let the
+        // computed rebuild only when the index or the name maps change.
+        const searchTextCache = computed(() => {
+            const m = new Map<Holder, string>();
+            for (const h of allHolders.value) m.set(h, searchText(h));
+            return m;
+        });
 
         // 過濾選項：從目前索引取 distinct 值（排序）。
         const distinct = (pick: (h: Holder) => string): string[] => {
@@ -213,13 +224,21 @@ export default defineComponent({
         const entityOptions = computed(() => distinct(h => h.entity));
         const masterOptions = computed(() => distinct(h => h.master));
 
+        const searchQuery = computed(() => parseSearchQuery(query.value ?? ''));
+        const searchError = computed(() =>
+            searchQuery.value.kind === 'error' ? searchQuery.value.message : '');
+
         const rows = computed(() => {
-            const q = (query.value ?? '').trim().toLowerCase();
-            let holders = allHolders();
-            if (q) {
-                holders = /^\d+$/.test(q)
-                    ? holders.filter(h => h.id === Number(q))
-                    : holders.filter(h => searchText(h).includes(q));
+            const sq = searchQuery.value;
+            if (sq.kind === 'error') return [];
+            let holders = allHolders.value;
+            const cache = searchTextCache.value;
+            if (sq.kind === 'id') {
+                holders = holders.filter(h => h.id === sq.id);
+            } else if (sq.kind === 'text') {
+                holders = holders.filter(h => (cache.get(h) ?? '').includes(sq.needle));
+            } else if (sq.kind === 'regex') {
+                holders = holders.filter(h => sq.re.test(cache.get(h) ?? ''));
             }
             if (entityFilter.value.length) {
                 holders = holders.filter(h => entityFilter.value.includes(h.entity));
@@ -300,7 +319,7 @@ export default defineComponent({
             entityCount, itemKindCount,
             entityFilter, masterFilter,
             entityOptions, masterOptions,
-            sortBy, exportCsv,
+            sortBy, exportCsv, searchError,
         };
     },
 });
