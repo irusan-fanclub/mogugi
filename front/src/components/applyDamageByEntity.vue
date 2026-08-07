@@ -1,11 +1,14 @@
 <template>
     <div class="px-2">
+    <alias-toolbar :real-names="pcRealNames" />
     <v-expansion-panels multiple v-for="v in pcEntities" v-bind:key="v.actor.id">
         <template v-if="v.totalDamage > 0">
             <v-expansion-panel>
                 <v-expansion-panel-title>
                     <div class="d-flex align-center" style="width: 100%; gap: 4px;">
-                        <span class="font-weight-medium">{{ prettyEntityName(v.actor) }}</span>
+                        <entity-alias-name :real-name="v.actor.name"
+                            :display-name="prettyEntityName(v.actor)!"
+                            :known-real-names="pcRealNames" />
                         <v-btn v-if="v.actor.conditionHistory.length > 0"
                             icon="mdi-chart-timeline" size="x-small" variant="text"
                             @click.stop="showConditionChart(v.actor)" />
@@ -55,8 +58,14 @@ import { filterByTimeRange, computeGroupedStats } from '@/lib/timeRangeFilter';
 
 import ConditionChart from '@/components/subComponents/conditionChart.vue';
 import DamageList from '@/components/subComponents/damageList.vue';
+import EntityAliasName from '@/components/subComponents/entityAliasName.vue';
+import AliasToolbar from '@/components/subComponents/aliasToolbar.vue';
 
 export default defineComponent({
+    components: {
+        EntityAliasName,
+        AliasToolbar,
+    },
     setup() {
         const isLoading = inject('isLoading');
         const region = inject('region');
@@ -165,6 +174,10 @@ export default defineComponent({
         const pcEntities = computed(() =>
             Object.values(filteredEntityMap.value).filter(v => v.actor.isPC).sort((a, b) => b.totalDamage - a.totalDamage));
 
+        // The roster feeds both the toolbar's bulk randomise and each row's
+        // re-roll, so no alias can collide with a real name still on screen.
+        const pcRealNames = computed(() => pcEntities.value.map(v => v.actor.name));
+
         const allApplyDamage = computed(() =>
             pcEntities.value.reduce((acc, v) => acc + v.totalDamage, 0));
 
@@ -188,6 +201,7 @@ export default defineComponent({
             region,
 
             pcEntities,
+            pcRealNames,
             allApplyDamage,
 
             skillNameMap,

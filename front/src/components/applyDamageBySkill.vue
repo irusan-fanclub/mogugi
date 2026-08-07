@@ -1,5 +1,6 @@
 <template>
     <div class="px-2">
+    <alias-toolbar :real-names="pcRealNames" />
     <v-sheet class="d-flex align-center my-2 flex-wrap" style="gap: 8px;">
         <v-select v-model="targetId" :items="targetIdList"
             :item-title="vv => `${vv[0] ? prettyEntityName(entityMap[vv[0]]?.actor) : 'all'} ${humanReadableNumber(vv[1] || 0)}`"
@@ -96,7 +97,9 @@
             <v-expansion-panel>
                 <v-expansion-panel-title>
                     <div class="d-flex align-center" style="width: 100%; gap: 4px;">
-                        <span class="font-weight-medium">{{ prettyEntityName(v.actor) }}</span>
+                        <entity-alias-name :real-name="v.actor.name"
+                            :display-name="prettyEntityName(v.actor)!"
+                            :known-real-names="pcRealNames" />
                         <v-btn v-if="v.actor.conditionHistory.length > 0"
                             @click.stop="showConditionChart(v.actor)" size="x-small" icon="mdi-chart-timeline" variant="text" />
                         <v-tooltip text="Cumulative"><template v-slot:activator="{ props: tp }">
@@ -178,10 +181,14 @@ import DamageChart from '@/components/subComponents/damageChart.vue';
 import DamageDistribution from '@/components/subComponents/damageDistribution.vue';
 import DamageList from '@/components/subComponents/damageList.vue';
 import DpsDebuffChart from '@/components/subComponents/dpsDebuffChart.vue';
+import EntityAliasName from '@/components/subComponents/entityAliasName.vue';
+import AliasToolbar from '@/components/subComponents/aliasToolbar.vue';
 
 export default defineComponent({
     components: {
         DpsDebuffChart,
+        EntityAliasName,
+        AliasToolbar,
     },
     setup() {
         const isLoading = inject('isLoading');
@@ -333,6 +340,10 @@ export default defineComponent({
 
         const pcEntities = computed(() =>
             Object.values(entityMapWithTargetData.value).filter(v => v.actor.isPC).sort((a, b) => b.totalDamage - a.totalDamage));
+
+        // The roster feeds both the toolbar's bulk randomise and each row's
+        // re-roll, so no alias can collide with a real name still on screen.
+        const pcRealNames = computed(() => pcEntities.value.map(v => v.actor.name));
 
         const targetId = ref('');
         const targetIdList = computed(() => {
@@ -665,6 +676,7 @@ export default defineComponent({
             region,
 
             pcEntities,
+            pcRealNames,
             allApplyDamage,
             targetId,
             targetIdList,
