@@ -83,3 +83,48 @@ export function parseSearchQuery(raw: string): SearchQuery {
     if (/^\d+$/.test(q)) return { kind: 'id', id: Number(q) };
     return { kind: 'text', needle: q.toLowerCase() };
 }
+
+export type ExcludeColumn = 'item' | 'entity' | 'storage';
+export interface ExcludeEntry { col: ExcludeColumn; value: string }
+export interface ExcludeSets { item: Set<string>; entity: Set<string>; storage: Set<string> }
+
+const EXCLUDE_COLUMNS: ExcludeColumn[] = ['item', 'entity', 'storage'];
+
+// parseExcludeEntries validates a localStorage payload entry by entry, so one
+// bad record cannot take the whole tab down.
+export function parseExcludeEntries(raw: string | null): ExcludeEntry[] {
+    if (!raw) return [];
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(raw);
+    } catch {
+        return [];
+    }
+    if (!Array.isArray(parsed)) return [];
+
+    const out: ExcludeEntry[] = [];
+    const seen = new Set<string>();
+    for (const e of parsed) {
+        if (!e || typeof e !== 'object') continue;
+        const { col, value } = e as { col?: unknown; value?: unknown };
+        if (typeof value !== 'string' || !value) continue;
+        if (!EXCLUDE_COLUMNS.includes(col as ExcludeColumn)) continue;
+        const key = `${col as string}:${value}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ col: col as ExcludeColumn, value });
+    }
+    return out;
+}
+
+// buildExcludeSets turns the list into per-column lookups, so filtering stays
+// O(1) per row no matter how long the list grows.
+export function buildExcludeSets(entries: ExcludeEntry[]): ExcludeSets {
+    const sets: ExcludeSets = { item: new Set(), entity: new Set(), storage: new Set() };
+    for (const e of entries) sets[e.col].add(e.value);
+    return sets;
+}
+
+export function isExcludeEmpty(sets: ExcludeSets): boolean {
+    return sets.item.size === 0 && sets.entity.size === 0 && sets.storage.size === 0;
+}
