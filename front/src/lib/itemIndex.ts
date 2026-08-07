@@ -67,15 +67,20 @@ const ALLOWED_FLAGS = 'imsu';
 // parseSearchQuery classifies the search box input: `/pattern/flags` is a
 // regex (default `i`), a bare number matches an item id, anything else is a
 // lowercase substring — the historical behaviour.
+//
+// `i` is always forced on: the corpus this matches against (searchText /
+// searchTextCache) is pre-lowercased, so a user-requested case-sensitive
+// match would silently match nothing.
 export function parseSearchQuery(raw: string): SearchQuery {
     const q = (raw ?? '').trim();
     if (!q) return { kind: 'empty' };
 
     const m = /^\/(.+)\/([a-z]*)$/.exec(q);
     if (m) {
-        const flags = [...new Set(m[2])].filter(f => ALLOWED_FLAGS.includes(f)).join('');
+        const flags = new Set([...m[2]].filter(f => ALLOWED_FLAGS.includes(f)));
+        flags.add('i');
         try {
-            return { kind: 'regex', re: new RegExp(m[1], flags || 'i') };
+            return { kind: 'regex', re: new RegExp(m[1], [...flags].join('')) };
         } catch (e) {
             return { kind: 'error', message: `正則式無效：${(e as Error).message}` };
         }

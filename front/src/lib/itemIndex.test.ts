@@ -32,6 +32,14 @@ describe('parseSearchQuery', () => {
         expect(q.re.flags).toBe('im');
     });
 
+    it('forces `i` on even when the user asks for other flags without it', () => {
+        // The haystack is lowercased, so a case-sensitive match would silently
+        // match nothing — `i` must survive regardless of what was typed.
+        const q = parseSearchQuery('/abc/m');
+        if (q.kind !== 'regex') throw new Error(`expected regex, got ${q.kind}`);
+        expect(q.re.flags).toContain('i');
+    });
+
     it('takes the last slash so a pattern may contain slashes', () => {
         const q = parseSearchQuery('/a\\/b/');
         if (q.kind !== 'regex') throw new Error(`expected regex, got ${q.kind}`);
