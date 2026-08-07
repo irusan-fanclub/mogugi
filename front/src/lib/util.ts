@@ -2,6 +2,7 @@ import { customRef } from 'vue';
 import type { Ref } from 'vue';
 
 import { ActorManager, BaseActor, GroupActor } from '@/eventActor';
+import { aliasOf } from './entityAlias';
 
 export function humanReadableNumber(n: number): string {
     if (typeof n == 'string') {
@@ -119,8 +120,9 @@ export function prettyEntityName(entity: BaseActor | undefined, raceNameMap: Ref
         return undefined;
     }
 
+    // PC branch also covers a PC's GroupActor, which carries the same name.
     if (ActorManager.pcRaceSet.has(entity.raceId)) {
-        return entity.name;
+        return aliasOf(entity.name) ?? entity.name;
     }
 
     // Placeholder whose real race isn't known yet: race is a stand-in (0), so
