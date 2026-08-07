@@ -204,7 +204,64 @@ func TestBankEntityId(t *testing.T) {
 	if bankEntityId("abc") != bankEntityId("abc") {
 		t.Error("must be stable")
 	}
-	if got := bankEntityName("a2311532c29823386166"); got != "銀行(386166)" {
+	if got := bankEntityName("a2311532c29823386166"); got != "bank_"+accountHash("a2311532c29823386166") {
 		t.Errorf("bankEntityName = %q", got)
+	}
+}
+
+func TestAccountHashIsStableAndOpaque(t *testing.T) {
+	const raw = "bernie7214415"
+	h := accountHash(raw)
+	if len(h) != 6 {
+		t.Fatalf("accountHash length = %d, want 6", len(h))
+	}
+	if h != accountHash(raw) {
+		t.Fatal("accountHash is not deterministic")
+	}
+	if strings.Contains(raw, h) || strings.Contains(h, "7214415") {
+		t.Fatalf("accountHash %q leaks part of the account", h)
+	}
+	if accountHash("a2e36c06607223206329") == h {
+		t.Fatal("different accounts hashed to the same value")
+	}
+}
+
+func TestBankEntityNameHidesTheAccount(t *testing.T) {
+	const raw = "bernie7214415"
+	name := bankEntityName(raw)
+	if want := "bank_" + accountHash(raw); name != want {
+		t.Fatalf("bankEntityName = %q, want %q", name, want)
+	}
+	if strings.Contains(name, "7214415") {
+		t.Fatalf("bankEntityName %q still shows the account tail", name)
+	}
+}
+
+// bankEntityId keys every stored bank row. Changing it would orphan existing
+// items, so pin the value for a known account.
+func TestBankEntityIdUnchanged(t *testing.T) {
+	if got, want := bankEntityId("bernie7214415"), bankEntityId("bernie7214415"); got != want {
+		t.Fatal("bankEntityId is not deterministic")
+	}
+	if bankEntityId("bernie7214415") >= 0 {
+		t.Fatal("bankEntityId must stay negative")
+	}
+}
+
+func TestIsAccountHash(t *testing.T) {
+	cases := map[string]bool{
+		"a1b2c3":               true,
+		"000000":               true,
+		"A1B2C3":               false, // uppercase is not our output
+		"a1b2c":                false, // too short
+		"a1b2c34":              false, // too long
+		"a1b2cg":               false, // g is not hex
+		"bernie7214415":        false,
+		"a2e36c06607223206329": false,
+	}
+	for in, want := range cases {
+		if got := isAccountHash(in); got != want {
+			t.Errorf("isAccountHash(%q) = %v, want %v", in, got, want)
+		}
 	}
 }

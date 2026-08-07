@@ -1,8 +1,9 @@
 package main
 
 import (
+	"crypto/sha256"
 	"database/sql"
-	"fmt"
+	"encoding/hex"
 	"hash/fnv"
 	"os"
 	"path/filepath"
@@ -259,10 +260,26 @@ func bankEntityId(account string) int64 {
 	return -int64(h.Sum64() >> 1)
 }
 
-func bankEntityName(account string) string {
-	tail := account
-	if len(tail) > 6 {
-		tail = tail[len(tail)-6:]
+// accountHash returns the first 6 hex chars of SHA-256(account): a stable,
+// non-reversible label, so the raw account id never reaches disk or the UI.
+func accountHash(account string) string {
+	sum := sha256.Sum256([]byte(account))
+	return hex.EncodeToString(sum[:])[:6]
+}
+
+// isAccountHash reports whether s is already an accountHash output.
+func isAccountHash(s string) bool {
+	if len(s) != 6 {
+		return false
 	}
-	return fmt.Sprintf("銀行(%s)", tail)
+	for _, c := range s {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func bankEntityName(account string) string {
+	return "bank_" + accountHash(account)
 }

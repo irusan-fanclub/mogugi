@@ -498,6 +498,7 @@ func (t *eventPublisher) handleBankList(p *packet.GamePacket) {
 		return
 	}
 
+	acctHash := accountHash(b.Account)
 	acct := entityMeta{Id: bankEntityId(b.Account), Name: bankEntityName(b.Account)}
 	tabOwners := make([]string, 0, len(b.Tabs))
 	totalItems := 0
@@ -515,21 +516,17 @@ func (t *eventPublisher) handleBankList(p *packet.GamePacket) {
 		totalItems += len(tab.Items)
 	}
 
-	if err := itemDB.SetAccountById(int64(p.Id), b.Account); err != nil {
+	if err := itemDB.SetAccountById(int64(p.Id), acctHash); err != nil {
 		itemLogger.Printf("bank: set account for viewer failed: %v", err)
 	}
-	if err := itemDB.SetAccountByNames(b.Account, tabOwners); err != nil {
+	if err := itemDB.SetAccountByNames(acctHash, tabOwners); err != nil {
 		itemLogger.Printf("bank: set account for tab owners failed: %v", err)
 	}
-	if err := itemDB.SetAccountById(acct.Id, b.Account); err != nil {
+	if err := itemDB.SetAccountById(acct.Id, acctHash); err != nil {
 		itemLogger.Printf("bank: set account for bank entity failed: %v", err)
 	}
 
-	tail := b.Account
-	if len(tail) > 6 {
-		tail = tail[len(tail)-6:]
-	}
-	itemLogger.Printf("bank: page %d, %d tabs, %d items (account …%s)", b.Page, len(b.Tabs), totalItems, tail)
+	itemLogger.Printf("bank: page %d, %d tabs, %d items (account %s)", b.Page, len(b.Tabs), totalItems, acctHash)
 }
 
 // isSummonRace reports whether a race id belongs to the summoned-unit block:
