@@ -48,12 +48,28 @@ Write-Host "`n[1/4] Building Frontend..." -ForegroundColor Yellow
 Push-Location front
 
 # Sync package.json version so __APP_VERSION__ matches the release tag.
+#
+# This is a targeted text edit rather than a ConvertFrom-Json/ConvertTo-Json
+# round-trip, for two reasons that both broke the build before:
+#   * Set-Content -Encoding utf8 writes a BOM under Windows PowerShell 5.1,
+#     and vite.config.mjs reads package.json with JSON.parse, which rejects it
+#     ("Unexpected token '﻿'"). The whole frontend build fails.
+#   * ConvertTo-Json reflows the entire file (indentation and spacing), turning
+#     a one-line version bump into a diff touching every line.
 $pkgPath = "package.json"
-$pkg = Get-Content $pkgPath -Raw | ConvertFrom-Json
-if ($pkg.version -ne $Version) {
-    Write-Host "Updating package.json version $($pkg.version) -> $Version" -ForegroundColor Gray
-    $pkg.version = $Version
-    ($pkg | ConvertTo-Json -Depth 32) | Set-Content -Path $pkgPath -Encoding utf8
+$pkgFull = (Resolve-Path $pkgPath).Path
+$pkgRaw  = [System.IO.File]::ReadAllText($pkgFull)
+if ($pkgRaw -notmatch '"version"\s*:\s*"([^"]+)"') {
+    Pop-Location
+    Write-Host "Could not find a version field in front/$pkgPath" -ForegroundColor Red
+    exit 1
+}
+$pkgVersion = $Matches[1]
+if ($pkgVersion -ne $Version) {
+    Write-Host "Updating package.json version $pkgVersion -> $Version" -ForegroundColor Gray
+    # Count 1: only the package's own version, never a dependency's.
+    $pkgRaw = [regex]::Replace($pkgRaw, '("version"\s*:\s*")[^"]+(")', "`${1}$Version`${2}", 1)
+    [System.IO.File]::WriteAllText($pkgFull, $pkgRaw, (New-Object System.Text.UTF8Encoding $false))
 }
 
 # Suppress NativeCommandError from npm's stderr writes (vite emits
