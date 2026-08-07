@@ -27,9 +27,17 @@
                 @click="exportCsv">匯出 CSV</v-btn>
             <span class="text-caption text-medium-emphasis">{{ entityCount }} 個實體 / {{ itemKindCount }} 種物品</span>
         </div>
+        <div v-if="excludes.length" class="d-flex align-center flex-wrap mb-2" style="gap: 6px">
+            <span class="text-caption text-medium-emphasis">排除：</span>
+            <v-chip v-for="(e, i) in excludes" :key="`${e.col}:${e.value}`" size="small"
+                closable prepend-icon="mdi-minus-circle-outline"
+                @click:close="removeExclude(i)">{{ e.value }}</v-chip>
+            <v-btn size="x-small" variant="text" @click="clearExcludes">全部清除</v-btn>
+        </div>
         <v-data-table :headers="headers" :items="rows" v-model:sort-by="sortBy" density="compact"
             :items-per-page="50">
             <template #[`item.item`]="{ item }">
+                <span class="idx-cell">
                 <v-tooltip v-if="item.tip" location="right" content-class="item-tip-content" :open-delay="150">
                     <template #activator="{ props }">
                         <span v-bind="props" class="item-name-hover">{{ item.item }}</span>
@@ -89,6 +97,23 @@
                     </div>
                 </v-tooltip>
                 <span v-else>{{ item.item }}</span>
+                <v-icon class="idx-exclude" icon="mdi-minus-circle-outline" size="x-small"
+                    title="加入排除清單" @click.stop="addExclude('item', item.item)" />
+                </span>
+            </template>
+            <template #[`item.entity`]="{ item }">
+                <span class="idx-cell">
+                    {{ item.entity }}
+                    <v-icon class="idx-exclude" icon="mdi-minus-circle-outline" size="x-small"
+                        title="加入排除清單" @click.stop="addExclude('entity', item.entity)" />
+                </span>
+            </template>
+            <template #[`item.storage`]="{ item }">
+                <span class="idx-cell">
+                    {{ item.storage }}
+                    <v-icon class="idx-exclude" icon="mdi-minus-circle-outline" size="x-small"
+                        title="加入排除清單" @click.stop="addExclude('storage', item.storage)" />
+                </span>
             </template>
         </v-data-table>
     </div>
@@ -96,7 +121,10 @@
 
 <script lang="ts">
 import { defineComponent, ref, computed, inject, onMounted, watch, type Ref } from 'vue';
-import { buildItemIndex, parseSearchQuery, type IndexEntity, type Holder } from '@/lib/itemIndex';
+import {
+    buildItemIndex, parseSearchQuery, parseExcludeEntries, buildExcludeSets, isExcludeEmpty,
+    type IndexEntity, type Holder, type ExcludeColumn, type ExcludeEntry,
+} from '@/lib/itemIndex';
 import {
     buildTip, displayName as buildDisplayName, isRelicPocket, POCKET_NAMES,
     type TooltipDeps,
@@ -230,6 +258,24 @@ export default defineComponent({
         // dropdown never disagrees with the 存放處 column.
         const storageOptions = computed(() => distinct(h => storageText(h)));
 
+        // Exclude list: "never show these", complements the filters' "only show these".
+        const EXCLUDES_STORAGE_KEY = 'itemIndexExcludes.v1';
+        const excludes = ref<ExcludeEntry[]>(
+            parseExcludeEntries(localStorage.getItem(EXCLUDES_STORAGE_KEY)));
+        watch(excludes, v => localStorage.setItem(EXCLUDES_STORAGE_KEY, JSON.stringify(v)),
+            { deep: true });
+        const excludeSets = computed(() => buildExcludeSets(excludes.value));
+
+        const addExclude = (col: ExcludeColumn, value: string) => {
+            if (!value) return;
+            if (excludes.value.some(e => e.col === col && e.value === value)) return;
+            excludes.value = [...excludes.value, { col, value }];
+        };
+        const removeExclude = (idx: number) => {
+            excludes.value = excludes.value.filter((_, i) => i !== idx);
+        };
+        const clearExcludes = () => { excludes.value = []; };
+
         const searchQuery = computed(() => parseSearchQuery(query.value ?? ''));
         const searchError = computed(() =>
             searchQuery.value.kind === 'error' ? searchQuery.value.message : '');
@@ -254,6 +300,15 @@ export default defineComponent({
             }
             if (storageFilter.value.length) {
                 holders = holders.filter(h => storageFilter.value.includes(storageText(h)));
+            }
+            const ex = excludeSets.value;
+            if (!isExcludeEmpty(ex)) {
+                holders = holders.filter(h =>
+                    !ex.entity.has(h.entity)
+                    && !ex.storage.has(storageText(h))
+                    // displayName is the expensive one, so only pay for it
+                    // when something in the item column is actually excluded.
+                    && !(ex.item.size > 0 && ex.item.has(displayName(h))));
             }
             return holders.map(h => ({
                 item: displayName(h),
@@ -329,6 +384,7 @@ export default defineComponent({
             entityFilter, masterFilter, storageFilter,
             entityOptions, masterOptions, storageOptions,
             sortBy, exportCsv, searchError,
+            excludes, addExclude, removeExclude, clearExcludes,
         };
     },
 });
@@ -400,5 +456,27 @@ export default defineComponent({
     height: 10px;
     border: 1px solid #666;
     margin-right: 4px;
+}
+
+/* Exclude button: hidden until the cell is hovered. */
+.idx-cell {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.idx-cell .idx-exclude {
+    opacity: 0;
+    cursor: pointer;
+    transition: opacity 0.12s;
+}
+
+.idx-cell:hover .idx-exclude {
+    opacity: 0.6;
+}
+
+.idx-cell .idx-exclude:hover {
+    opacity: 1;
+    color: #ef5350;
 }
 </style>
