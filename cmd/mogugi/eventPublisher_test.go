@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -267,6 +268,34 @@ func TestHandleBeautyRoomWritesStore(t *testing.T) {
 	}
 	if len(idx[0].Items) != 1 || idx[0].Items[0].Storage != "beauty" || idx[0].Items[0].ID != 12001 {
 		t.Errorf("items = %+v", idx[0].Items)
+	}
+}
+
+// The raw account id must never reach the database.
+func TestHandleBeautyRoomStoresHashedAccount(t *testing.T) {
+	withTestItemDB(t)
+
+	p := &eventPublisher{entityCache: make(entityCache)}
+	p.entityCache[7] = &entityInfoExtend{EntityInfo: &packet.EntityInfo{Id: 7, Name: "測試角色", RaceId: 10002}}
+
+	pk := beautyRoomPacket(7)
+	p.handleBeautyRoom(pk)
+
+	_, _, account, err := packet.ParseBeautyRoomPacket(pk.Msg)
+	if err != nil || account == "" {
+		t.Fatalf("fixture account = %q, %v, want non-empty", account, err)
+	}
+
+	var stored string
+	if err := itemDB.db.QueryRow(`SELECT account FROM entities WHERE id=?`, int64(7)).
+		Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored == account {
+		t.Fatal("raw account id was written to the database")
+	}
+	if stored != accountHash(account) {
+		t.Fatalf("stored account = %q, want %q", stored, accountHash(account))
 	}
 }
 
@@ -675,5 +704,32 @@ func TestPanelOfUnknownEntity(t *testing.T) {
 
 	if _, ok := p.panelOf(123); ok {
 		t.Error("panelOf reported a panel for an entity with no stats")
+	}
+}
+
+// The raw account id must never reach the database.
+func TestHandleBankListStoresHashedAccount(t *testing.T) {
+	withTestItemDB(t)
+
+	p := &eventPublisher{entityCache: make(entityCache)}
+	msg, _ := packetFixtureMessage(t, "0x7212_page1.json")
+	p.handleBankList(&packet.GamePacket{At: time.Now(), Op: packet.OpcodeBankList, Id: 7, Msg: msg})
+
+	b, _ := packet.ParseBankListPacket(msg)
+	acctId := bankEntityId(b.Account)
+
+	var stored, name string
+	if err := itemDB.db.QueryRow(`SELECT account, name FROM entities WHERE id=?`, acctId).
+		Scan(&stored, &name); err != nil {
+		t.Fatal(err)
+	}
+	if stored == b.Account {
+		t.Fatal("raw account id was written to the database")
+	}
+	if stored != accountHash(b.Account) {
+		t.Fatalf("stored account = %q, want %q", stored, accountHash(b.Account))
+	}
+	if !strings.HasPrefix(name, "bank_") {
+		t.Fatalf("bank entity name = %q, want a bank_ prefix", name)
 	}
 }

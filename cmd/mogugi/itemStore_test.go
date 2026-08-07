@@ -204,7 +204,184 @@ func TestBankEntityId(t *testing.T) {
 	if bankEntityId("abc") != bankEntityId("abc") {
 		t.Error("must be stable")
 	}
-	if got := bankEntityName("a2311532c29823386166"); got != "銀行(386166)" {
+	if got := bankEntityName("a2311532c29823386166"); got != "bank_"+accountHash("a2311532c29823386166") {
 		t.Errorf("bankEntityName = %q", got)
+	}
+}
+
+func TestAccountHashIsStableAndOpaque(t *testing.T) {
+	const raw = "bernie7214415"
+	h := accountHash(raw)
+	if len(h) != 6 {
+		t.Fatalf("accountHash length = %d, want 6", len(h))
+	}
+	if h != accountHash(raw) {
+		t.Fatal("accountHash is not deterministic")
+	}
+	if strings.Contains(raw, h) || strings.Contains(h, "7214415") {
+		t.Fatalf("accountHash %q leaks part of the account", h)
+	}
+	if accountHash("a2e36c06607223206329") == h {
+		t.Fatal("different accounts hashed to the same value")
+	}
+}
+
+func TestBankEntityNameHidesTheAccount(t *testing.T) {
+	const raw = "bernie7214415"
+	name := bankEntityName(raw)
+	if want := "bank_" + accountHash(raw); name != want {
+		t.Fatalf("bankEntityName = %q, want %q", name, want)
+	}
+	if strings.Contains(name, "7214415") {
+		t.Fatalf("bankEntityName %q still shows the account tail", name)
+	}
+}
+
+// bankEntityId keys every stored bank row. Changing it would orphan existing
+// items, so pin the value for a known account.
+func TestBankEntityIdUnchanged(t *testing.T) {
+	if got, want := bankEntityId("bernie7214415"), bankEntityId("bernie7214415"); got != want {
+		t.Fatal("bankEntityId is not deterministic")
+	}
+	if bankEntityId("bernie7214415") >= 0 {
+		t.Fatal("bankEntityId must stay negative")
+	}
+}
+
+func TestIsAccountHash(t *testing.T) {
+	cases := map[string]bool{
+		"a1b2c3":               true,
+		"000000":               true,
+		"A1B2C3":               false, // uppercase is not our output
+		"a1b2c":                false, // too short
+		"a1b2c34":              false, // too long
+		"a1b2cg":               false, // g is not hex
+		"bernie7214415":        false,
+		"a2e36c06607223206329": false,
+	}
+	for in, want := range cases {
+		if got := isAccountHash(in); got != want {
+			t.Errorf("isAccountHash(%q) = %v, want %v", in, got, want)
+		}
+	}
+}
+
+// A database written by an older build holds the raw account id and a
+// 銀行(尾碼) name. Opening it must rewrite both, and doing so twice must
+// change nothing further.
+func TestMigrateAccountHashesIsIdempotent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "items.db")
+	s, err := openItemStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const raw = "bernie7214415"
+	id := bankEntityId(raw)
+	if _, err := s.db.Exec(
+		`INSERT INTO entities (id, name, master, race_id, account, updated_at)
+		 VALUES (?, ?, '', 0, ?, 0)`, id, "銀行(214415)", raw); err != nil {
+		t.Fatal(err)
+	}
+	// A normal character row that also learned the account.
+	if _, err := s.db.Exec(
+		`INSERT INTO entities (id, name, master, race_id, account, updated_at)
+		 VALUES (?, ?, '', 10002, ?, 0)`, int64(42), "地域磨菇", raw); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	want := accountHash(raw)
+	for pass := 1; pass <= 2; pass++ {
+		s2, err := openItemStore(path)
+		if err != nil {
+			t.Fatalf("pass %d: %v", pass, err)
+		}
+		var name, account string
+		if err := s2.db.QueryRow(`SELECT name, account FROM entities WHERE id=?`, id).
+			Scan(&name, &account); err != nil {
+			t.Fatalf("pass %d: %v", pass, err)
+		}
+		if account != want {
+			t.Fatalf("pass %d: bank account = %q, want %q", pass, account, want)
+		}
+		if name != "bank_"+want {
+			t.Fatalf("pass %d: bank name = %q, want %q", pass, name, "bank_"+want)
+		}
+
+		var charName, charAccount string
+		if err := s2.db.QueryRow(`SELECT name, account FROM entities WHERE id=42`).
+			Scan(&charName, &charAccount); err != nil {
+			t.Fatalf("pass %d: %v", pass, err)
+		}
+		if charAccount != want {
+			t.Fatalf("pass %d: character account = %q, want %q", pass, charAccount, want)
+		}
+		// Only bank entities get renamed; a character keeps its own name.
+		if charName != "地域磨菇" {
+			t.Fatalf("pass %d: character name = %q, want 地域磨菇", pass, charName)
+		}
+		s2.Close()
+	}
+}
+
+// A character may legitimately be named 銀行(...). Renaming is keyed on the
+// negative synthetic id, so such a character must keep its own name.
+func TestMigrateAccountHashesRenamesOnlyBankEntities(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "items.db")
+	s, err := openItemStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const raw = "bernie7214415"
+	if _, err := s.db.Exec(
+		`INSERT INTO entities (id, name, master, race_id, account, updated_at)
+		 VALUES (?, ?, '', 10002, ?, 0)`, int64(99), "銀行(騙人的)", raw); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	s2, err := openItemStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s2.Close)
+	var name, account string
+	if err := s2.db.QueryRow(`SELECT name, account FROM entities WHERE id=99`).
+		Scan(&name, &account); err != nil {
+		t.Fatal(err)
+	}
+	if name != "銀行(騙人的)" {
+		t.Fatalf("character name = %q, want it left alone", name)
+	}
+	if account != accountHash(raw) {
+		t.Fatalf("character account = %q, want %q", account, accountHash(raw))
+	}
+}
+
+// An empty account must not be hashed into a junk value.
+func TestMigrateAccountHashesSkipsEmptyAccounts(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "items.db")
+	s, err := openItemStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(
+		`INSERT INTO entities (id, name, master, race_id, account, updated_at)
+		 VALUES (7, '地域磨菇', '', 10002, '', 0)`); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	s2, err := openItemStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s2.Close)
+	var account string
+	if err := s2.db.QueryRow(`SELECT account FROM entities WHERE id=7`).Scan(&account); err != nil {
+		t.Fatal(err)
+	}
+	if account != "" {
+		t.Fatalf("empty account became %q", account)
 	}
 }

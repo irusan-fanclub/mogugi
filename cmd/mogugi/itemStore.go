@@ -1,8 +1,9 @@
 package main
 
 import (
+	"crypto/sha256"
 	"database/sql"
-	"fmt"
+	"encoding/hex"
 	"hash/fnv"
 	"os"
 	"path/filepath"
@@ -82,6 +83,10 @@ func openItemStore(path string) (*itemStore, error) {
 		}
 	}
 	if _, err := db.Exec(itemStoreSchema); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := migrateAccountHashes(db); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -259,10 +264,74 @@ func bankEntityId(account string) int64 {
 	return -int64(h.Sum64() >> 1)
 }
 
-func bankEntityName(account string) string {
-	tail := account
-	if len(tail) > 6 {
-		tail = tail[len(tail)-6:]
+// accountHash returns the first 6 hex chars of SHA-256(account): a stable,
+// non-reversible label, so the raw account id never reaches disk or the UI.
+func accountHash(account string) string {
+	sum := sha256.Sum256([]byte(account))
+	return hex.EncodeToString(sum[:])[:6]
+}
+
+// isAccountHash reports whether s is already an accountHash output.
+func isAccountHash(s string) bool {
+	if len(s) != 6 {
+		return false
 	}
-	return fmt.Sprintf("銀行(%s)", tail)
+	for _, c := range s {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func bankEntityName(account string) string {
+	return "bank_" + accountHash(account)
+}
+
+// migrateAccountHashes rewrites raw account ids left by older builds into
+// their hash, renaming bank entities to match. Values that already look like
+// a hash are skipped, which makes this idempotent.
+func migrateAccountHashes(db *sql.DB) error {
+	type row struct {
+		id      int64
+		name    string
+		account string
+	}
+	// Collect first: the store runs with MaxOpenConns(1), so writing while
+	// the SELECT cursor is open would deadlock.
+	var pending []row
+	rows, err := db.Query(`SELECT id, name, account FROM entities WHERE account <> ''`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.id, &r.name, &r.account); err != nil {
+			rows.Close()
+			return err
+		}
+		if !isAccountHash(r.account) {
+			pending = append(pending, r)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for _, r := range pending {
+		h := accountHash(r.account)
+		name := r.name
+		// Only bank entities are renamed. bankEntityId mints them with a
+		// negative id; packet-sourced character ids are never negative, so
+		// this cannot mis-fire on a character who happens to be named 銀行(…).
+		if r.id < 0 {
+			name = "bank_" + h
+		}
+		if _, err := db.Exec(`UPDATE entities SET account=?, name=? WHERE id=?`,
+			h, name, r.id); err != nil {
+			return err
+		}
+	}
+	return nil
 }

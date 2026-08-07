@@ -1,10 +1,11 @@
 // eventActor.test.ts — damage attribution for pets and summoned units (vitest).
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { ActorManager, type EntityDamage } from './eventActor';
 import { DamageCollectorManager } from './actionCollector';
 import * as protocols from './protocols';
 import { prettyEntityName } from './lib/util';
 import { ref } from 'vue';
+import { setAlias, clearAllAliases } from './lib/entityAlias';
 
 const PC_ID = '4503599630022047';
 const PET_ID = '4504699143373502';
@@ -284,5 +285,52 @@ describe('prettyEntityName for unidentified placeholders', () => {
         mgr.onEvent(appear({ Id: MOB_ID, RaceId: 20001, Name: MOB_ID }));
         raceNameMap.value = { 20001: '灰狼' };
         expect(prettyEntityName(mgr.entityMap[MOB_ID], raceNameMap)).toContain('灰狼');
+    });
+});
+
+describe('prettyEntityName with aliases', () => {
+    const raceNameMap = ref<Record<number, string>>({ 20001: '灰狼' });
+
+    function mgrWith(...events: protocols.eventEntityAppear[]) {
+        const dc = new DamageCollectorManager();
+        const mgr = new ActorManager(dc);
+        for (const e of events) mgr.onEvent(e);
+        return mgr;
+    }
+
+    beforeEach(() => clearAllAliases());
+
+    it('shows the alias instead of the real PC name', () => {
+        const mgr = mgrWith(appear({ Id: PC_ID, RaceId: 10002, Name: '地域磨菇' }));
+        setAlias('地域磨菇', '蘑菇雞');
+        expect(prettyEntityName(mgr.entityMap[PC_ID], raceNameMap)).toBe('蘑菇雞');
+    });
+
+    it('falls back to the real name when no alias is set', () => {
+        const mgr = mgrWith(appear({ Id: PC_ID, RaceId: 10002, Name: '地域磨菇' }));
+        expect(prettyEntityName(mgr.entityMap[PC_ID], raceNameMap)).toBe('地域磨菇');
+    });
+
+    // A PC's GroupActor carries the same real name, so it must alias too —
+    // otherwise the group header would still leak it.
+    it('aliases the PC group header as well', () => {
+        const mgr = mgrWith(appear({ Id: PC_ID, RaceId: 10002, Name: '地域磨菇' }));
+        setAlias('地域磨菇', '蘑菇雞');
+        expect(prettyEntityName(mgr.entityMap[PC_ID].group, raceNameMap)).toBe('蘑菇雞');
+    });
+
+    it('leaves monsters alone even if a same-named alias exists', () => {
+        const mgr = mgrWith(appear({ Id: MOB_ID, RaceId: 20001, Name: MOB_ID }));
+        setAlias(MOB_ID, '蘑菇雞');
+        expect(prettyEntityName(mgr.entityMap[MOB_ID], raceNameMap)).toContain('灰狼');
+    });
+
+    it('leaves pets alone', () => {
+        const mgr = mgrWith(
+            appear({ Id: PC_ID, RaceId: 10002, Name: '地域磨菇' }),
+            appear({ Id: PET_ID, RaceId: 490359, OwnerId: PC_ID, Name: '小白' }),
+        );
+        setAlias('小白', '蘑菇雞');
+        expect(prettyEntityName(mgr.entityMap[PET_ID], raceNameMap)).toBe('小白');
     });
 });
