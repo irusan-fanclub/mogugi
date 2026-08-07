@@ -271,6 +271,34 @@ func TestHandleBeautyRoomWritesStore(t *testing.T) {
 	}
 }
 
+// The raw account id must never reach the database.
+func TestHandleBeautyRoomStoresHashedAccount(t *testing.T) {
+	withTestItemDB(t)
+
+	p := &eventPublisher{entityCache: make(entityCache)}
+	p.entityCache[7] = &entityInfoExtend{EntityInfo: &packet.EntityInfo{Id: 7, Name: "測試角色", RaceId: 10002}}
+
+	pk := beautyRoomPacket(7)
+	p.handleBeautyRoom(pk)
+
+	_, _, account, err := packet.ParseBeautyRoomPacket(pk.Msg)
+	if err != nil || account == "" {
+		t.Fatalf("fixture account = %q, %v, want non-empty", account, err)
+	}
+
+	var stored string
+	if err := itemDB.db.QueryRow(`SELECT account FROM entities WHERE id=?`, int64(7)).
+		Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored == account {
+		t.Fatal("raw account id was written to the database")
+	}
+	if stored != accountHash(account) {
+		t.Fatalf("stored account = %q, want %q", stored, accountHash(account))
+	}
+}
+
 // Real-world case (capture 1784996977): mogugi starts mid-session, so the
 // character never sends an appear packet and entityCache misses it — but
 // its 0x5209 snapshot did arrive and carries the id→name mapping.

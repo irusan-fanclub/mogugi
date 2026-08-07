@@ -475,7 +475,7 @@ func (t *eventPublisher) handleBeautyRoom(p *packet.GamePacket) {
 	itemLogger.Printf("update %q beauty (%d items)", owner, len(items))
 
 	if account != "" {
-		if err := itemDB.SetAccountById(int64(p.Id), account); err != nil {
+		if err := itemDB.SetAccountById(int64(p.Id), accountHash(account)); err != nil {
 			itemLogger.Printf("beauty room: set account failed: %v", err)
 		}
 	}
@@ -493,13 +493,13 @@ func (t *eventPublisher) handleBankList(p *packet.GamePacket) {
 	if itemDB == nil {
 		return
 	}
-	if b.Account == "" { // empty account would mint a junk 銀行() entity and wipe learned accounts
+	if b.Account == "" { // empty account would mint a junk bank_<hash> entity and wipe learned accounts
 		itemLogger.Printf("bank: empty account id, skip")
 		return
 	}
 
 	acctHash := accountHash(b.Account)
-	acct := entityMeta{Id: bankEntityId(b.Account), Name: bankEntityName(b.Account)}
+	acct := entityMeta{Id: bankEntityId(b.Account), Name: "bank_" + acctHash}
 	tabOwners := make([]string, 0, len(b.Tabs))
 	totalItems := 0
 	for _, tab := range b.Tabs {
