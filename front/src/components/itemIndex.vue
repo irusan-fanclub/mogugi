@@ -9,6 +9,8 @@
                 density="compact" clearable multiple chips closable-chips style="min-width: 200px; max-width: 320px" />
             <v-autocomplete v-model="masterFilter" :items="masterOptions" label="Owner" hide-details
                 density="compact" clearable multiple chips closable-chips style="min-width: 180px; max-width: 300px" />
+            <v-autocomplete v-model="storageFilter" :items="storageOptions" label="存放處" hide-details
+                density="compact" clearable multiple chips closable-chips style="min-width: 140px; max-width: 240px" />
             <v-btn :loading="loading" @click="reload">重新整理</v-btn>
             <v-menu :close-on-content-click="false">
                 <template #activator="{ props }">
@@ -119,6 +121,7 @@ export default defineComponent({
         // 欄位過濾：角色 / Owner 可複選；與文字搜尋 AND 疊加。
         const entityFilter = ref<string[]>([]);
         const masterFilter = ref<string[]>([]);
+        const storageFilter = ref<string[]>([]);
         // v-data-table 目前的排序狀態；CSV 匯出要照這個順序輸出。
         const sortBy = ref<SortSpec[]>([]);
 
@@ -223,6 +226,9 @@ export default defineComponent({
         };
         const entityOptions = computed(() => distinct(h => h.entity));
         const masterOptions = computed(() => distinct(h => h.master));
+        // Options use the same display strings the table cells show, so the
+        // dropdown never disagrees with the 存放處 column.
+        const storageOptions = computed(() => distinct(h => storageText(h)));
 
         const searchQuery = computed(() => parseSearchQuery(query.value ?? ''));
         const searchError = computed(() =>
@@ -245,6 +251,9 @@ export default defineComponent({
             }
             if (masterFilter.value.length) {
                 holders = holders.filter(h => masterFilter.value.includes(h.master));
+            }
+            if (storageFilter.value.length) {
+                holders = holders.filter(h => storageFilter.value.includes(storageText(h)));
             }
             return holders.map(h => ({
                 item: displayName(h),
@@ -317,8 +326,8 @@ export default defineComponent({
         return {
             query, loading, reload, rows, headers, allHeaders, visibleCols,
             entityCount, itemKindCount,
-            entityFilter, masterFilter,
-            entityOptions, masterOptions,
+            entityFilter, masterFilter, storageFilter,
+            entityOptions, masterOptions, storageOptions,
             sortBy, exportCsv, searchError,
         };
     },
