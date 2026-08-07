@@ -52,3 +52,34 @@ export function buildItemIndex(data: IndexEntity[]): Map<number, Holder[]> {
     }
     return idx;
 }
+
+export type SearchQuery =
+    | { kind: 'empty' }
+    | { kind: 'id'; id: number }
+    | { kind: 'text'; needle: string }
+    | { kind: 'regex'; re: RegExp }
+    | { kind: 'error'; message: string };
+
+// Allowed regex flags. `g` is excluded on purpose: it makes RegExp.test()
+// stateful via lastIndex, which would drop rows at random while filtering.
+const ALLOWED_FLAGS = 'imsu';
+
+// parseSearchQuery classifies the search box input: `/pattern/flags` is a
+// regex (default `i`), a bare number matches an item id, anything else is a
+// lowercase substring — the historical behaviour.
+export function parseSearchQuery(raw: string): SearchQuery {
+    const q = (raw ?? '').trim();
+    if (!q) return { kind: 'empty' };
+
+    const m = /^\/(.+)\/([a-z]*)$/.exec(q);
+    if (m) {
+        const flags = [...new Set(m[2])].filter(f => ALLOWED_FLAGS.includes(f)).join('');
+        try {
+            return { kind: 'regex', re: new RegExp(m[1], flags || 'i') };
+        } catch (e) {
+            return { kind: 'error', message: `正則式無效：${(e as Error).message}` };
+        }
+    }
+    if (/^\d+$/.test(q)) return { kind: 'id', id: Number(q) };
+    return { kind: 'text', needle: q.toLowerCase() };
+}
