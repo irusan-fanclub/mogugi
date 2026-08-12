@@ -27,3 +27,6 @@ license-build.txt
 dev-run-live.log
 # activated licence the dev runs read via MOGUGI_LICENSE_DIR
 license.dat
+
+# Generated Windows version resource (built by versioninfo-lib.ps1)
+*.syso
