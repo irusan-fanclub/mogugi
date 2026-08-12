@@ -79,6 +79,15 @@ $ErrorActionPreference = "Continue"
 & npm install 2>&1 | Out-Host
 if ($LASTEXITCODE -ne 0) { $ErrorActionPreference = $prevPref; Pop-Location; Write-Host "npm install failed" -ForegroundColor Red; exit 1 }
 
+# Lint before bundling: it is seconds, and catches template mistakes that
+# nothing else here would — the frontend has no component tests. Uses the
+# non-fixing `lint` script on purpose; a release must never rewrite sources.
+if (-not $SkipTest) {
+    & npm run lint 2>&1 | Out-Host
+    if ($LASTEXITCODE -ne 0) { $ErrorActionPreference = $prevPref; Pop-Location; Write-Host "frontend lint failed" -ForegroundColor Red; exit 1 }
+    Write-Host "Lint OK" -ForegroundColor Green
+}
+
 & npm run build 2>&1 | Out-Host
 if ($LASTEXITCODE -ne 0) { $ErrorActionPreference = $prevPref; Pop-Location; Write-Host "frontend build failed" -ForegroundColor Red; exit 1 }
 $ErrorActionPreference = $prevPref

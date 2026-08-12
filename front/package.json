@@ -5,7 +5,8 @@
   "scripts": {
     "serve": "vite serve",
     "build": "vite build",
-    "lint": "eslint --fix src",
+    "lint": "eslint src",
+    "lint:fix": "eslint --fix src",
     "test": "vitest run",
     "test:watch": "vitest"
   },
