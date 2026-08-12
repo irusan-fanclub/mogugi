@@ -173,6 +173,10 @@ export default defineComponent({
             const baseTitle = props._dialogTitle.value.split(' - ').slice(-1)[0];
             const ccId = selectedCCId.value;
             const ccName = ccId != null ? (condNameMap.value[ccId] ?? `CC ${ccId}`) : '';
+            // _dialogTitle is a Ref handed down by useDialogStack as the channel
+            // for a child to retitle its floating window; writing .value is the
+            // intended use, not a broken one-way binding.
+            // eslint-disable-next-line vue/no-mutating-props
             props._dialogTitle.value = ccName ? `${ccName} - ${baseTitle}` : baseTitle;
         };
 

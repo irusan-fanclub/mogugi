@@ -167,7 +167,7 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, inject, ref, computed, onUnmounted, onMounted, watch, type Ref } from "vue";
+import { defineComponent, inject, ref, computed, onUnmounted, onMounted, watch } from "vue";
 
 import { getMabiNameColor, prettyEntityName, humanReadableNumber, formatDuration, ccIconUrl, ccName } from '@/lib/util';
 import type { EntityDamage, EntityActor } from '@/eventActor';

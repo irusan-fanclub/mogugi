@@ -313,44 +313,36 @@ export abstract class BaseActor implements IEventActor, IUpdateCallback {
         return ActorManager.pcRaceSet.has(this._raceId);
     }
 
-    public onEntityAppear(event: protocols.eventEntityAppear): void {
+    public onEntityAppear(_event: protocols.eventEntityAppear): void {
         // nothing
-        event;
     }
 
-    public onTakeDamage(event: protocols.eventDamage): void {
+    public onTakeDamage(_event: protocols.eventDamage): void {
         // nothing
-        event;
     }
 
-    public onApplyDamage(event: protocols.eventDamage): void {
+    public onApplyDamage(_event: protocols.eventDamage): void {
         // nothing
-        event;
     }
 
-    public onCharacterConditionEnable(event: protocols.eventCharacterConditionEnable): void {
+    public onCharacterConditionEnable(_event: protocols.eventCharacterConditionEnable): void {
         // nothing
-        event;
     }
 
-    public onCharacterConditionDisable(event: protocols.eventCharacterConditionDisable): void {
+    public onCharacterConditionDisable(_event: protocols.eventCharacterConditionDisable): void {
         // nothing
-        event;
     }
 
-    public onFinish(event: protocols.eventFinish): void {
+    public onFinish(_event: protocols.eventFinish): void {
         // nothing
-        event;
     }
 
-    public onEquipItem(event: protocols.eventEntityEquipItem): void {
+    public onEquipItem(_event: protocols.eventEntityEquipItem): void {
         // nothing
-        event;
     }
 
-    public onUnequipItem(event: protocols.eventEntityUnequipItem): void {
+    public onUnequipItem(_event: protocols.eventEntityUnequipItem): void {
         // nothing
-        event;
     }
 
     public onUpdateBody(event: protocols.eventEntityUpdateBody): void {

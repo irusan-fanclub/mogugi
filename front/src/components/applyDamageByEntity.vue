@@ -48,7 +48,7 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, inject, computed, onUnmounted, type Ref } from "vue";
+import { defineComponent, inject, computed, onUnmounted } from "vue";
 
 import { getMabiNameColor, prettyEntityName, humanReadableNumber, formatDuration } from '@/lib/util';
 import type { EntityDamage, EntityActor } from '@/eventActor';

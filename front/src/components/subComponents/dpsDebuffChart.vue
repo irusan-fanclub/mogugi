@@ -28,7 +28,6 @@
 import { defineComponent, PropType, ref, computed, inject, onMounted, onUnmounted, watch, Ref, nextTick } from 'vue';
 import highcharts, { Options, SeriesLineOptions, SeriesAreaOptions } from 'highcharts';
 import type { EntityDamage, EntityActor, EntityConditionState } from '@/eventActor';
-import { bucketDamages } from '@/lib/timeRangeFilter';
 import { computeCCCoverage } from '@/lib/conditionCoverage';
 import { setTimeRange, clearTimeRange } from '@/store';
 import { ccIconUrl, ccName } from '@/lib/util';
