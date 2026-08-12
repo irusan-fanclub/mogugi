@@ -67,6 +67,17 @@ if ($Test -and -not $FrontendOnly) {
 # ── Backend ─────────────────────────────────────────────────────────────────
 if (-not $FrontendOnly) {
     Write-Host "`n[backend] go build ./cmd/mogugi..." -ForegroundColor Yellow
+
+    # Keep the dev build's Details tab populated too, so a binary picked out of
+    # bin/ is identifiable. Version comes from main.go, same as the build does.
+    . (Join-Path $PSScriptRoot 'versioninfo-lib.ps1')
+    $verLine = Select-String -Path "cmd/mogugi/main.go" -Pattern '^var Version = "(.+)"' | Select-Object -First 1
+    if ($verLine) {
+        New-VersionResource -Version $verLine.Matches[0].Groups[1].Value
+    } else {
+        Write-Host "  could not read Version from main.go; building without a version resource" -ForegroundColor Yellow
+    }
+
     if (-not (Test-Path "bin")) { New-Item -ItemType Directory -Path "bin" | Out-Null }
     $apiBin = "bin/mogugi.exe"
     go build -o $apiBin ./cmd/mogugi

@@ -223,6 +223,15 @@ if (-not $SkipTest) {
 # ── Backend build with embedded version ──────────────────────────────────────
 Write-Step "Building Backend (release flags)..."
 
+# Must run before go build: the linker picks the .syso up off disk.
+. (Join-Path $PSScriptRoot 'versioninfo-lib.ps1')
+try {
+    New-VersionResource -Version $Version
+} catch {
+    Write-Host $_.Exception.Message -ForegroundColor Red
+    exit 1
+}
+
 $binDir = "bin"
 if (-not (Test-Path $binDir)) { New-Item -ItemType Directory -Path $binDir | Out-Null }
 
