@@ -28,8 +28,11 @@ const (
 	codePrefix = "MOGUGI-"
 	headerLen  = 12 // issuedAt(4)+userID(8)
 
-	// activationWindow: how long a freshly issued code may be activated for the first time.
-	activationWindow = 30 * time.Minute
+	// activationWindow: how long a freshly issued code may be activated for the
+	// first time. 30 minutes was sized for a human copying a code out of
+	// Discord; over OAuth2 the mint and the Activate happen in the same
+	// function, milliseconds apart.
+	activationWindow = 120 * time.Second
 	// clockSkew: tolerance for issuedAt values that are slightly in the future.
 	clockSkew = 5 * time.Minute
 	// validityWindow: how long an activated code stays valid after issuance;

@@ -30,9 +30,19 @@ func TestActivateAndStatus(t *testing.T) {
 
 func TestActivate_Expired(t *testing.T) {
 	priv := setupActivated(t)
-	old := time.Now().Add(-31 * time.Minute).Unix()
+	old := time.Now().Add(-activationWindow - time.Minute).Unix()
 	if err := Activate(mintCode(t, priv, old, 42, "u")); !errors.Is(err, ErrExpired) {
 		t.Fatalf("err=%v want ErrExpired", err)
+	}
+}
+
+// The OAuth2 callback mints and activates in one breath, so the whole window
+// exists for that round trip. Half of it must be comfortably enough.
+func TestActivate_WithinWindow(t *testing.T) {
+	priv := setupActivated(t)
+	recent := time.Now().Add(-activationWindow / 2).Unix()
+	if err := Activate(mintCode(t, priv, recent, 42, "u")); err != nil {
+		t.Fatalf("Activate: %v", err)
 	}
 }
 
@@ -160,7 +170,7 @@ func TestStatus_OldCodeStillValidOnceStored(t *testing.T) {
 }
 
 // writeActivatedAt installs an activated license whose code was issued at the
-// given time, bypassing Activate's 30-minute first-activation window.
+// given time, bypassing Activate's first-activation window.
 func writeActivatedAt(t *testing.T, priv ed25519PrivAlias, issuedAt int64) {
 	t.Helper()
 	code := mintCode(t, priv, issuedAt, 42, "u")

@@ -38,7 +38,7 @@ func Status() bool {
 	return d.MachineID == currentMachineID()
 }
 
-// Activate validates a freshly issued code (signature + 30-minute window) and, on success,
+// Activate validates a freshly issued code (signature + activation window) and, on success,
 // binds it to this machine by writing license.dat. Returns ErrInvalid or ErrExpired on failure.
 func Activate(code string) error {
 	// Fail closed if the MAC key wasn't injected or is malformed: otherwise we
