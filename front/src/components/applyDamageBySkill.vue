@@ -3,6 +3,22 @@
     <v-sheet class="d-flex align-center my-2 flex-wrap" style="gap: 8px;">
         <v-select v-model="targetId" :items="targetIdList" :item-title="targetItemTitle"
             :item-value="vv => vv[0]" variant="outlined" density="compact" hide-details style="flex: 1; min-width: 150px;">
+            <template v-slot:item="{ props: ip, item }">
+                <v-list-item v-bind="ip">
+                    <template v-slot:append>
+                        <v-btn v-if="item.raw[0]" icon="mdi-eye-off" size="x-small" variant="text"
+                            density="compact" title="從選單隱藏這個目標"
+                            @click.stop="hideTarget(item.raw[0])" />
+                    </template>
+                </v-list-item>
+            </template>
+            <template v-slot:append-item v-if="hiddenTargets.size > 0">
+                <v-list-item density="compact" @click="clearHiddenTargets">
+                    <span class="text-medium-emphasis" style="font-size: 0.85em;">
+                        已隱藏 {{ hiddenTargets.size }} 個目標，點此恢復
+                    </span>
+                </v-list-item>
+            </template>
         </v-select>
         <v-switch :model-value="bossOnlyTarget" @update:model-value="v => setBossOnlyTarget(!!v)"
             label="只顯示BOSS" color="primary" density="compact" hide-details />
@@ -704,9 +720,26 @@ export default defineComponent({
             }
             return `${prettyName(actor) ?? id} ${humanReadableNumber(dmg || 0)}`;
         };
-        const bossFilter = (list: [string, number][]) => bossOnlyTarget.value
-            ? list.filter(([id]) => !id || BOSS_RACE_IDS.has(actorOf(id)?.raceId ?? -1))
-            : list;
+        // Manually hidden targets (trash mobs cluttering the menu);
+        // session-only, like aliases.
+        const hiddenTargets = ref(new Set<string>());
+        const hideTarget = (id: string) => {
+            const next = new Set(hiddenTargets.value);
+            next.add(id);
+            hiddenTargets.value = next;
+            if (targetId.value === id) targetId.value = '';
+        };
+        const clearHiddenTargets = () => {
+            hiddenTargets.value = new Set();
+        };
+
+        const bossFilter = (list: [string, number][]) => {
+            let out = list.filter(([id]) => !id || !hiddenTargets.value.has(id));
+            if (bossOnlyTarget.value) {
+                out = out.filter(([id]) => !id || BOSS_RACE_IDS.has(actorOf(id)?.raceId ?? -1));
+            }
+            return out;
+        };
         const targetIdList = computed(() => {
             const minAt = timeRangeMin.value;
             const maxAt = timeRangeMax.value;
@@ -1180,6 +1213,9 @@ export default defineComponent({
             targetItemTitle,
             bossOnlyTarget,
             setBossOnlyTarget,
+            hiddenTargets,
+            hideTarget,
+            clearHiddenTargets,
             hiddenArcana,
             toggleArcanaHidden,
             allArcanaHidden,
