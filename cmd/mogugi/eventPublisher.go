@@ -44,12 +44,20 @@ type eventPublisher struct {
 	lastMissionName string                      // mission display name carried by the same 36000 entry
 	lastBGM         string                      // currently playing BGM (43302); Boss_* means a boss fight
 	bossEntities    map[uint64]string           // live boss entity id -> boss name (race-id detection)
+	maxLifeSeen     map[uint64]float64          // entity id -> last published max life (0x7532)
+	downedEntities  map[uint64]bool             // boss ids whose life already crossed zero
 	snapshotNames   map[uint64]string           // entity id -> name from 0x5209 snapshots (survives cache eviction)
 	dynRegions      map[uint32]dynRegion        // dynamic region id -> static region it clones (0xA9A0)
 	statTables      map[uint64]packet.StatTable // entity id -> stat table (0x5209 base + 0x7530/2 deltas)
 	dgnLog          dungeonLog                  // per-run event file for whitelisted dungeons (own lock)
 	ownerId         uint64                      // local player's own entity id (0 = unknown)
 	ownerName       string                      // local player's own character name ("" = unknown)
+	preparingSkill  uint16                      // skillId from the last 0x6984; consumed and cleared by 0x698B
+	// Last published skill use, for collapsing the server's double-send of
+	// one cast (two combat packs 0-3ms apart) into a single event.
+	lastSkillUseBy uint64
+	lastSkillUseId uint16
+	lastSkillUseAt time.Time
 }
 
 // dynRegion is the static region a dynamic dungeon instance was cloned from.
@@ -75,6 +83,8 @@ func newEventPublisher(ctx context.Context, r *packet.GameServerPacketReader) *e
 		currentClientId: 1,
 		pendingEvents:   make([]event.IEvent, 0, _maxPendingEvents),
 		bossEntities:    make(map[uint64]string),
+		maxLifeSeen:     make(map[uint64]float64),
+		downedEntities:  make(map[uint64]bool),
 		lastSentAt:      time.Now(),
 		lastPacketAt:    time.Now(),
 	}
@@ -323,7 +333,7 @@ func (t *eventPublisher) handlePacket(p *packet.GamePacket) {
 	case packet.OpcodeEffectDelayed:
 		t.handleEffectDelayed(p)
 
-	case packet.OpcodeConditionUpdate, packet.OpcodeConditionUpdate2:
+	case packet.OpcodeCharacterConditionUpdate:
 		t.handleConditionUpdate(p)
 
 	case packet.OpcodeChat:
@@ -362,6 +372,15 @@ func (t *eventPublisher) handlePacket(p *packet.GamePacket) {
 
 	case packet.OpcodeSetLocation:
 		t.handleSetLocation(p)
+
+	case packet.OpcodeEffect2:
+		t.handleSkillCast(p)
+
+	case packet.OpcodeSkillPrepareStart:
+		t.handleSkillPrepareStart(p)
+
+	case packet.OpcodeSkillStop:
+		t.handleSkillStop(p)
 
 	case packet.OpcodeChangeStance, packet.OpcodeChangeStanceRes:
 		t.handleChangeStance(p)
@@ -647,6 +666,7 @@ func (t *eventPublisher) handleEntityAppear(p *packet.GamePacket) {
 			CCId:       v.CCId,
 			DisableAt:  v.DisableAt,
 			AttackerId: attackerId,
+			Params:     v.Params,
 		})
 	}
 
@@ -896,6 +916,37 @@ func (t *eventPublisher) handleCombatAction(p *packet.GamePacket) {
 		}
 	}
 
+	// 0x7926 carries the skill even when the attacker's sub-packet deals no
+	// damage; that is the only broadcast source for buff and utility skills.
+	//
+	// The server can send one cast as two packs 0-3ms apart (間奏展擊 59165,
+	// capture 2026-08-19_13-42-20; flags differ between the pair, so time is
+	// the only reliable key). 50ms sits far under real repeats — the fastest
+	// observed distinct swings are 88ms apart, and players are animation-locked.
+	// Suppress only the skill-use EVENT on a double-send. attackSkillId must
+	// survive untouched: the damage loop below stamps it onto every hit, and
+	// zeroing it filed the second pack's damage under skill 0.
+	dupSkillUse := false
+	if attackSkillId != 0 {
+		t.Lock()
+		dupSkillUse = attackerId == t.lastSkillUseBy && attackSkillId == t.lastSkillUseId &&
+			p.At.Sub(t.lastSkillUseAt) < 50*time.Millisecond
+		if !dupSkillUse {
+			t.lastSkillUseBy, t.lastSkillUseId, t.lastSkillUseAt = attackerId, attackSkillId, p.At
+		}
+		t.Unlock()
+	}
+	if attackSkillId != 0 && !dupSkillUse {
+		t.publish(&event.EventSkillUse{
+			EventBase: event.EventBase{
+				EventId: event.EventIdSkillUse,
+				At:      p.At.Unix(),
+				Id:      strconv.FormatUint(attackerId, 10),
+			},
+			SkillId: attackSkillId,
+		})
+	}
+
 	for _, v := range pack.SubPackets {
 		if v.Hit == nil {
 			continue
@@ -931,10 +982,11 @@ func (t *eventPublisher) handleEffectDelayed(p *packet.GamePacket) {
 	}
 
 	ttype := p.Msg[1].Data().(uint32)
-	if ttype != 318 {
+	if ttype != 318 && ttype != 319 {
 		// Not 星塵 (Stardust)-family delayed damage (Blast 58100 / Flare
-		// 58101 / combo 58009). The discriminator changed 317 -> 318 in
-		// the 2026-06 update; see packet_capture_1781767719.
+		// 58101 / combo 58009). The discriminator moves with game patches
+		// (317 -> 318 in 2026-06, 318 -> 319 expected 2026-08-20); older
+		// values stay accepted so replaying old captures keeps working.
 		return
 	}
 
@@ -1000,6 +1052,7 @@ func (t *eventPublisher) handleConditionUpdate(p *packet.GamePacket) {
 		CCId:       cond.CCId,
 		DisableAt:  cond.DisableAt,
 		AttackerId: attackerId,
+		Params:     cond.Params,
 	})
 }
 
@@ -1024,23 +1077,106 @@ func (t *eventPublisher) handleChat(p *packet.GamePacket) {
 	})
 }
 
+// noticeCategoryBuff is element 0 of a 0x526D notice addressed to the local
+// player (buff gained/lost). The other categories seen are 2 (server-wide
+// broadcast) and 3 (world event).
+const noticeCategoryBuff uint8 = 4
+
 func (t *eventPublisher) handleNotice(p *packet.GamePacket) {
-	// Notice packet: just a message string.
-	if len(p.Msg) < 1 || p.Msg[0].Type() != packet.MessageElemTypeString {
+	// (Byte category, String message), sometimes with trailing Ints that
+	// vary by category — accept any tail rather than pinning a length.
+	if len(p.Msg) < 2 ||
+		p.Msg[0].Type() != packet.MessageElemTypeByte ||
+		p.Msg[1].Type() != packet.MessageElemTypeString {
 		return
 	}
 
+	category := p.Msg[0].Data().(uint8)
+	text := p.Msg[1].Data().(string)
 	t.publish(&event.EventNotice{
 		EventBase: event.EventBase{
 			EventId: event.EventIdNotice,
 			At:      p.At.Unix(),
 			Id:      strconv.FormatUint(p.Id, 10),
 		},
-		Message: p.Msg[0].Data().(string),
+		Category: category,
+		Message:  text,
 	})
+
+	// Only the self/buff category carries song announcements; 2 and 3 are
+	// server-wide and world-event broadcasts.
+	if category != noticeCategoryBuff {
+		return
+	}
+
+	// A bard-song announcement is private, so its subject is always the
+	// local player — never the packet's Id.
+	if n, ok := packet.ParseBardsongNotice(text); ok {
+		t.Lock()
+		ownerId := t.ownerId
+		t.Unlock()
+
+		t.publish(&event.EventBardsong{
+			EventBase: event.EventBase{
+				EventId: event.EventIdBardsong,
+				At:      p.At.Unix(),
+				Id:      strconv.FormatUint(ownerId, 10),
+			},
+			Performer: n.Performer,
+			Song:      n.Song,
+			Bonuses:   n.Bonuses,
+			IsEnd:     n.IsEnd,
+		})
+		return
+	}
 }
 
 func (t *eventPublisher) handleStatUpdate(p *packet.GamePacket) {
+	// Public updates (0x7532) carry typed (statId, float) pairs; surface
+	// max life so the frontend can label bosses, but only when it is first
+	// seen or changes — the raw stream repeats it thousands of times.
+	if p.Op == packet.OpcodeStatUpdatePublic {
+		st := packet.ParseStatUpdatePublic(p)
+		// A tracked boss crossing zero life publishes a one-shot down
+		// event — the kill signal the run summary trusts.
+		if life, ok := st[packet.StatIdLife]; ok && life <= 0 {
+			t.Lock()
+			_, isBoss := t.bossEntities[p.Id]
+			downed := t.downedEntities[p.Id]
+			if isBoss && !downed {
+				t.downedEntities[p.Id] = true
+			}
+			t.Unlock()
+			if isBoss && !downed {
+				t.publish(&event.EventEntityDown{
+					EventBase: event.EventBase{
+						EventId: event.EventIdEntityDown,
+						At:      p.At.Unix(),
+						Id:      strconv.FormatUint(p.Id, 10),
+					},
+				})
+			}
+		}
+		if max, ok := st[packet.StatIdLifeMax]; ok {
+			t.Lock()
+			changed := t.maxLifeSeen[p.Id] != max
+			if changed {
+				t.maxLifeSeen[p.Id] = max
+			}
+			t.Unlock()
+			if changed {
+				t.publish(&event.EventMaxLife{
+					EventBase: event.EventBase{
+						EventId: event.EventIdMaxLife,
+						At:      p.At.Unix(),
+						Id:      strconv.FormatUint(p.Id, 10),
+					},
+					MaxLife: max,
+				})
+			}
+		}
+	}
+
 	// Stat update: forward the raw blob as-is; the frontend decides
 	// which fields to interpret. Supports the first binary message
 	// element if present.
@@ -1174,6 +1310,18 @@ func (t *eventPublisher) regionBaseSuffix(region uint32) string {
 	return fmt.Sprintf(", base=%s(%d)", b.baseName, b.baseId)
 }
 
+// regionBaseName returns the dynamic region's base name (the dungeon's
+// difficulty tier, e.g. "NRD_3S"), or "" when 0xA9A0 didn't list it.
+func (t *eventPublisher) regionBaseName(region uint32) string {
+	t.Lock()
+	b, ok := t.dynRegions[region]
+	t.Unlock()
+	if !ok {
+		return ""
+	}
+	return b.baseName
+}
+
 // handleSetLocation logs a map change. 26009 carries (byte, region, x, y)
 // for the owner — sent on warp (moongate etc.) and on channel-in. Verified:
 // capture 1783536131, moongate ceoisland→tirchonaill = region 35011.
@@ -1252,7 +1400,8 @@ func (t *eventPublisher) handleSetLocation(p *packet.GamePacket) {
 		}
 		// Teammates already appeared before entry, so seed the file with an
 		// entityCache snapshot or damage events won't map to player names.
-		if err := t.dgnLog.Open(code, owner, p.At.Unix(), t.snapshotEvents()); err != nil {
+		tier := t.regionBaseName(region)
+		if err := t.dgnLog.Open(code, tier, owner, p.At, missionID, t.snapshotEvents(true)); err != nil {
 			logger.Println("dungeon-log open failed:", err)
 		}
 	} else {
@@ -1337,6 +1486,7 @@ var bossBGMNames = map[string]string{
 var bossRaces = map[uint32]string{
 	5211: "佩塔克", 5216: "佩塔克", 5217: "佩塔克", 5229: "佩塔克",
 	5224: "古樹的佩塔克",
+	7600: "佩塔克", 7601: "佩塔克",
 	5225: "布倫塔納斯", 7602: "布倫塔納斯",
 	5218: "雷楠的米勒", 7603: "雷楠的米勒",
 	7615: "雷楠的米勒:悔恨",
@@ -1395,6 +1545,89 @@ func (t *eventPublisher) regionName(region uint32) string {
 	return "未知地圖"
 }
 
+// skillCastKind selects the one 0x9093 variant that carries a skill id.
+//
+// The number is empirical, not documented: every kind on this opcode has its
+// own element shape, and 806's is the only one that is (int, short, short)
+// with a real skill id in the middle. It fires in the same millisecond the
+// caster's charge condition clears and a few ms before any damage.
+//
+// Treat it as fragile. The sibling discriminator on OpcodeEffectDelayed
+// changed 317 -> 318 in the 2026-06 update; when that happens here the feature
+// goes quiet instead of failing. To re-derive it, dump 0x9093 grouped by first
+// element and look for the kind whose middle short matches known skill ids.
+const skillCastKind = 806
+
+func (t *eventPublisher) handleSkillCast(p *packet.GamePacket) {
+	if len(p.Msg) < 3 ||
+		p.Msg[0].Type() != packet.MessageElemTypeInt ||
+		p.Msg[1].Type() != packet.MessageElemTypeShort ||
+		p.Msg[2].Type() != packet.MessageElemTypeShort {
+		return
+	}
+	if p.Msg[0].Data().(uint32) != skillCastKind {
+		return
+	}
+
+	t.publish(&event.EventSkillCast{
+		EventBase: event.EventBase{
+			EventId: event.EventIdSkillCast,
+			At:      p.At.Unix(),
+			Id:      strconv.FormatUint(p.Id, 10),
+		},
+		SkillId: p.Msg[1].Data().(uint16),
+	})
+}
+
+// Only the first element is read: 0x6984 has three tail variants and a
+// fourth would silently drop the whole event if asserted on.
+func (t *eventPublisher) handleSkillPrepareStart(p *packet.GamePacket) {
+	if len(p.Msg) < 1 || p.Msg[0].Type() != packet.MessageElemTypeShort {
+		return
+	}
+	skillId := p.Msg[0].Data().(uint16)
+
+	t.Lock()
+	t.preparingSkill = skillId
+	ownerId := t.ownerId
+	t.Unlock()
+
+	// Self-only: never seen for anyone but the local player, so the event
+	// is keyed by ownerId rather than the packet's own Id.
+	t.publish(&event.EventSkillPrepareStart{
+		EventBase: event.EventBase{
+			EventId: event.EventIdSkillPrepareStart,
+			At:      p.At.Unix(),
+			Id:      strconv.FormatUint(ownerId, 10),
+		},
+		SkillId: skillId,
+	})
+}
+
+// 0x698B carries no skillId, so it reuses the one 0x6984 remembered; nothing
+// in flight (e.g. mid-channel capture attach) publishes nothing. Either way
+// the remembered skill is cleared, so a repeat stop can't replay it.
+func (t *eventPublisher) handleSkillStop(p *packet.GamePacket) {
+	t.Lock()
+	skillId := t.preparingSkill
+	t.preparingSkill = 0
+	ownerId := t.ownerId
+	t.Unlock()
+
+	if skillId == 0 {
+		return
+	}
+
+	t.publish(&event.EventSkillStop{
+		EventBase: event.EventBase{
+			EventId: event.EventIdSkillStop,
+			At:      p.At.Unix(),
+			Id:      strconv.FormatUint(ownerId, 10),
+		},
+		SkillId: skillId,
+	})
+}
+
 func (t *eventPublisher) handleChangeStance(p *packet.GamePacket) {
 	// Stance change: either a bare byte or a byte followed by other
 	// fields depending on direction (request vs response).
@@ -1416,15 +1649,39 @@ func (t *eventPublisher) handleChangeStance(p *packet.GamePacket) {
 	})
 }
 
+// playerRaceSet mirrors the frontend's pcRaceSet: the six player races.
+var playerRaceSet = map[uint32]bool{
+	8001: true, 8002: true, 9001: true, 9002: true, 10001: true, 10002: true,
+}
+
 // snapshotEvents rebuilds the entityCache into an event sequence (appear +
 // condition + equip), shared by a new WS client's initial snapshot and the
-// dungeon file's open-time seeding.
-func (t *eventPublisher) snapshotEvents() []event.IEvent {
+// dungeon file's open-time seeding. playersOnly drops everything but player
+// entities — the dungeon file's seed used to carry every town NPC seen since
+// startup (1,600+ appears per file); entities that matter to the fight emit
+// their own appear events once inside it.
+func (t *eventPublisher) snapshotEvents(playersOnly bool) []event.IEvent {
 	initial := []event.IEvent(nil)
 
 	t.Lock()
 	for _, entity := range t.entityCache {
+		if playersOnly && !playerRaceSet[entity.RaceId] {
+			continue
+		}
 		initial = append(initial, toEventEntityAppear(entity.appearAt, entity.EntityInfo))
+
+		// Known max life rides along, or a late-attaching client would
+		// never see it (live publishes only fire on change).
+		if max, ok := t.maxLifeSeen[entity.Id]; ok {
+			initial = append(initial, &event.EventMaxLife{
+				EventBase: event.EventBase{
+					EventId: event.EventIdMaxLife,
+					At:      entity.appearAt,
+					Id:      strconv.FormatUint(entity.Id, 10),
+				},
+				MaxLife: max,
+			})
+		}
 
 		for _, cond := range entity.characterConditionMap {
 			attackerId := ""
@@ -1441,6 +1698,7 @@ func (t *eventPublisher) snapshotEvents() []event.IEvent {
 				CCId:       cond.CCId,
 				DisableAt:  cond.DisableAt,
 				AttackerId: attackerId,
+				Params:     cond.Params,
 			})
 		}
 
@@ -1474,7 +1732,7 @@ func (t *eventPublisher) addClient(ctx context.Context, ch chan<- []event.IEvent
 	clientId := t.currentClientId
 	t.Unlock()
 
-	initial := t.snapshotEvents()
+	initial := t.snapshotEvents(false)
 
 	if len(initial) > 0 {
 		logger.Printf("send initial data: client=%d events=%d", clientId, len(initial))

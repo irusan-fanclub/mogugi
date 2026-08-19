@@ -48,6 +48,9 @@ type EntityCharacterCondition struct {
 	CCId       uint32
 	DisableAt  int64
 	AttackerId uint64
+	// Params holds the KEY:type:value; triples of element 3 — the only
+	// place an effect's magnitudes appear. Empty on a disable update.
+	Params map[string]string
 }
 
 func ParseEntityAppearPacket(msg Message) (*EntityInfo, error) {
@@ -435,6 +438,11 @@ func ParseEntityAppearPacket(msg Message) (*EntityInfo, error) {
 		disableAtRaw := msg[1].Data().(uint64)
 		disableAt := util.ParseMabiTime(disableAtRaw).Unix()
 
+		params := map[string]string{}
+		if msg[2].Type() == MessageElemTypeString {
+			params = ParseConditionParams(msg[2].Data().(string))
+		}
+
 		if msg[3].Type() != MessageElemTypeLong {
 			err := fmt.Errorf("attackerId has unexpected type %v", msg[3].Type())
 			logger.Println(err)
@@ -447,6 +455,7 @@ func ParseEntityAppearPacket(msg Message) (*EntityInfo, error) {
 			CCId:       ccId,
 			DisableAt:  disableAt,
 			AttackerId: attackerId,
+			Params:     params,
 		}
 	}
 

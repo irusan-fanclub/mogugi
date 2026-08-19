@@ -58,6 +58,8 @@ type GameServerPacketReaderOpt struct {
 	// log file. Used by short-lived test readers (NIC discovery probes)
 	// so they don't spam the log or stomp on the live capture file.
 	Quiet bool
+	// NoCaptureFile skips the pcapng tee only, keeping the logs Quiet drops.
+	NoCaptureFile bool
 	// Realtime paces file replay by capture timestamp diffs (capped at
 	// 200ms per gap) so the frontend sees events at original cadence.
 	Realtime bool
@@ -145,7 +147,7 @@ func NewGameServerPacketReader(opt *GameServerPacketReaderOpt) (_ *GameServerPac
 	// link type (not the default) when the pcapng writer is initialised.
 	// Skip for quiet/test readers — they're short-lived probes and would
 	// truncate the live pcapng capture if allowed to write to it.
-	if !opt.Quiet {
+	if !opt.Quiet && !opt.NoCaptureFile {
 		if err := v.openLog(); err != nil {
 			logger.Println("openLog failed", err)
 			return nil, err
@@ -369,7 +371,7 @@ func (t *GameServerPacketReader) openLog() error {
 	// One file per reader: open with O_EXCL and bump the suffix on collision,
 	// never overwriting an existing file (a timestamp alone still collides
 	// when two readers are created in the same second).
-	base := fmt.Sprintf("packet_capture_%v", util.StartUnix)
+	base := fmt.Sprintf("packet_capture_%s", util.StartStamp)
 	var fd *os.File
 	var err error
 	for i := 0; ; i++ {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"reflect"
 	"time"
 
 	"github.com/irusan-fanclub/mogugi/lib/packet"
@@ -69,7 +70,9 @@ func (t entityCache) addOrUpdateCondition(id uint64, p *packet.EntityCharacterCo
 	}
 
 	if cond := e.characterConditionMap[p.CCId]; cond != nil {
-		if *cond == *p {
+		// EntityCharacterCondition now holds a map (Params), so it is no
+		// longer comparable with ==.
+		if reflect.DeepEqual(*cond, *p) {
 			return false
 		}
 		*cond = *p

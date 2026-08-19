@@ -54,6 +54,11 @@ func ParseCharacterConditionPacket(p *GamePacket) (*CharacterConditionPacket, er
 
 	disableAt := util.ParseMabiTime(disableAtRaw).Unix()
 
+	params := map[string]string{}
+	if p.Msg[3].Type() == MessageElemTypeString {
+		params = ParseConditionParams(p.Msg[3].Data().(string))
+	}
+
 	v := &CharacterConditionPacket{
 		Id:       p.Id,
 		IsEnable: true,
@@ -61,6 +66,7 @@ func ParseCharacterConditionPacket(p *GamePacket) (*CharacterConditionPacket, er
 			CCId:       ccId,
 			DisableAt:  disableAt,
 			AttackerId: attackerId,
+			Params:     params,
 		},
 	}
 

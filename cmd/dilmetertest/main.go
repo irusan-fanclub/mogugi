@@ -128,8 +128,7 @@ func main() {
 			packet.OpcodeCombatAttackRes,
 			packet.OpcodeEffect,
 			packet.OpcodeEffectDelayed,
-			packet.OpcodeConditionUpdate,
-			packet.OpcodeConditionUpdate2,
+			packet.OpcodeCharacterConditionUpdate,
 			packet.OpcodePartyWindowUpdate,
 			packet.OpcodeWalking,
 			packet.OpcodeRunning:
