@@ -1,4 +1,4 @@
-# Dev build script — fast iterate-and-test loop.
+﻿# Dev build script — fast iterate-and-test loop.
 #
 # Builds the frontend, copies it into cmd/mogugi/static/ for go:embed,
 # and builds the backend into bin/mogugi.exe.
@@ -24,6 +24,16 @@ $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
 Write-Host "=== Build ===" -ForegroundColor Cyan
+
+# ── Icons ───────────────────────────────────────────────────────────────────
+# Non-fatal here: a dev build must not be hostage to icon tooling. release.ps1
+# runs the same script fatally, since a real release must carry the icon.
+Write-Host "`n[icons] building..." -ForegroundColor Yellow
+try {
+    & (Join-Path $PSScriptRoot 'assets/build-icons.ps1')
+} catch {
+    Write-Host "icon build failed, continuing without a fresh icon: $($_.Exception.Message)" -ForegroundColor Yellow
+}
 
 # ── Frontend ────────────────────────────────────────────────────────────────
 if (-not $BackendOnly) {
@@ -78,9 +88,22 @@ if (-not $FrontendOnly) {
         Write-Host "  could not read Version from main.go; building without a version resource" -ForegroundColor Yellow
     }
 
+    # Inject the license keys when license-build.txt is present, so a binary
+    # out of bin/ verifies activation like a release build. Without them the
+    # license layer fails closed: Status() never passes and Activate() returns
+    # "invalid" even for a good code.
+    $licFlag = ""
+    . (Join-Path $PSScriptRoot 'keys-lib.ps1')
+    try {
+        $licFlag = (Get-LicenseLDFlag).LDFlag
+        Write-Host "  license keys: injected" -ForegroundColor DarkGray
+    } catch {
+        Write-Host "  license keys: NOT injected ($($_.Exception.Message)) - this binary cannot activate" -ForegroundColor Yellow
+    }
+
     if (-not (Test-Path "bin")) { New-Item -ItemType Directory -Path "bin" | Out-Null }
     $apiBin = "bin/mogugi.exe"
-    go build -o $apiBin ./cmd/mogugi
+    go build -ldflags $licFlag -o $apiBin ./cmd/mogugi
     if ($LASTEXITCODE -ne 0) { Write-Host "backend build failed" -ForegroundColor Red; exit 1 }
     $info = Get-Item $apiBin
     Write-Host "  $apiBin ($([math]::Round($info.Length / 1MB, 2)) MB)" -ForegroundColor Green

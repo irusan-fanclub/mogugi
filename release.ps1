@@ -8,11 +8,13 @@
 #   .\release.ps1 -Version 0.2.1   # build & package as 0.2.1
 #   .\release.ps1 -SkipTest        # skip lint + both test suites
 #   .\release.ps1 -Force           # override the working-tree and tag guards
+#   .\release.ps1 -Tagline '...'   # carry a one-line tagline into the exe/About tab
 
 param(
     [string]$Version = "",
     [switch]$SkipTest,
-    [switch]$Force
+    [switch]$Force,
+    [string]$Tagline = ''
 )
 
 $ErrorActionPreference = "Stop"
@@ -20,7 +22,7 @@ $utf8NoBom = New-Object System.Text.UTF8Encoding $false
 
 # Steps are numbered for the operator; the Go test step disappears under
 # -SkipTest, so the total is computed rather than hard-coded.
-$stepTotal = if ($SkipTest) { 3 } else { 4 }
+$stepTotal = if ($SkipTest) { 4 } else { 5 }
 $stepNo = 0
 function Write-Step($name) {
     $script:stepNo++
@@ -98,8 +100,20 @@ try {
 }
 Write-Host "Embedding license public key + mac key" -ForegroundColor Gray
 
+# ── Icons ────────────────────────────────────────────────────────────────────
+# Fatal here, unlike build.ps1's dev build: a release must carry the icon.
+Write-Step "Building icons..."
+try {
+    & (Join-Path $PSScriptRoot 'assets/build-icons.ps1')
+} catch {
+    Write-Host "icon build failed: $($_.Exception.Message)" -ForegroundColor Red
+    exit 1
+}
+
 # ── Frontend ─────────────────────────────────────────────────────────────────
 Write-Step "Frontend: version sync, lint, tests, build"
+# Picked up by vite.config.mjs as __APP_TAGLINE__; empty is fine, no tagline ships.
+$env:MOGUGI_TAGLINE = $Tagline
 Push-Location front
 
 $prevPref = $ErrorActionPreference
@@ -199,6 +213,7 @@ try {
         Write-Host "Rolled version files back to $($rollback.From)" -ForegroundColor Gray
     }
     Pop-Location
+    Remove-Item Env:\MOGUGI_TAGLINE -ErrorAction SilentlyContinue
 }
 
 if ($frontendError) {
@@ -226,7 +241,7 @@ Write-Step "Building Backend (release flags)..."
 # Must run before go build: the linker picks the .syso up off disk.
 . (Join-Path $PSScriptRoot 'versioninfo-lib.ps1')
 try {
-    New-VersionResource -Version $Version
+    New-VersionResource -Version $Version -Tagline $Tagline
 } catch {
     Write-Host $_.Exception.Message -ForegroundColor Red
     exit 1
