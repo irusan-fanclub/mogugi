@@ -1,9 +1,10 @@
-import { CustomReactive, IUpdateCallback } from '@/lib/util';
+import { CustomReactive, IUpdateCallback, scheduleTrigger } from '@/lib/util';
 import { shallowReactive } from 'vue';
 import * as bounds from 'binary-search-bounds';
 
 import * as protocols from '@/protocols';
 import { DamageCollectorManager } from '@/actionCollector';
+import { conditionStateChanged, significantValuesChanged } from '@/lib/conditionChange';
 
 // TODO: take cc, apply cc 구분하기
 
@@ -14,6 +15,9 @@ export class ActorManager {
     public entityMap: Record<string, EntityActor> = shallowReactive({});
     public groupMap: Record<string, GroupActor> = shallowReactive({});
     public damages: protocols.eventDamage[] = [];
+    // shallowReactive so a push() here is what invalidates computeds that
+    // read it — there is no per-entity owner to route this through.
+    public bardsongEvents: protocols.eventBardsong[] = shallowReactive([]);
 
     public static pcRaceSet = new Set<number>([8001, 8002, 9001, 9002, 10001, 10002]);
 
@@ -68,6 +72,13 @@ export class ActorManager {
                 }
                 break;
 
+            case protocols.eventIdMaxLife:
+                // A placeholder keeps the value when the appear packet is
+                // late (or never comes on a mid-fight attach).
+                (entity ?? this.addPlaceholderEntity(event.Id, event.At))
+                    .onMaxLife(event as protocols.eventMaxLife);
+                break;
+
             case protocols.eventIdCharacterConditionEnable:
                 if (!entity) {
                     return;
@@ -114,6 +125,20 @@ export class ActorManager {
                 }
 
                 entity.onUpdateBody(event as protocols.eventEntityUpdateBody);
+                break;
+
+            case protocols.eventIdSkillUse:
+                if (!entity) {
+                    return;
+                }
+
+                entity.onSkillUse(event as protocols.eventSkillUse);
+                break;
+
+            // Party-wide, not per-entity — the chart's bard-song lane is
+            // built from this list directly (see lib/bardsongTrack.ts).
+            case protocols.eventIdBardsong:
+                this.bardsongEvents.push(event as protocols.eventBardsong);
                 break;
         }
     }
@@ -214,6 +239,7 @@ export class ActorManager {
     public clear() {
         // object instance를 새로 만들면 귀찮아짐
         this.damages.length = 0;
+        this.bardsongEvents.length = 0;
 
         for (const k in this.entityMap) {
             const v = this.entityMap[k];
@@ -248,8 +274,8 @@ interface IEventActor {
 export abstract class BaseActor implements IEventActor, IUpdateCallback {
     protected vueUpdateTrack?: () => void;
     private vueUpdateTrigger?: () => void;
-    private vueUpdateTimeout = 0;
-    private static vueUpdateTick = 33;
+    // Stable identity so the shared scheduler's Set dedupes repeat requests.
+    private readonly fireTrigger = () => this.vueUpdateTrigger?.();
 
     protected constructor(protected mgr: ActorManager, private _id: string, protected _raceId: number, protected _name: string) {
     }
@@ -337,6 +363,10 @@ export abstract class BaseActor implements IEventActor, IUpdateCallback {
         // nothing
     }
 
+    public onSkillUse(_event: protocols.eventSkillUse): void {
+        // nothing
+    }
+
     public onEquipItem(_event: protocols.eventEntityEquipItem): void {
         // nothing
     }
@@ -369,25 +399,13 @@ export abstract class BaseActor implements IEventActor, IUpdateCallback {
         this.vueUpdateTrigger = trigger;
     }
 
-    private vueUpdate(): void {
-        this.vueUpdateTimeout = 0;
-        this.vueUpdateTrigger?.();
-    }
-
     protected vueUpdateRequest(): void {
-        if (this.vueUpdateTimeout) {
-            return;
-        }
-
-        this.vueUpdateTimeout = setTimeout(() => this.vueUpdate(), BaseActor.vueUpdateTick);
+        scheduleTrigger(this.fireTrigger);
     }
 
     public forceUpdate(): void {
-        if (this.vueUpdateTimeout) {
-            clearTimeout(this.vueUpdateTimeout);
-            this.vueUpdateTimeout = 0;
-        }
-        this.vueUpdateTrigger?.();
+        // A duplicate fire from a still-pending scheduled entry is harmless.
+        this.fireTrigger();
     }
 }
 
@@ -406,6 +424,23 @@ export class EntityActor extends BaseActor {
     public get ownerId() {
         this.vueUpdateTrack?.();
         return this._ownerId;
+    }
+
+    protected _appearAt?: number;
+    public get appearAt() {
+        this.vueUpdateTrack?.();
+        return this._appearAt;
+    }
+
+    protected _maxLife?: number;
+    public get maxLife() {
+        this.vueUpdateTrack?.();
+        return this._maxLife;
+    }
+
+    public onMaxLife(event: protocols.eventMaxLife): void {
+        this.vueUpdateRequest();
+        this._maxLife = event.MaxLife;
     }
 
     public get group() {
@@ -431,6 +466,14 @@ export class EntityActor extends BaseActor {
         return this._finisherId;
     }
 
+    // Skills this character has used, in order — the only signal arcana
+    // (秘法) can be derived from. See lib/arcana.ts.
+    protected _skillUses: protocols.eventSkillUse[] = [];
+    public get skillUses() {
+        this.vueUpdateTrack?.();
+        return this._skillUses;
+    }
+
     protected _equipItemMap: Record<number, EntityItem> = {};
     public get equipItemMap() {
         this.vueUpdateTrack?.();
@@ -440,6 +483,9 @@ export class EntityActor extends BaseActor {
     public override onEntityAppear(event: protocols.eventEntityAppear): void {
         this.vueUpdateRequest();
 
+        // First-seen time; later re-appears (region re-entry, dummy
+        // upgrade) must not shift it.
+        this._appearAt ??= event.At;
         this._name = event.Name;
         this._raceId = event.RaceId;
         this._finisherId = '';
@@ -520,19 +566,30 @@ export class EntityActor extends BaseActor {
     public override onCharacterConditionEnable(event: protocols.eventCharacterConditionEnable): void {
         this.vueUpdateRequest();
 
-        this._conditionMap[event.CCId] = {
+        const wasOn = this._conditionMap[event.CCId];
+        const now = {
             Id: event.Id,
             At: event.At,
             CCId: event.CCId,
             DisableAt: event.DisableAt,
             AttackerId: event.AttackerId,
+            Params: event.Params ?? {},
         };
+        this._conditionMap[event.CCId] = now;
+
+        // Re-enabling a CC that is already on, at the same magnitudes, cannot
+        // change the state — and that is nearly all of these events: one
+        // 50-minute log had 75,243 enables, 72,040 of them repeats and only
+        // 161 on a CC whose values are read at all. Deciding it from this one
+        // condition avoids rebuilding and sorting the whole active set.
+        if (wasOn && !significantValuesChanged(wasOn, now)) {
+            return;
+        }
 
         const prev = this._conditionHistory.length ? this._conditionHistory[this._conditionHistory.length - 1].List : [];
         const current = Object.values(this._conditionMap).sort((a, b) => a.CCId - b.CCId);
 
-        const needUpdate = prev.length !== current.length || !prev.every((v, i) => v.CCId === current[i].CCId);
-        if (needUpdate) {
+        if (conditionStateChanged(prev, current)) {
             this._conditionHistory.push({
                 At: event.At,
                 List: current,
@@ -543,13 +600,17 @@ export class EntityActor extends BaseActor {
     public override onCharacterConditionDisable(event: protocols.eventCharacterConditionDisable): void {
         this.vueUpdateRequest();
 
+        // Removing a CC that was not on changes nothing, so there is no set to
+        // rebuild — the same shortcut the enable path takes.
+        if (this._conditionMap[event.CCId] === undefined) {
+            return;
+        }
         delete this._conditionMap[event.CCId];
 
         const prev = this._conditionHistory.length ? this._conditionHistory[this._conditionHistory.length - 1].List : [];
         const current = Object.values(this._conditionMap).sort((a, b) => a.CCId - b.CCId);
 
-        const needUpdate = prev.length !== current.length || !prev.every((v, i) => v.CCId === current[i].CCId);
-        if (needUpdate) {
+        if (conditionStateChanged(prev, current)) {
             this._conditionHistory.push({
                 At: event.At,
                 List: current,
@@ -561,6 +622,14 @@ export class EntityActor extends BaseActor {
         this.vueUpdateRequest();
 
         this._finisherId = event.AttackerId;
+    }
+
+    public override onSkillUse(event: protocols.eventSkillUse): void {
+        this.vueUpdateRequest();
+
+        // The whole event, not just the id: the cast-count column filters
+        // casts by the same time range the damage columns already obey.
+        this._skillUses.push(event);
     }
 
     public override onEquipItem(event: protocols.eventEntityEquipItem): void {
@@ -586,6 +655,8 @@ export class EntityActor extends BaseActor {
 
     public override clear() {
         super.clear();
+
+        this._skillUses.length = 0;
     }
 }
 
@@ -673,6 +744,7 @@ export type EntityCondition = {
     CCId: number;
     DisableAt: number;
     AttackerId: string;
+    Params: Record<string, string>;
 }
 
 export type EntityConditionState = {

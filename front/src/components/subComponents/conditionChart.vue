@@ -123,18 +123,35 @@ export default defineComponent({
             selectedCCId.value = ccOptions.value.length > 0 ? ccOptions.value[0].value : null;
         };
 
-        // filter by global time range (for stats only)
-        const filteredHistory = computed(() => {
+        // The stats window: startTime/endTime props intersected with the global
+        // zoom range, each edge only applying when both its own bounds are set
+        // (mirrors the old boundedHistory -> filter-by-zoom chain). Falls back
+        // to the raw history's own span when neither bound narrows it, since
+        // computeCCCoverage always needs an explicit window.
+        //
+        // The raw props.conditionHistory (not boundedHistory) feeds
+        // computeCCCoverage below — pre-filtering by At would drop whichever
+        // state was already active at the window start, undercounting on-time.
+        const statsWindow = computed(() => {
+            let start = props.startTime;
+            let end = props.endTime;
             const minAt = timeRangeMin.value;
             const maxAt = timeRangeMax.value;
-            if (minAt === null || maxAt === null) return boundedHistory.value;
-            return boundedHistory.value.filter(s => s.At >= minAt && s.At <= maxAt);
+            if (minAt !== null && maxAt !== null) {
+                start = start !== null ? Math.max(start, minAt) : minAt;
+                end = end !== null ? Math.min(end, maxAt) : maxAt;
+            }
+            if (start !== null && end !== null) return { start, end };
+            const h = props.conditionHistory;
+            if (h.length === 0) return null;
+            return { start: h[0].At, end: h[h.length - 1].At };
         });
 
         // compute total duration & on duration for selected CC
         const timeStats = computed(() => {
-            if (selectedCCId.value == null) return { totalSec: 0, onSec: 0 };
-            return computeCCCoverage(filteredHistory.value, [selectedCCId.value]);
+            const w = statsWindow.value;
+            if (selectedCCId.value == null || w === null) return { totalSec: 0, onSec: 0 };
+            return computeCCCoverage(props.conditionHistory, [selectedCCId.value], w.start, w.end);
         });
 
         const totalDurationText = computed(() => formatDuration(timeStats.value.totalSec));
@@ -152,10 +169,12 @@ export default defineComponent({
             const history = props.conditionHistory;
 
             return props.attackers.map(a => {
-                const filtered = history.filter(s => s.At >= a.startTime && s.At <= a.endTime);
+                // Pass the unfiltered history with an explicit window rather
+                // than pre-filtering by At — same reasoning as statsWindow above.
                 const { totalSec, onSec } = computeCCCoverageBy(
-                    filtered,
+                    history,
                     c => c.CCId === ccId && resolveAttackerId(c.AttackerId) === a.id,
+                    a.startTime, a.endTime,
                 );
                 const pct = totalSec > 0 ? (100 * onSec / totalSec).toFixed(1) : '0.0';
                 return {

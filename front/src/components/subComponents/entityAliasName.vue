@@ -1,11 +1,17 @@
 <template>
-    <span class="d-inline-flex align-center" style="gap: 2px;"
+    <span class="d-inline-flex align-center entity-alias__wrap" style="gap: 2px;"
         @click.stop @pointerdown.stop>
-        <v-text-field v-if="editing" ref="field" v-model="draft" density="compact"
-            hide-details variant="outlined" style="max-width: 160px;"
-            @keyup.enter="commit" @keyup.esc="cancel" @blur="commit" />
+        <template v-if="editing">
+            <v-text-field ref="field" v-model="draft" density="compact" class="entity-alias__field"
+                hide-details variant="outlined"
+                @keyup.enter="commit" @keyup.esc="cancel" @blur="commit" />
+            <!-- mousedown is swallowed so the field never blurs: blur would
+                 commit and unmount this button before its click landed. -->
+            <v-btn icon="mdi-check" size="x-small" variant="text" density="compact"
+                title="套用" @mousedown.prevent @click="commit" />
+        </template>
         <template v-else>
-            <span class="font-weight-medium">{{ displayName }}</span>
+            <span class="font-weight-medium entity-alias__name" :title="displayName">{{ displayName }}</span>
             <v-btn icon="mdi-pencil" size="x-small" variant="text" density="compact"
                 title="改名" @click="startEdit" />
             <v-btn icon="mdi-dice-5" size="x-small" variant="text" density="compact"
@@ -38,6 +44,8 @@ export default defineComponent({
             (field.value as unknown as { focus?: () => void })?.focus?.();
         };
 
+        // Reached from three places (enter, blur, the check button); the guard
+        // is what keeps a blur-then-click from committing twice.
         const commit = () => {
             if (!editing.value) return;
             editing.value = false;
@@ -52,3 +60,40 @@ export default defineComponent({
     },
 });
 </script>
+
+<style scoped>
+/* Width comes from the longest name on screen (--pc-name-width), so every
+   row's buttons share an x. Longer names stay readable via the title. */
+.entity-alias__name {
+    display: inline-block;
+    width: var(--pc-name-width, 6em);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: middle;
+    /* The panel title forces 0.9375rem; the skill rows below inherit 1rem, and
+       the two names read as different sizes without this. */
+    font-size: 1rem;
+}
+
+/* Editing swaps two 24px buttons for one, so the field reclaims exactly that
+   much and the columns to its right keep their x. */
+.entity-alias__field {
+    width: calc(var(--pc-name-width, 6em) + 26px);
+    min-width: 140px;
+}
+
+/* Vuetify's compact field still reserves ~40px of control height, which made
+   the whole row grow the moment a name went into edit. */
+.entity-alias__field :deep(.v-input__control),
+.entity-alias__field :deep(.v-field),
+.entity-alias__field :deep(.v-field__input) {
+    min-height: 24px;
+}
+
+.entity-alias__field :deep(.v-field__input) {
+    padding-top: 0;
+    padding-bottom: 0;
+    font-size: 1rem;
+}
+</style>

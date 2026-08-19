@@ -56,24 +56,15 @@
         <v-btn @click="clearTimeRangeFilter" color="warning" size="x-small" prepend-icon="mdi-close" variant="text">Clear</v-btn>
     </v-sheet>
 
-    <v-tabs v-model="tab">
-        <v-tab value="takeDamage">Take Damage</v-tab>
-        <v-tab value="applyDamageByEntity">Apply Damage (By Entity)</v-tab>
-        <v-tab value="applyDamageBySkill">Apply Damage (By Skill)</v-tab>
-        <v-tab value="entityList">Characters</v-tab>
+    <v-tabs v-model="tab" height="34">
+        <v-tab value="applyDamageBySkill">傷害分析</v-tab>
+        <v-tab value="entityList">角色紀錄</v-tab>
         <v-tab value="itemIndex">物品索引</v-tab>
+        <v-tab value="battleRecords">戰鬥紀錄</v-tab>
         <v-tab value="about">About</v-tab>
     </v-tabs>
 
     <v-tabs-window v-model="tab">
-        <v-tabs-window-item value="takeDamage">
-            <take-damage />
-        </v-tabs-window-item>
-
-        <v-tabs-window-item value="applyDamageByEntity">
-            <apply-damage-by-entity />
-        </v-tabs-window-item>
-
         <v-tabs-window-item value="applyDamageBySkill">
             <apply-damage-by-skill />
         </v-tabs-window-item>
@@ -86,9 +77,14 @@
             <item-index />
         </v-tabs-window-item>
 
+        <v-tabs-window-item value="battleRecords">
+            <battle-records />
+        </v-tabs-window-item>
+
         <v-tabs-window-item value="about">
             <v-sheet class="pa-6" style="max-width: 640px;">
                 <div class="text-h5 mb-4">mogugi <span style="opacity:0.5; font-size:0.7em;">v{{ appVersion }}</span></div>
+                <div v-if="appTagline" class="mb-4" style="opacity:0.7; font-style: italic;">{{ appTagline }}</div>
 
                 <div class="mb-4">
                     <div class="text-subtitle-2 mb-1" style="opacity:0.6;">中文</div>
@@ -100,6 +96,11 @@
                     <div class="text-subtitle-2 mb-1" style="opacity:0.6;">English</div>
                     <p>This project is forked from <strong>prilus/dilmatulgi</strong> and further developed on top of it.</p>
                     <p style="opacity:0.7; font-size:0.9em;">Thanks to the original author, prilus.</p>
+                </div>
+
+                <div class="mt-4">
+                    <v-btn href="https://discord.gg/pJQsN4HgsD" target="_blank" rel="noopener noreferrer"
+                        variant="tonal" size="small" prepend-icon="mdi-discord">加入 Discord</v-btn>
                 </div>
             </v-sheet>
         </v-tabs-window-item>
@@ -137,18 +138,17 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, onMounted, inject, ref } from "vue";
+import { defineComponent, onMounted, inject, provide, ref } from "vue";
 
 import { useDialogStack } from '@/lib/useDialogStack';
 import { SocketClient } from '@/lib/socketClient';
 import { eventBase, eventIdMessageBox, eventIdSessionReset, eventIdOwnerCharacter, eventMessageBox, eventSessionReset, eventOwnerCharacter } from "./protocols";
 import { clearTimeRange } from '@/store';
 
-import TakeDamageComponent from '@/components/takeDamage.vue';
-import ApplyDamageByEntityComponent from '@/components/applyDamageByEntity.vue';
 import ApplyDamageBySkillComponent from '@/components/applyDamageBySkill.vue';
 import EntityListComponent from "./components/entityList.vue";
 import ItemIndexComponent from "./components/itemIndex.vue";
+import BattleRecordsComponent from "./components/battleRecords.vue";
 import ConfigDialogComponent from "./components/configDialog.vue";
 import FloatingWindowComponent from "./components/subComponents/floatingWindow.vue";
 import LicenseGateComponent from "./components/licenseGate.vue";
@@ -156,11 +156,10 @@ import LicenseGateComponent from "./components/licenseGate.vue";
 export default defineComponent({
     name: "App",
     components: {
-        TakeDamage: TakeDamageComponent,
-        ApplyDamageByEntity: ApplyDamageByEntityComponent,
         ApplyDamageBySkill: ApplyDamageBySkillComponent,
         EntityList: EntityListComponent,
         ItemIndex: ItemIndexComponent,
+        BattleRecords: BattleRecordsComponent,
         ConfigDialog: ConfigDialogComponent,
         FloatingWindow: FloatingWindowComponent,
         LicenseGate: LicenseGateComponent,
@@ -213,7 +212,24 @@ export default defineComponent({
             if (licenseActivated.value) return;
             fetchLicenseStatus();
         });
+
+        // A missing /icons/ file (unknown CC, skill outside the extraction)
+        // renders the browser's broken-image glyph in every row it appears.
+        // One capture-phase listener swaps any failed icon for CC 1110's
+        // blank-frame icon; if even that is missing, a transparent pixel.
+        const BLANK_CC_ICON = '/icons/cc/1110.png';
+        const TRANSPARENT_PX =
+            'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+        onMounted(() => {
+            document.addEventListener('error', (e) => {
+                const img = e.target as HTMLImageElement | null;
+                if (!img || img.tagName !== 'IMG' || !img.src.includes('/icons/')) return;
+                if (img.src.endsWith(BLANK_CC_ICON)) img.src = TRANSPARENT_PX;
+                else if (img.src !== TRANSPARENT_PX) img.src = BLANK_CC_ICON;
+            }, true);
+        });
         const appVersion = __APP_VERSION__;
+        const appTagline = __APP_TAGLINE__;
 
         const socket = new SocketClient(`/ws`);
         socket.onConnect = isConnected => socketConnected.value = isConnected;
@@ -389,6 +405,20 @@ export default defineComponent({
         const dialogStack = useDialogStack();
         const tab = ref('applyDamageBySkill');
 
+        // Battle-records tab: load a recorded run by filename and jump to
+        // the damage-analysis tab.
+        const loadBattleRecord = async (file: string) => {
+            const res = await fetch('/api/battles/content?file=' + encodeURIComponent(file));
+            if (!res.ok) {
+                throw new Error(`failed to fetch record ${res.status}`);
+            }
+            const text = await res.text();
+            clearData();
+            loadJsonData(text);
+            tab.value = 'applyDamageBySkill';
+        };
+        provide('loadBattleRecord', loadBattleRecord);
+
         onMounted(async () => {
             regionList.value = ['kr', 'krt', 'cn', 'jp', 'tw', 'us'];
 
@@ -494,6 +524,7 @@ export default defineComponent({
             msgBoxOpen,
             msgBoxText,
             appVersion,
+            appTagline,
             resetSnackbar,
             resetSnackbarText,
             forceRefresh,

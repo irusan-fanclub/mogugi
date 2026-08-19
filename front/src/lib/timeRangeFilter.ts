@@ -1,5 +1,5 @@
 import type { EntityDamage } from '@/eventActor';
-import { needCountSkill } from '@/actionCollector';
+import { countsTowardStats } from '@/actionCollector';
 
 /** Bin damages into fixed-size time windows. Returns a map of bin-start → total damage. */
 export function bucketDamages(damages: EntityDamage[], binSize: number): Map<number, number> {
@@ -66,7 +66,7 @@ export function computeGroupedStats(
         groupedDamages[key].push(d);
         groupedTotalDamages[key] += d.Damage;
 
-        if (d.IsDelayed && !needCountSkill[d.SkillId]) {
+        if (!countsTowardStats(d)) {
             continue;
         }
 

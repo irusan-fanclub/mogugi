@@ -32,6 +32,7 @@
     "@sqlite.org/sqlite-wasm": "^3.53.0-build1",
     "binary-search-bounds": "^2.0.5",
     "highcharts": "^12.5.0",
+    "html2canvas": "^1.4.1",
     "vue": "~3.5.28",
     "vuetify": "~3.12.1"
   }

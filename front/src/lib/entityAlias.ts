@@ -19,6 +19,8 @@ export const FUNNY_NAMES: string[] = [
     '熱呼呼', '脆卡卡', '黏答答', '金光閃', '火冒冒',
     '電啪啪', '風咻咻', '雪白白', '雷轟轟', '水汪汪',
     '霧濛濛', '星閃閃', '月彎彎', '雲飄飄', '土黃黃',
+    '白兔兔', '奶茶兔', '串燒燒', '大掌門', '蘑菇麵',
+    '雞絲麵', '酸辣湯', '奶皇包', '小籠包',
 ];
 
 export function aliasOf(realName: string): string | undefined {

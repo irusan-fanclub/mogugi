@@ -29,6 +29,10 @@ const PUBLIC = path.join(FRONT, 'public');
 const OUT_DB = path.join(PUBLIC, 'db', `mabi_${REGION}.sqlite`);
 const OUT_ICONS = path.join(PUBLIC, 'icons');
 
+// Arcana icons aren't in the upstream sqlite; they ship in the repo's own
+// assets/ dir one directory above front/.
+const ARCANA_ICON_SRC = path.join(FRONT, '..', 'assets');
+
 // race has no icon_id column in mabitsequal schema — skipped.
 const ICON_SOURCES = [
     { kind: 'skill', table: 'skill', id: 'skill_id' },
@@ -36,6 +40,10 @@ const ICON_SOURCES = [
     { kind: 'item',  table: 'item', id: 'item_id' },
     { kind: 'title', table: 'title', id: 'title_id' },
 ];
+
+// Synthetic CCs have no upstream icon; borrow the skill's. Keep in sync
+// with BARDSONG_CC_ID in front/src/lib/bardsongTrack.ts.
+const SYNTHETIC_CC_ICONS = [{ ccId: 900206, fromSkillId: 10003 }];
 
 // `optional: true` — table may be absent from older upstream sqlites (optionset:
 // mabitsequal schema >= 4, metalware_ability: >= 5); emit an empty table then.
@@ -143,6 +151,33 @@ async function extractIcons(src) {
         }
         console.log(`[build-data] wrote ${rows.length} ${kind} icons.`);
     }
+
+    // Not from ICON_SOURCES — copied after both cc/ and skill/ exist. A
+    // missing source icon must fail the build: a silent skip leaves the
+    // synthetic lane rendering a broken image with nothing to catch the drift.
+    for (const { ccId, fromSkillId } of SYNTHETIC_CC_ICONS) {
+        const from = path.join(OUT_ICONS, 'skill', `${fromSkillId}.png`);
+        const to = path.join(OUT_ICONS, 'cc', `${ccId}.png`);
+        if (!await exists(from)) {
+            throw new Error(`synthetic cc icon: source skill ${fromSkillId}.png for cc ${ccId} not found at ${from}`);
+        }
+        await fs.copyFile(from, to);
+        console.log(`[build-data] wrote synthetic cc icon ${ccId}.png (from skill ${fromSkillId}).`);
+    }
+
+    // Copied from the repo, not the sqlite. Same reasoning as the synthetic
+    // cc block above: a missing/empty source must fail the build, not skip.
+    const arcanaDir = path.join(OUT_ICONS, 'arcana');
+    await fs.mkdir(arcanaDir, { recursive: true });
+    const arcanaFiles = (await exists(ARCANA_ICON_SRC) ? await fs.readdir(ARCANA_ICON_SRC) : [])
+        .filter(f => /^icon_arcana_\d+\.png$/.test(f));
+    if (arcanaFiles.length === 0) {
+        throw new Error(`arcana icons: no icon_arcana_*.png found under ${ARCANA_ICON_SRC}`);
+    }
+    for (const f of arcanaFiles) {
+        await fs.copyFile(path.join(ARCANA_ICON_SRC, f), path.join(arcanaDir, f));
+    }
+    console.log(`[build-data] wrote ${arcanaFiles.length} arcana icons.`);
 }
 
 async function buildLeanDb(src) {
@@ -206,6 +241,7 @@ async function main() {
         meta.outputKey === outputKey
         && await exists(OUT_DB)
         && await exists(path.join(OUT_ICONS, 'cc'))
+        && await exists(path.join(OUT_ICONS, 'arcana'))
     ) {
         console.log(`[build-data] outputs already current.`);
         return;

@@ -14,6 +14,12 @@ export const eventIdChat = 11;
 export const eventIdNotice = 12;
 export const eventIdChangeStance = 13;
 export const eventIdOwnerCharacter = 14;
+export const eventIdSkillCast = 15;
+export const eventIdBardsong = 16;
+export const eventIdSkillUse = 17;
+export const eventIdSkillPrepareStart = 18;
+export const eventIdSkillStop = 19;
+export const eventIdMaxLife = 20;
 
 export const eventIdMessageBox = -1;
 export const eventIdSessionReset = -2;
@@ -50,6 +56,8 @@ export type eventCharacterConditionEnable = eventBase & {
     CCId: number;
     DisableAt: number;
     AttackerId: string;
+    /** KEY -> value from the condition parameter string. Broadcast (all party members). */
+    Params: Record<string, string>;
 }
 
 export type eventCharacterConditionDisable = eventBase & {
@@ -100,8 +108,11 @@ export type eventChat = eventBase & {
     Message: string;
 }
 
+/** Category separates a message about the local character (4) from
+ *  server-wide (2) and world-event (3) broadcasts. */
 export type eventNotice = eventBase & {
     EventId: 12;
+    Category: number;
     Message: string;
 }
 
@@ -113,6 +124,49 @@ export type eventChangeStance = eventBase & {
 export type eventOwnerCharacter = eventBase & {
     EventId: 14;
     Name: string;
+}
+
+/** Id is the caster. Fires for buffs too, unlike eventDamage's SkillId. */
+export type eventSkillCast = eventBase & {
+    EventId: 15;
+    SkillId: number;
+}
+
+/** Song is the raw remainder of the announcement's first line, not a bare
+ *  song name — isolating one needs a BardsSong.xml template table. */
+export type eventBardsong = eventBase & {
+    EventId: 16;
+    Performer: string;
+    Song: string;
+    Bonuses: Record<string, number>;
+    IsEnd: boolean;
+}
+
+/** Fires from the broadcast combat-action packet (0x7926), damaging or not
+ *  — the only broadcast source that also sees buff and utility skills. */
+export type eventSkillUse = eventBase & {
+    EventId: 17;
+    SkillId: number;
+}
+
+/** Fires when the local player starts channeling a skill (0x6984).
+ *  Self-only: no broadcast source sees this for anyone else. */
+export type eventSkillPrepareStart = eventBase & {
+    EventId: 18;
+    SkillId: number;
+}
+
+/** Fires when the local player's channeled skill ends (0x698B). The
+ *  opcode carries no skill id; SkillId is the one from the matching
+ *  eventSkillPrepareStart. */
+export type eventSkillStop = eventBase & {
+    EventId: 19;
+    SkillId: number;
+}
+
+export type eventMaxLife = eventBase & {
+    EventId: 20;
+    MaxLife: number;
 }
 
 export type eventMessageBox = eventBase & {

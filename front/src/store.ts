@@ -64,14 +64,28 @@ const CONFIG_STORAGE_KEY = 'config';
 
 export interface AppConfig {
     hiddenCCIds: number[];
-    hiddenRaceIds: number[];
+    hiddenTrackIds: string[];
+    hiddenSkillColumns: string[];
+    skillColumnOrder: string[];
+    skillRowLimit: number;
+    showPetSkills: boolean;
     autoSelectBoss: boolean;
+    bossOnlyTarget: boolean;
 }
 
 const defaultConfig: AppConfig = {
     hiddenCCIds: [],
-    hiddenRaceIds: [],
+    hiddenTrackIds: [],
+    // Shown by default: 命中次數 (fixed), 爆擊次數, 爆擊率, 爆擊平均, 非爆平均, 最高.
+    hiddenSkillColumns: [
+        'castCount', 'normalCount', 'avg', 'min', 'critMin', 'critMax',
+        'normalMin', 'normalMax', 'critSummary', 'normalSummary',
+    ],
+    skillColumnOrder: [],
+    skillRowLimit: 0,
+    showPetSkills: false,
     autoSelectBoss: true,
+    bossOnlyTarget: false,
 };
 
 function loadConfig(): AppConfig {
@@ -85,13 +99,66 @@ function loadConfig(): AppConfig {
 function saveConfig() {
     const data: AppConfig = {
         hiddenCCIds: [...hiddenCCIds.value],
-        hiddenRaceIds: [...hiddenRaceIds.value],
+        hiddenTrackIds: [...hiddenTrackIds.value],
+        hiddenSkillColumns: [...hiddenSkillColumns.value],
+        skillColumnOrder: [...skillColumnOrder.value],
+        skillRowLimit: skillRowLimit.value,
+        showPetSkills: showPetSkills.value,
         autoSelectBoss: autoSelectBoss.value,
+        bossOnlyTarget: bossOnlyTarget.value,
     };
     localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(data));
 }
 
 const _config = loadConfig();
+
+// Optional columns of the skill table. Count, damage, DPS and share are not
+// in here — they are what the table is for.
+export const hiddenSkillColumns = ref<Set<string>>(new Set(_config.hiddenSkillColumns));
+
+// 0 means no limit. A pet's own output is redirected onto its owner, so
+// without this it shows up as the player's skill; a summon (人偶) is the
+// player's own output and is never filtered.
+export const skillRowLimit = ref<number>(_config.skillRowLimit);
+export const showPetSkills = ref<boolean>(_config.showPetSkills);
+
+export function setSkillRowLimit(n: number) {
+    // Free text input, so guard the value here rather than at the field:
+    // a blank box, a decimal or a negative all mean "no limit".
+    skillRowLimit.value = Math.max(0, Math.floor(n) || 0);
+    saveConfig();
+}
+
+export function setShowPetSkills(on: boolean) {
+    showPetSkills.value = on;
+    saveConfig();
+}
+
+// Empty means "the order the component declares"; a saved order is merged
+// with that list so a newly added column still appears.
+export const skillColumnOrder = ref<string[]>([..._config.skillColumnOrder]);
+
+export function setSkillColumnOrder(keys: string[]) {
+    skillColumnOrder.value = [...keys];
+    saveConfig();
+}
+
+// Restores every skill-table setting from defaultConfig, so there is no second
+// copy of the defaults to fall out of step with the first.
+export function resetSkillSettings() {
+    hiddenSkillColumns.value = new Set(defaultConfig.hiddenSkillColumns);
+    skillColumnOrder.value = [...defaultConfig.skillColumnOrder];
+    skillRowLimit.value = defaultConfig.skillRowLimit;
+    showPetSkills.value = defaultConfig.showPetSkills;
+    saveConfig();
+}
+
+export function toggleSkillColumn(key: string) {
+    const next = new Set(hiddenSkillColumns.value);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    hiddenSkillColumns.value = next;
+    saveConfig();
+}
 
 export const hiddenCCIds = ref<Set<number>>(new Set(_config.hiddenCCIds));
 
@@ -107,17 +174,20 @@ export function removeHiddenCC(ccId: number) {
     saveConfig();
 }
 
-export const hiddenRaceIds = ref<Set<number>>(new Set(_config.hiddenRaceIds));
+// Synthetic-track visibility (e.g. 'cc:516'). Kept separate from hiddenCCIds:
+// that one is keyed by real numeric CCIds, and stuffing string track ids in
+// there would force fake numeric ids nobody could interpret later.
+export const hiddenTrackIds = ref<Set<string>>(new Set(_config.hiddenTrackIds));
 
-export function addHiddenRace(raceId: number) {
-    hiddenRaceIds.value = new Set(hiddenRaceIds.value).add(raceId);
+export function hideTrack(id: string) {
+    hiddenTrackIds.value = new Set(hiddenTrackIds.value).add(id);
     saveConfig();
 }
 
-export function removeHiddenRace(raceId: number) {
-    const next = new Set(hiddenRaceIds.value);
-    next.delete(raceId);
-    hiddenRaceIds.value = next;
+export function unhideTrack(id: string) {
+    const next = new Set(hiddenTrackIds.value);
+    next.delete(id);
+    hiddenTrackIds.value = next;
     saveConfig();
 }
 
@@ -127,5 +197,13 @@ export const BOSS_RACE_IDS = new Set([4860, 7600, 7601, 7602, 7603, 7160, 7615])
 
 export function setAutoSelectBoss(v: boolean) {
     autoSelectBoss.value = v;
+    saveConfig();
+}
+
+// Target select filtered down to boss races only.
+export const bossOnlyTarget = ref(_config.bossOnlyTarget);
+
+export function setBossOnlyTarget(v: boolean) {
+    bossOnlyTarget.value = v;
     saveConfig();
 }

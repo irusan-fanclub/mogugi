@@ -6,34 +6,51 @@ export type CCCoverageResult = {
 };
 
 /**
- * On-time of a CC (or a set of merged CC aliases) over a history window.
- *
- * Pass `fightEndAt` (in seconds) to extend the trailing on-segment past
- * the last history entry — useful when _conditionHistory only grows on
- * set-membership change but you want coverage relative to "now".
+ * Slice history to [windowStart, windowEnd]: drop entries after windowEnd,
+ * and prepend a synthetic entry at windowStart carrying forward the state
+ * in force at or before it (the last-known state persists as a step function).
+ */
+export function clipToWindow(
+    history: EntityConditionState[], windowStart: number, windowEnd: number,
+): EntityConditionState[] {
+    let seedList: EntityCondition[] = [];
+    const withinWindow: EntityConditionState[] = [];
+    for (const state of history) {
+        if (state.At <= windowStart) seedList = state.List;
+        else if (state.At <= windowEnd) withinWindow.push(state);
+    }
+    return [{ At: windowStart, List: seedList }, ...withinWindow];
+}
+
+/**
+ * On-time of a CC (or a set of merged CC aliases) over an explicit
+ * [startAt, endAt] window. Both edges must come from the caller — a
+ * denominator derived from the data itself lets a history that starts
+ * before/after the real window silently dilute every coverage number.
  */
 export function computeCCCoverage(
     history: EntityConditionState[],
     ccIds: readonly number[],
-    fightEndAt?: number,
+    startAt: number,
+    endAt: number,
 ): CCCoverageResult {
-    return computeCCCoverageBy(history, c => ccIds.includes(c.CCId), fightEndAt);
+    return computeCCCoverageBy(history, c => ccIds.includes(c.CCId), startAt, endAt);
 }
 
 /** Same as above but with an arbitrary per-condition predicate (e.g. attacker filter). */
 export function computeCCCoverageBy(
     history: EntityConditionState[],
     predicate: (cond: EntityCondition) => boolean,
-    fightEndAt?: number,
+    startAt: number,
+    endAt: number,
 ): CCCoverageResult {
-    if (history.length === 0) return { totalSec: 0, onSec: 0 };
-    const endAt = fightEndAt ?? history[history.length - 1].At;
-    const totalSec = Math.max(0, endAt - history[0].At);
+    const totalSec = Math.max(0, endAt - startAt);
     if (totalSec === 0) return { totalSec: 0, onSec: 0 };
+    const windowed = clipToWindow(history, startAt, endAt);
     let onSec = 0;
-    for (let i = 0; i < history.length; i++) {
-        const segEnd = i + 1 < history.length ? history[i + 1].At : endAt;
-        if (history[i].List.some(predicate)) onSec += segEnd - history[i].At;
+    for (let i = 0; i < windowed.length; i++) {
+        const segEnd = i + 1 < windowed.length ? windowed[i + 1].At : endAt;
+        if (windowed[i].List.some(predicate)) onSec += segEnd - windowed[i].At;
     }
     return { totalSec, onSec };
 }

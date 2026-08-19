@@ -249,6 +249,167 @@ describe('entities the meter never saw appear', () => {
     });
 });
 
+describe('condition history', () => {
+    function conditionEnable(
+        ccId: number, at: number, Params: Record<string, string>,
+    ): protocols.eventCharacterConditionEnable {
+        return {
+            EventId: 4, At: at, Id: PC_ID,
+            CCId: ccId, DisableAt: at + 30, AttackerId: '', Params,
+        };
+    }
+
+    function historyOf(...events: protocols.eventCharacterConditionEnable[]) {
+        const dc = new DamageCollectorManager();
+        const mgr = new ActorManager(dc);
+        mgr.onEvent(appear({ Id: PC_ID, RaceId: 10002, Name: '地域磨菇' }));
+        for (const e of events) mgr.onEvent(e);
+        return mgr.entityMap[PC_ID].conditionHistory;
+    }
+
+    // A bard re-buffing at a different magnitude is a new state: without an
+    // entry the indicator would keep showing the first value forever.
+    it('records a re-enable that carries a new magnitude', () => {
+        const h = historyOf(
+            conditionEnable(680, 100, { MCMBAMIN: '28.4', SBT: '1000' }),
+            conditionEnable(680, 110, { MCMBAMIN: '32.8', SBT: '2000' }),
+        );
+        expect(h).toHaveLength(2);
+        expect(h[1].List[0].Params.MCMBAMIN).toBe('32.8');
+    });
+
+    // SBT moves on every refresh; recording those would bury the real changes.
+    it('does not record a refresh that only moves the timestamps', () => {
+        const h = historyOf(
+            conditionEnable(680, 100, { MCMBAMIN: '32.8', SBT: '1000' }),
+            conditionEnable(680, 110, { MCMBAMIN: '32.8', SBT: '2000' }),
+        );
+        expect(h).toHaveLength(1);
+    });
+
+    it('still records a newly enabled condition', () => {
+        const h = historyOf(
+            conditionEnable(680, 100, { MCMBAMIN: '32.8' }),
+            conditionEnable(516, 110, { SOP_DMG_MINMAX: '15' }),
+        );
+        expect(h).toHaveLength(2);
+        expect(h[1].List.map(c => c.CCId)).toEqual([516, 680]);
+    });
+
+    // The bulk of a real log: an aura re-applying on a CC whose values nothing
+    // reads. 388 has no entry in SIGNIFICANT_PARAM_KEYS, so no refresh of it
+    // can ever be a new state.
+    it('does not record a refresh of a CC whose values are never read', () => {
+        const h = historyOf(
+            conditionEnable(388, 100, { SBT: '1000' }),
+            conditionEnable(388, 110, { SBT: '2000' }),
+            conditionEnable(388, 120, { SBT: '3000' }),
+        );
+        expect(h).toHaveLength(1);
+    });
+
+    function conditionDisable(ccId: number, at: number): protocols.eventCharacterConditionDisable {
+        return { EventId: 5, At: at, Id: PC_ID, CCId: ccId };
+    }
+
+    function historyOfMixed(
+        ...events: (protocols.eventCharacterConditionEnable | protocols.eventCharacterConditionDisable)[]
+    ) {
+        const dc = new DamageCollectorManager();
+        const mgr = new ActorManager(dc);
+        mgr.onEvent(appear({ Id: PC_ID, RaceId: 10002, Name: '地域磨菇' }));
+        for (const e of events) mgr.onEvent(e);
+        return mgr.entityMap[PC_ID].conditionHistory;
+    }
+
+    // The case that separates "is it on right now" from "have we seen it": a
+    // CC coming back after a disable is a real state change, however many
+    // times it has been enabled before.
+    it('records a re-enable that follows a disable', () => {
+        const h = historyOfMixed(
+            conditionEnable(388, 100, { SBT: '1000' }),
+            conditionDisable(388, 110),
+            conditionEnable(388, 120, { SBT: '2000' }),
+        );
+        expect(h.map(s => s.At)).toEqual([100, 110, 120]);
+        expect(h[2].List.map(c => c.CCId)).toEqual([388]);
+    });
+
+    it('ignores a disable for a condition that was not on', () => {
+        const h = historyOfMixed(
+            conditionEnable(388, 100, { SBT: '1000' }),
+            conditionDisable(999, 110),
+        );
+        expect(h).toHaveLength(1);
+    });
+});
+
+describe('bardsongEvents storage', () => {
+    function bardsong(at: number, isEnd: boolean): protocols.eventBardsong {
+        return {
+            EventId: protocols.eventIdBardsong, At: at, Id: PC_ID,
+            Performer: PC_ID, Song: '戰場上的狂吼', Bonuses: { 最大攻擊力: 35 }, IsEnd: isEnd,
+        };
+    }
+
+    it('appends the raw event as-is', () => {
+        const { mgr } = setup();
+        const ev = bardsong(100, false);
+        mgr.onEvent(ev);
+
+        expect(mgr.bardsongEvents).toHaveLength(1);
+        expect(mgr.bardsongEvents[0]).toEqual(ev);
+    });
+
+    // A stale performance must not survive into the next fight's chart, and
+    // the shallowReactive array identity must survive clear() too — swapping
+    // in a fresh array (e.g. `= []`) would silence every later push, since
+    // the chart's computed is subscribed to this specific proxy (eventActor.ts:18-19).
+    it('empties on clear() without replacing the shallowReactive array', () => {
+        const { mgr } = setup();
+        mgr.onEvent(bardsong(100, false));
+        mgr.onEvent(bardsong(130, true));
+        const arr = mgr.bardsongEvents;
+
+        mgr.clear();
+
+        expect(mgr.bardsongEvents).toBe(arr);
+        expect(mgr.bardsongEvents).toHaveLength(0);
+    });
+});
+
+describe('skill use ids storage', () => {
+    function skillUse(id: string, skillId: number, at = 100): protocols.eventSkillUse {
+        return { EventId: protocols.eventIdSkillUse, At: at, Id: id, SkillId: skillId };
+    }
+
+    it('records the skill id on the entity that used it, in order', () => {
+        const { mgr } = setup();
+        mgr.onEvent(skillUse(PC_ID, 59004));
+        mgr.onEvent(skillUse(PC_ID, 59083));
+
+        expect(mgr.entityMap[PC_ID].skillUses.map(u => u.SkillId)).toEqual([59004, 59083]);
+    });
+
+    // Matches the condition/equip event handlers: no placeholder is spun up,
+    // the use is just dropped until the appear packet arrives.
+    it('ignores a skill use from an entity that has not appeared yet', () => {
+        const { mgr } = setup();
+        mgr.onEvent(skillUse('4503599630099999', 59004));
+
+        expect(mgr.entityMap['4503599630099999']).toBeUndefined();
+    });
+
+    it('empties on clear(), so a new fight starts without the old arcana signal', () => {
+        const { mgr } = setup();
+        mgr.onEvent(skillUse(PC_ID, 59004));
+
+        mgr.clear();
+
+        expect(mgr.entityMap[PC_ID].skillUses).toEqual([]);
+    });
+});
+
 describe('prettyEntityName for unidentified placeholders', () => {
     const raceNameMap = ref<Record<number, string>>({});
 
@@ -332,5 +493,27 @@ describe('prettyEntityName with aliases', () => {
         );
         setAlias('小白', '蘑菇雞');
         expect(prettyEntityName(mgr.entityMap[PET_ID], raceNameMap)).toBe('小白');
+    });
+});
+
+describe('max life and appear time', () => {
+    let mgr: ActorManager;
+    beforeEach(() => { mgr = setup().mgr; });
+
+    it('records appearAt from the first appear and keeps it on re-appear', () => {
+        const mob = mgr.entityMap[MOB_ID];
+        expect(mob.appearAt).toBe(1784805881);
+        mgr.onEvent(appear({ Id: MOB_ID, RaceId: 4856, At: 1784809999 }));
+        expect(mob.appearAt).toBe(1784805881);
+    });
+
+    it('stores maxLife from an eventMaxLife', () => {
+        mgr.onEvent({ EventId: 20, At: 1784805890, Id: MOB_ID, MaxLife: 1967880064 } as protocols.eventMaxLife);
+        expect(mgr.entityMap[MOB_ID].maxLife).toBe(1967880064);
+    });
+
+    it('creates a placeholder when max life precedes the appear', () => {
+        mgr.onEvent({ EventId: 20, At: 1784805890, Id: FRESH_MOB_ID, MaxLife: 850368576 } as protocols.eventMaxLife);
+        expect(mgr.entityMap[FRESH_MOB_ID]?.maxLife).toBe(850368576);
     });
 });

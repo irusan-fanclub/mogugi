@@ -26,11 +26,16 @@
 
 <script lang="ts">
 import { defineComponent, PropType, ref, computed, inject, onMounted, onUnmounted, watch, Ref, nextTick } from 'vue';
-import highcharts, { Options, SeriesLineOptions, SeriesAreaOptions } from 'highcharts';
-import type { EntityDamage, EntityActor, EntityConditionState } from '@/eventActor';
-import { computeCCCoverage } from '@/lib/conditionCoverage';
-import { setTimeRange, clearTimeRange } from '@/store';
+import highcharts, { Options, SeriesLineOptions, SeriesAreaOptions, PointOptionsObject } from 'highcharts';
+import type { ActorManager, EntityDamage, EntityActor, EntityConditionState } from '@/eventActor';
+import { computeCCCoverage, clipToWindow } from '@/lib/conditionCoverage';
+import { rollingDamageSeries } from '@/lib/dpsSeries';
+import { setTimeRange, clearTimeRange, hiddenTrackIds } from '@/store';
 import { ccIconUrl, ccName } from '@/lib/util';
+import { ccTrackId, PLAYER_SIDE_CC_IDS } from '@/lib/buffTrack';
+import { CC_PARAMS_TOOLTIP } from '@/lib/ccConditionTooltip';
+import { mergeConditionHistories } from '@/lib/mergeConditions';
+import { buildBardsongConditionHistory } from '@/lib/bardsongTrack';
 
 type ChartEntity = { name: string, damages: EntityDamage[] };
 
@@ -67,11 +72,16 @@ function fmtPct(pct: number): string {
 
 const UPDATE_INTERVAL_MS = 250;
 
+// Per-series point cap for the DPS lines; see the stride note in buildDpsOpt.
+const MAX_POINTS_PER_SERIES = 800;
+
 export default defineComponent({
     props: {
         entities: { type: Array as PropType<ChartEntity[]>, required: true },
         target: { type: Object as PropType<EntityActor | null>, default: null },
         binSeconds: { type: Number, default: 15 },
+        /** Party members, for the player-side tracks — see PLAYER_SIDE_CC_IDS. */
+        partyActors: { type: Array as PropType<EntityActor[]>, default: () => [] },
         trackedCCIds: { type: Array as PropType<number[]>, default: () => [] },
         chartHiddenCCIds: { type: Array as PropType<number[]>, default: () => [] },
     },
@@ -80,6 +90,7 @@ export default defineComponent({
         const condNameMap = inject('condNameMap') as Ref<Record<number, string>>;
         const timeRangeMin = inject('timeRangeMin') as Ref<number | null>;
         const timeRangeMax = inject('timeRangeMax') as Ref<number | null>;
+        const actorManager = inject('actorManager') as Ref<ActorManager>;
 
         const dpsChartDom = ref<HTMLElement>(undefined!);
         const debuffChartDom = ref<HTMLElement>(undefined!);
@@ -106,13 +117,13 @@ export default defineComponent({
                     if (rel > max) max = rel;
                 }
             }
-            const h = history.value;
-            if (h.length > 0) {
-                const rel = (h[h.length - 1].At - origin) * 1000;
-                if (rel > max) max = rel;
-            }
+            // Deliberately damage-only. Party members' condition histories span
+            // the whole loaded log, not this fight, so letting a CC extend the
+            // axis stretched it to a later fight's 覺醒 or bard song.
             return isFinite(max) ? max : 0;
         });
+
+        const fightEndAt = computed(() => fightStart.value + globalMaxMs.value / 1000);
 
         const getMergedIds = (ccId: number): number[] => {
             const aliases = Object.entries(CC_MERGE_MAP)
@@ -120,15 +131,45 @@ export default defineComponent({
             return [ccId, ...aliases];
         };
 
+        const mergedHistory = computed((): EntityConditionState[] => {
+            // Vue 3.4+ computed short-circuits on Object.is, and the actor
+            // pushes _conditionHistory in place — merge always builds a new
+            // array, so downstream computeds still invalidate.
+            //
+            // bardsongEvents is spread here (not just passed by reference) so
+            // this computed reads its index/length — required for it to
+            // invalidate when ActorManager pushes to the shallowReactive array.
+            return mergeConditionHistories([
+                { history: props.target?.conditionHistory ?? [] },
+                ...props.partyActors.map(a => ({
+                    history: a.conditionHistory,
+                    ccIds: PLAYER_SIDE_CC_IDS,
+                })),
+                { history: buildBardsongConditionHistory([...actorManager.value.bardsongEvents]) },
+            ]);
+        });
+
+        // Zoom-restricted view for the chart. Coverage math must not use this:
+        // a naive At-range filter drops whatever state was already active at
+        // the zoom's start, which is exactly the bug computeCCCoverage now
+        // guards against — see coverageStrips below.
         const history = computed((): EntityConditionState[] => {
-            if (!props.target) return [];
-            const h = props.target.conditionHistory;
+            // Scoped to the fight first: the merge's party and bard-song sources
+            // run the length of the loaded log. Clipping seeds the fight's start
+            // with whatever was already active, so a pre-fight buff still shows.
+            const merged = clipToWindow(mergedHistory.value, fightStart.value, fightEndAt.value);
             const s = timeRangeMin.value, e = timeRangeMax.value;
-            if (s !== null && e !== null) return h.filter(st => st.At >= s && st.At <= e);
-            // Vue 3.4+ computed short-circuits on Object.is — actor pushes
-            // _conditionHistory in place, so we must hand back a new array
-            // ref or downstream computeds never invalidate.
-            return h.slice();
+            if (s !== null && e !== null) return merged.filter(st => st.At >= s && st.At <= e);
+            return merged;
+        });
+
+        // Player-side CCs are tracked alongside the target's debuffs; each one
+        // still answers to its own hiddenTrackIds toggle.
+        const trackedCCIdsEffective = computed(() => {
+            const extra = PLAYER_SIDE_CC_IDS.filter(id =>
+                !hiddenTrackIds.value.has(ccTrackId(id)) && !props.trackedCCIds.includes(id));
+            const hidden = PLAYER_SIDE_CC_IDS.filter(id => hiddenTrackIds.value.has(ccTrackId(id)));
+            return [...props.trackedCCIds.filter(id => !hidden.includes(id)), ...extra];
         });
 
         const activeCCIds = computed(() => {
@@ -136,7 +177,7 @@ export default defineComponent({
             for (const st of history.value) {
                 for (const c of st.List) seen.add(CC_MERGE_MAP[c.CCId] ?? c.CCId);
             }
-            return props.trackedCCIds.filter(id => seen.has(id));
+            return trackedCCIdsEffective.value.filter(id => seen.has(id));
         });
 
         const chartCCIds = computed(() => {
@@ -147,13 +188,16 @@ export default defineComponent({
         // Coverage % for every tracked CC; un-seen CCs render at 0% so
         // the user can tell which tracked debuffs are missing.
         const coverageStrips = computed(() => {
-            const h = history.value;
-            const fightEndAt = fightStart.value + globalMaxMs.value / 1000;
+            // The fight's own bounds, not the (possibly narrower, possibly
+            // absent) zoom range — coverage always reflects the whole fight.
+            const h = mergedHistory.value;
             const hidden = new Set(props.chartHiddenCCIds);
             const chart: { ccId: number, pct: number }[] = [];
             const cov: { ccId: number, pct: number }[] = [];
-            for (const ccId of props.trackedCCIds) {
-                const { totalSec, onSec } = computeCCCoverage(h, getMergedIds(ccId), fightEndAt);
+            for (const ccId of trackedCCIdsEffective.value) {
+                // Player-side rows show at 0% like any other tracked CC now
+                // that the settings menu carries them (the eye dismisses them).
+                const { totalSec, onSec } = computeCCCoverage(h, getMergedIds(ccId), fightStart.value, fightEndAt.value);
                 const row = { ccId, pct: totalSec > 0 ? (100 * onSec / totalSec) : 0 };
                 (hidden.has(ccId) ? cov : chart).push(row);
             }
@@ -169,43 +213,102 @@ export default defineComponent({
         // Highcharts' drawCrosshair API is unreliable across separate
         // chart instances. Instead, we manually position a thin div as
         // the synced crosshair line over the target chart.
-        let syncLineEl: HTMLDivElement | null = null;
-
-        const ensureSyncLine = (): HTMLDivElement => {
-            if (syncLineEl) return syncLineEl;
-            syncLineEl = document.createElement('div');
-            syncLineEl.style.cssText = 'position:absolute;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.2);pointer-events:none;z-index:10;display:none;';
-            return syncLineEl;
+        // Native Highcharts sync: both charts snap to the same axis value, so
+        // the crosshairs agree (a free-floating line cannot — each chart's own
+        // crosshair snaps to its nearest point), and the mirrored tooltip
+        // rides along for free.
+        let hoverSyncInstalled = false;
+        // Points our synthetic tooltip.refresh put into hover state, per
+        // chart. pointer.reset() only clears chart.hoverPoint(s) — mirrored
+        // points aren't in that list, so their halos survive every reset
+        // (the "stuck hover" was these halos).
+        const mirrorPts = new WeakMap<highcharts.Chart, highcharts.Point[]>();
+        const mirrorHover = (src?: highcharts.Chart, tgt?: highcharts.Chart, ev?: MouseEvent) => {
+            if (!src || !tgt || !ev) return;
+            const norm = src.pointer.normalize(ev);
+            const xVal = src.xAxis[0].toValue(norm.chartX);
+            const tev = {
+                chartX: tgt.xAxis[0].toPixels(xVal, false),
+                chartY: tgt.plotTop + tgt.plotHeight / 2,
+            } as unknown as PointerEvent;
+            if (!isFinite((tev as unknown as { chartX: number }).chartX)) {
+                clearMirror(tgt);
+                return;
+            }
+            const pts: highcharts.Point[] = [];
+            for (const sr of tgt.series) {
+                if (!sr.visible) continue;
+                const pt = (sr as unknown as { searchPoint(e: unknown, x: boolean): highcharts.Point | undefined })
+                    .searchPoint(tev, true);
+                if (pt) pts.push(pt);
+            }
+            // No point found (hovered x beyond this chart's data, or its
+            // series are empty): clear instead of returning, or the last
+            // mirrored tooltip/crosshair stays frozen on the plot.
+            if (!pts.length) {
+                clearMirror(tgt);
+                return;
+            }
+            const tooltip = tgt.tooltip as unknown as { refresh(p: highcharts.Point | highcharts.Point[]): void; shared?: boolean };
+            const prev = mirrorPts.get(tgt);
+            if (prev) {
+                for (const p of prev) {
+                    if (!pts.includes(p)) try { p.setState(''); } catch { /* point gone */ }
+                }
+            }
+            tooltip.refresh((tgt.tooltip as unknown as { options: { shared?: boolean } }).options.shared ? pts : pts[0]);
+            tgt.xAxis[0].drawCrosshair(tev as never, pts[0]);
+            mirrorPts.set(tgt, pts);
+            mirrorActive = true;
+        };
+        const clearMirror = (tgt?: highcharts.Chart) => {
+            if (!tgt) return;
+            // Swallow per-chart failures (mid-rebuild states) so one chart's
+            // cleanup can never abort the other's.
+            try {
+                const pts = mirrorPts.get(tgt);
+                if (pts) {
+                    mirrorPts.delete(tgt);
+                    for (const p of pts) try { p.setState(''); } catch { /* point gone */ }
+                }
+                for (const sr of tgt.series) {
+                    (sr as unknown as { halo?: { hide(): void } }).halo?.hide();
+                }
+                (tgt.pointer as unknown as { reset(allowMove?: boolean, delay?: number): void })?.reset(false, 0);
+                tgt.tooltip?.hide(0);
+                (tgt.xAxis[0] as unknown as { hideCrosshair(): void }).hideCrosshair();
+            } catch { /* chart being torn down */ }
+        };
+        const clearBothMirrors = () => {
+            mirrorActive = false;
+            clearMirror(dpsChart);
+            clearMirror(debuffChart);
+        };
+        // Backstop: mouseleave alone proved unreliable (hovers stayed stuck
+        // after crossing between the charts), so any document-level move
+        // outside both containers force-clears while a mirror is showing.
+        let mirrorActive = false;
+        const onDocMove = (e: MouseEvent) => {
+            if (!mirrorActive) return;
+            const t = e.target as Node | null;
+            if (t && (dpsChartDom.value?.contains(t) || debuffChartDom.value?.contains(t))) return;
+            clearBothMirrors();
         };
 
         const setupHoverSync = () => {
-            if (!dpsChartDom.value || !debuffChartDom.value) return;
-            const line = ensureSyncLine();
-
-            const onMove = (e: MouseEvent, source: 'dps' | 'debuff') => {
-                const srcDom = (source === 'dps' ? dpsChartDom : debuffChartDom).value!;
-                const tgtDom = (source === 'dps' ? debuffChartDom : dpsChartDom).value;
-                if (!tgtDom) return;
-
-                // Both charts have identical marginLeft and xAxis range,
-                // so the pixel X relative to container is the same.
-                const srcRect = srcDom.getBoundingClientRect();
-                const pixelX = e.clientX - srcRect.left;
-
-                if (!line.parentElement) tgtDom.style.position = 'relative';
-                if (line.parentElement !== tgtDom) tgtDom.appendChild(line);
-                line.style.left = `${pixelX}px`;
-                line.style.display = '';
-            };
-
-            const onLeave = () => {
-                if (syncLineEl) syncLineEl.style.display = 'none';
-            };
-
-            dpsChartDom.value.addEventListener('mousemove', (e) => onMove(e, 'dps'));
-            dpsChartDom.value.addEventListener('mouseleave', onLeave);
-            debuffChartDom.value.addEventListener('mousemove', (e) => onMove(e, 'debuff'));
-            debuffChartDom.value.addEventListener('mouseleave', onLeave);
+            // The two container divs survive fullRebuild, so listeners attach
+            // once and read the current chart instances through the closures.
+            if (hoverSyncInstalled || !dpsChartDom.value || !debuffChartDom.value) return;
+            hoverSyncInstalled = true;
+            dpsChartDom.value.addEventListener('mousemove', e => mirrorHover(dpsChart, debuffChart, e));
+            debuffChartDom.value.addEventListener('mousemove', e => mirrorHover(debuffChart, dpsChart, e));
+            // Leaving either chart clears both: the source chart's own
+            // hover would otherwise stay stuck (mouseleave only cleared
+            // the mirrored side).
+            for (const dom of [dpsChartDom.value, debuffChartDom.value]) {
+                dom.addEventListener('mouseleave', clearBothMirrors);
+            }
+            document.addEventListener('mousemove', onDocMove);
         };
 
         // --- DPS chart ---
@@ -214,47 +317,25 @@ export default defineComponent({
             const tick = props.binSeconds;
             const maxMs = globalMaxMs.value;
 
-            // Rolling window: slide by 1 second, sum damage in [t, t+window).
-            const stride = 1;
-            const window = tick;
+            // One point per second is 15x oversampling of a 15-second mean, and
+            // the cost is paid on hover: the shared tooltip hit-tests every
+            // point of every series. A 50-minute log with 14 players is 42,000
+            // of them. Short fights and zoomed ranges still get every second.
+            const stride = Math.max(1, Math.ceil(maxMs / 1000 / MAX_POINTS_PER_SERIES));
 
-            const series: SeriesLineOptions[] = props.entities.map((v, i) => {
-                if (v.damages.length === 0) return { type: 'line' as const, name: v.name, data: [] };
-
-                // Sort damages by relative time
-                const sorted = v.damages.map(d => ({ rel: d.At - origin, dmg: d.Damage }))
-                    .sort((a, b) => a.rel - b.rel);
-                const maxRel = sorted[sorted.length - 1].rel;
-
-                const data: [number, number][] = [];
-                let winStart = 0; // pointer into sorted[]
-                let winEnd = 0;
-                let winSum = 0;
-
-                for (let t = 0; t <= maxRel; t += stride) {
-                    // Expand right edge: include damages where rel < t + window
-                    while (winEnd < sorted.length && sorted[winEnd].rel < t + window) {
-                        winSum += sorted[winEnd].dmg;
-                        winEnd++;
-                    }
-                    // Shrink left edge: exclude damages where rel < t
-                    while (winStart < sorted.length && sorted[winStart].rel < t) {
-                        winSum -= sorted[winStart].dmg;
-                        winStart++;
-                    }
-                    data.push([t * 1000, winSum]);
-                }
-                return {
-                    type: 'line' as const, name: v.name, data,
-                    color: PLAYER_COLORS[i % PLAYER_COLORS.length], lineWidth: 2,
-                };
-            });
+            // The window is centred on each point (see lib/dpsSeries.ts) so the
+            // curve lines up with the debuff lanes, which use exact event times.
+            const series: SeriesLineOptions[] = props.entities.map((v, i) => ({
+                type: 'line' as const, name: v.name,
+                data: rollingDamageSeries(v.damages, origin, tick, stride),
+                color: PLAYER_COLORS[i % PLAYER_COLORS.length], lineWidth: 2,
+            }));
 
             return {
                 lang: { locale: 'en' },
                 title: { text: '' },
                 chart: {
-                    backgroundColor: 'transparent', height: 240,
+                    backgroundColor: 'transparent', height: 190,
                     marginLeft: CHART_MARGIN_LEFT,
                     spacing: [8, 8, 0, 8], animation: false,
                     zooming: { type: 'x' },
@@ -304,7 +385,10 @@ export default defineComponent({
             const ccIds = chartCCIds.value;
             const h = history.value;
             const maxMs = globalMaxMs.value;
-            if (h.length < 2 || ccIds.length === 0) {
+            // This early return carries no chart.height, so Highcharts would
+            // fall back to 400px — an empty panel. A single state still
+            // renders (a running song pins its bar to the right edge).
+            if (h.length === 0 || ccIds.length === 0) {
                 return { title: { text: '' }, series: [], credits: { enabled: false } };
             }
 
@@ -327,17 +411,27 @@ export default defineComponent({
 
             const series: SeriesAreaOptions[] = ccIds.map((ccId, idx) => {
                 const ids = getMergedIds(ccId);
-                const data: [number, number][] = [];
+                const formatter = CC_PARAMS_TOOLTIP[ccId];
+                const data: PointOptionsObject[] = [];
                 let lastActive = 0;
+                // The matched condition's own Params. Segment end tracks the
+                // CC's actual DISABLE (List membership), never a param like SBT.
+                let lastParams: Record<string, string> | undefined;
                 for (const st of h) {
-                    lastActive = st.List.some(c => ids.includes(c.CCId)) ? 1 : 0;
-                    data.push([(st.At - origin) * 1000, lastActive]);
+                    const match = st.List.find(c => ids.includes(c.CCId));
+                    lastActive = match ? 1 : 0;
+                    lastParams = match?.Params;
+                    const point: PointOptionsObject = { x: (st.At - origin) * 1000, y: lastActive };
+                    if (formatter) point.custom = { params: lastParams };
+                    data.push(point);
                 }
                 // _conditionHistory only grows on set-membership change,
                 // so the last point lags during refresh-only periods —
                 // pin the still-active bar to the chart's right edge.
                 if (lastActive === 1 && data.length > 0) {
-                    data.push([maxMs, 1]);
+                    const point: PointOptionsObject = { x: maxMs, y: 1 };
+                    if (formatter) point.custom = { params: lastParams };
+                    data.push(point);
                 }
                 const color = CC_COLORS[idx % CC_COLORS.length];
                 return {
@@ -397,7 +491,15 @@ export default defineComponent({
                         const p = this as any;
                         const on = p.y === 1;
                         const color = on ? p.color : '#555';
-                        return `<span style="color:${color}; font-size:10px;">\u25CF</span> ${p.series.name}<br/>`;
+                        const dot = `<span style="color:${color}; font-size:10px;">\u25CF</span>`;
+                        // No applier/caster is rendered here by design: CC 516's
+                        // element carries 0, not the caster (spec section 12), and
+                        // the generic label below never had an attribution field.
+                        const formatter = on ? CC_PARAMS_TOOLTIP[ccIds[p.series.index as number]] : undefined;
+                        const text = formatter ? formatter(p.options?.custom?.params ?? {}) : null;
+                        return text
+                            ? `${dot} ${p.series.name}: ${text}<br/>`
+                            : `${dot} ${p.series.name}<br/>`;
                     },
                 },
                 plotOptions: {
@@ -460,12 +562,16 @@ export default defineComponent({
 
         onMounted(fullRebuild);
         watch(() => props.target, fullRebuild);
-        watch(() => props.trackedCCIds, fullRebuild);
-        watch(() => props.chartHiddenCCIds, fullRebuild);
+        // By content, not identity: an identity watch on an array prop fires on
+        // every parent render, and fullRebuild destroys both charts — that
+        // combination once rebuilt them ~13x/s for the whole session.
+        watch(() => props.trackedCCIds.join(','), fullRebuild);
+        watch(() => props.chartHiddenCCIds.join(','), fullRebuild);
         watch(() => props.entities, scheduleUpdate);
         watch([activeCCIds, chartCCIds, history], scheduleUpdate);
         onUnmounted(() => {
             if (updateTimer) clearTimeout(updateTimer);
+            document.removeEventListener('mousemove', onDocMove);
             dpsChart?.destroy(); debuffChart?.destroy();
         });
 

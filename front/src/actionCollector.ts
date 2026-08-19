@@ -1,4 +1,4 @@
-import { CustomReactive, IUpdateCallback } from '@/lib/util';
+import { CustomReactive, IUpdateCallback, scheduleTrigger } from '@/lib/util';
 import { EntityDamage } from '@/eventActor';
 
 // TODO: cc 추가
@@ -8,11 +8,17 @@ export class DamageCollectorManager {
     }
     private _damages = [] as EntityDamage[];
 
+    // Which ids actually have damage recorded. reattribute runs once per pet or
+    // summon appear packet, and that packet almost always beats the unit's first
+    // hit — so without this it walked the whole session to find nothing.
+    private _attackerIds = new Set<string>();
+
     // 성능 보고 entity id별로 쪼갤지 확인
     private _et = new DamageEventTarget("Damage", "DamageCollector");
 
     public onDamage(p: EntityDamage): void {
         this._damages.push(p);
+        this._attackerIds.add(p.Id);
         this._et.dispatchEvent(new CustomEvent("Damage", { detail: p }));
     }
 
@@ -64,6 +70,7 @@ export class DamageCollectorManager {
 
     public clear(): void {
         this._damages = [];
+        this._attackerIds.clear();
         this._et.dispatchEvent(new CustomEvent("Clear"));
     }
 
@@ -76,6 +83,12 @@ export class DamageCollectorManager {
      * Returns false when nothing matched.
      */
     public reattribute(fromId: string, toId: string, petId = ''): boolean {
+        // The overwhelmingly common case: this unit has never hit anything, so
+        // there is nothing to move and no reason to touch the array at all.
+        if (!this._attackerIds.has(fromId)) {
+            return false;
+        }
+
         let changed = false;
         for (const p of this._damages) {
             if (p.Id !== fromId) {
@@ -89,6 +102,9 @@ export class DamageCollectorManager {
         if (!changed) {
             return false;
         }
+
+        this._attackerIds.delete(fromId);
+        this._attackerIds.add(toId);
 
         // Collectors aggregate incrementally, so a changed key can only be
         // applied by replaying everything. One batched event, not one per
@@ -108,8 +124,8 @@ export abstract class DamageCollectorBase implements DamageEventListenerObject, 
 
     protected vueUpdateTrack?: () => void;
     private vueUpdateTrigger?: () => void;
-    private vueUpdateTimeout = 0;
-    private static vueUpdateTick = 33;
+    // Stable identity so the shared scheduler's Set dedupes repeat requests.
+    private readonly fireTrigger = () => this.vueUpdateTrigger?.();
 
     public constructor(private _filter: DamageCollectorFilter) {
     }
@@ -159,13 +175,7 @@ export abstract class DamageCollectorBase implements DamageEventListenerObject, 
     }
 
     private requestVueUpdate(): void {
-        if (this.vueUpdateTimeout) {
-            return;
-        }
-
-        this.vueUpdateTimeout = setTimeout(() => {
-            this.vueUpdate();
-        }, DamageCollectorBase.vueUpdateTick);
+        scheduleTrigger(this.fireTrigger);
     }
 
     protected abstract onDamage(p: EntityDamage): void;
@@ -177,10 +187,6 @@ export abstract class DamageCollectorBase implements DamageEventListenerObject, 
         this.vueUpdateTrigger = trigger;
     }
 
-    private vueUpdate(): void {
-        this.vueUpdateTimeout = 0;
-        this.vueUpdateTrigger?.();
-    }
 }
 
 export class FilteredDamageCollector extends DamageCollectorBase {
@@ -228,7 +234,7 @@ export class FilteredDamageCollector extends DamageCollectorBase {
         this._damages.push(p);
         this._totalDamage += p.Damage;
 
-        if (p.IsDelayed && !needCountSkill[p.SkillId]) {
+        if (!countsTowardStats(p)) {
             return;
         }
 
@@ -311,7 +317,7 @@ export class GroupedDamageCollector extends FilteredDamageCollector {
         this._groupedDamages[key].push(p);
         this._groupedTotalDamages[key] += p.Damage;
 
-        if (p.IsDelayed && !needCountSkill[p.SkillId]) {
+        if (!countsTowardStats(p)) {
             return;
         }
 
@@ -471,7 +477,7 @@ export class DualGroupedDamageCollector extends GroupedDamageCollector {
         this._dualGroupedDamages[key1][key2].push(p);
         this._dualGroupedTotalDamages[key1][key2] += p.Damage;
 
-        if (p.IsDelayed && !needCountSkill[p.SkillId]) {
+        if (!countsTowardStats(p)) {
             return;
         }
 
@@ -643,4 +649,10 @@ export const needCountSkill: Record<number, boolean> = {
     58009: true, // 연속 공격
     58100: true, // 블래스트
     58101: true, // 플레어
+}
+
+/** Delayed ("Additional Damage") hits are not their own attacks, so they stay
+ *  out of count/crit/min/max. A few skills deliver their real hits delayed. */
+export function countsTowardStats(d: EntityDamage): boolean {
+    return !d.IsDelayed || !!needCountSkill[d.SkillId];
 }
