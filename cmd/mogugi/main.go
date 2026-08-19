@@ -46,7 +46,7 @@ var packetLogFilename = ""
 var itemDB *itemStore
 
 func main() {
-	logFilePath := filepath.Join(_logDir, fmt.Sprintf("dilmeter_%v.log", util.StartUnix))
+	logFilePath := filepath.Join(_logDir, fmt.Sprintf("dilmeter_%s.log", util.StartStamp))
 	if err := util.LogInit(logFilePath); err != nil {
 		logger.Println("LogInit failed:", err)
 	}
@@ -62,9 +62,22 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Flags may sit anywhere on the command line; whatever remains keeps
+	// the positional mode/argument behaviour below.
+	rest := make([]string, 0, len(os.Args)-1)
+	for _, a := range os.Args[1:] {
+		switch a {
+		case "--no-pcap":
+			noPcapFile = true
+		case "--no-browser":
+			noBrowser = true
+		default:
+			rest = append(rest, a)
+		}
+	}
 	mode := ""
-	if len(os.Args) > 1 {
-		mode = os.Args[1]
+	if len(rest) > 0 {
+		mode = rest[0]
 	}
 
 	logger.Printf("* mogugi v%s %s (fork from dilmatulgi)", Version, mode)
@@ -76,7 +89,7 @@ func main() {
 	case "file":
 		fileName := ""
 		realtime := false
-		for _, a := range os.Args[2:] {
+		for _, a := range rest[1:] {
 			if a == "--realtime" {
 				realtime = true
 			} else if fileName == "" {
@@ -86,8 +99,8 @@ func main() {
 		runFile(ctx, fileName, realtime)
 	case "itemcsv":
 		outDir := "items_log_export"
-		if len(os.Args) > 2 {
-			outDir = os.Args[2]
+		if len(rest) > 1 {
+			outDir = rest[1]
 		}
 		exportItemCSV(outDir)
 		return
@@ -143,10 +156,17 @@ func runFile(ctx context.Context, fileName string, realtime bool) {
 	serve(pub)
 }
 
+// noPcapFile skips writing logs/packet_capture_*.pcapng; noBrowser skips
+// opening the UI tab on start. Both set from --no-pcap / --no-browser.
+var (
+	noPcapFile bool
+	noBrowser  bool
+)
+
 func serve(pub *eventPublisher) {
 	startWebsocketServer(websocketHandler(pub))
 
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == "windows" && !noBrowser {
 		go exec.Command("explorer", fmt.Sprintf("http://127.0.0.1:%v", port)).Run()
 	}
 }
@@ -233,8 +253,13 @@ func startWebsocketServer(newClientCb func(*websocket.Conn)) {
 	http.Handle("/ws", requireLicense(websocket.Handler(newClientCb)))
 	http.Handle("/api/packet_log", requireLicense(http.HandlerFunc(httpHandlerPacketLog)))
 	http.Handle("/api/item-index", requireLicense(http.HandlerFunc(httpHandlerItemIndex)))
+	http.Handle("/api/battles", requireLicense(http.HandlerFunc(httpHandlerBattleIndex)))
+	http.Handle("/api/battles/content", requireLicense(http.HandlerFunc(httpHandlerBattleContent)))
+	http.Handle("/api/battles/reveal", requireLicense(http.HandlerFunc(httpHandlerBattleReveal)))
+	http.Handle("/api/battles/note", requireLicense(http.HandlerFunc(httpHandlerBattleNote)))
+	http.Handle("/api/battles/delete", requireLicense(http.HandlerFunc(httpHandlerBattleDelete)))
 	http.HandleFunc("/api/license/status", httpHandlerLicenseStatus)
-	http.HandleFunc("/api/license/activate", httpHandlerLicenseActivate)
+	http.HandleFunc("/api/license/oauth/start", httpHandlerLicenseOAuthStart)
 
 	var staticFS = fs.FS(staticFiles)
 	htmlContent, err := fs.Sub(staticFS, "static")
@@ -288,10 +313,11 @@ func startConnectionWatchdog(ctx context.Context, pub *eventPublisher) {
 		lastFilter = pcaputil.FilterForConns(conns)
 
 		newR, err := packet.NewGameServerPacketReader(&packet.GameServerPacketReaderOpt{
-			Ctx:          ctx,
-			NicName:      nicName,
-			Filter:       lastFilter,
-			VetLocalPort: pcaputil.IsClientLocalPort,
+			Ctx:           ctx,
+			NicName:       nicName,
+			Filter:        lastFilter,
+			VetLocalPort:  pcaputil.IsClientLocalPort,
+			NoCaptureFile: noPcapFile,
 		})
 		if err != nil {
 			logger.Println("watchdog: open new reader failed:", err)
@@ -349,7 +375,7 @@ func startPacketWriter(ctx context.Context, ch <-chan []event.IEvent) error {
 		return err
 	}
 
-	packetLogBaseName := fmt.Sprintf("packet_log_%v.ndjson", util.StartUnix)
+	packetLogBaseName := fmt.Sprintf("packet_log_%s.ndjson", util.StartStamp)
 	packetLogFilename = filepath.Join(_logDir, packetLogBaseName)
 
 	fd, err := os.OpenFile(packetLogFilename, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
