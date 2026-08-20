@@ -440,3 +440,38 @@ func TestDungeonLogSummaryTrainingDummy(t *testing.T) {
 		t.Fatalf("a dummy fight must not carry a cleared verdict: %+v", f)
 	}
 }
+
+// The boss-practice room (雷楠的米勒:悔恨) shares the training mission and
+// gets its own fight row, cleared verdict included.
+func TestDungeonLogSummaryRegretPractice(t *testing.T) {
+	dir := t.TempDir()
+	dungeonLogDirPath = dir
+
+	var d dungeonLog
+	if err := d.Open("training", "x", "地域磨菇", time.Unix(1786800000, 0), 730017, nil); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	d.Write([]event.IEvent{
+		mkAppear("900", 7615, "b", "", 1000),
+		mkAppear("100", 10001, "毛毛", "", 1000),
+		mkDamage("100", "900", 59023, 500, 1000),
+		mkDamage("100", "900", 59023, 500, 1090),
+		&event.EventEntityDown{EventBase: event.EventBase{EventId: event.EventIdEntityDown, At: 1090, Id: "900"}},
+	})
+	d.Close()
+
+	var sum dungeonLogSummary
+	if err := json.Unmarshal(lastLine(t, dir), &sum); err != nil {
+		t.Fatal(err)
+	}
+	if len(sum.Fights) != 1 {
+		t.Fatalf("want 1 fight, got %+v", sum)
+	}
+	f := sum.Fights[0]
+	if f.BossRace != 7615 || f.BossName != "雷楠的米勒:悔恨" || f.DurationSec != 90 {
+		t.Fatalf("regret fight wrong: %+v", f)
+	}
+	if f.Cleared == nil || !*f.Cleared {
+		t.Fatalf("regret fight must carry a cleared verdict: %+v", f)
+	}
+}
