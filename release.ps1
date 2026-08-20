@@ -1,4 +1,4 @@
-# Release script for MOGUGI
+﻿# Release script for MOGUGI
 #
 # Builds frontend, backend (with version embedded via -ldflags),
 # and packages the result into dist/mogugi_<version>.zip.
@@ -198,6 +198,10 @@ try {
         New-Item -ItemType File -Force -Path "$staticPath/.keep" | Out-Null
     }
     Copy-Item -Path "dist/*" -Destination $staticPath -Recurse -Force
+    # Trim what browsers never fetch from the embed: source maps (debug
+    # only) and legacy font formats (woff2 covers every modern browser).
+    Get-ChildItem -Path $staticPath -Recurse -Include *.map, *.eot, *.ttf, *.woff |
+        Remove-Item -Force
 
     Write-Host "Frontend OK" -ForegroundColor Green
     $rollback = $null   # bump is earned; keep it

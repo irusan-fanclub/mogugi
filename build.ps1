@@ -65,6 +65,10 @@ if (-not $BackendOnly) {
         New-Item -ItemType File -Force -Path "$staticDir/.keep" | Out-Null
     }
     Copy-Item -Path "front/dist/*" -Destination $staticDir -Recurse -Force
+    # Trim what browsers never fetch from the embed: source maps (debug
+    # only) and legacy font formats (woff2 covers every modern browser).
+    Get-ChildItem -Path $staticDir -Recurse -Include *.map, *.eot, *.ttf, *.woff |
+        Remove-Item -Force
 }
 
 # ── Tests (opt-in) ──────────────────────────────────────────────────────────
