@@ -3,8 +3,8 @@ package util
 import "time"
 
 // fileStampLayout is local time, filename-safe, and lexically sortable —
-// the same shape the packet-analysis tooling already uses.
-const fileStampLayout = "2006-01-02_15-04-05"
+// the same yyyymmdd_hhmmss shape the battle records use.
+const fileStampLayout = "20060102_150405"
 
 func FileStamp(t time.Time) string { return t.Format(fileStampLayout) }
 

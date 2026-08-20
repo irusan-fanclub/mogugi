@@ -7,7 +7,7 @@ import (
 
 func TestFileStampIsSortableAndFilenameSafe(t *testing.T) {
 	got := FileStamp(time.Date(2026, 8, 17, 9, 5, 3, 0, time.UTC))
-	if want := "2026-08-17_09-05-03"; got != want {
+	if want := "20260817_090503"; got != want {
 		t.Fatalf("FileStamp = %q, want %q", got, want)
 	}
 }
@@ -22,7 +22,7 @@ func TestFileStampSortsChronologically(t *testing.T) {
 }
 
 func TestStartStampIsSet(t *testing.T) {
-	if len(StartStamp) != len("2026-08-17_09-05-03") {
+	if len(StartStamp) != len("20260817_090503") {
 		t.Fatalf("StartStamp = %q", StartStamp)
 	}
 }

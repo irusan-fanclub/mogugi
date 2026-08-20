@@ -46,7 +46,7 @@ var packetLogFilename = ""
 var itemDB *itemStore
 
 func main() {
-	logFilePath := filepath.Join(_logDir, fmt.Sprintf("dilmeter_%s.log", util.StartStamp))
+	logFilePath := filepath.Join(_logDir, fmt.Sprintf("mogugi_%s.log", util.StartStamp))
 	if err := util.LogInit(logFilePath); err != nil {
 		logger.Println("LogInit failed:", err)
 	}

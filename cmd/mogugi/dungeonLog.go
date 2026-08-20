@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/irusan-fanclub/mogugi/lib/event"
+	"github.com/irusan-fanclub/mogugi/lib/util"
 )
 
 // dungeonLogDirPath is the output dir for dungeon-event ndjson. A variable
@@ -285,7 +286,7 @@ func (d *dungeonLog) Open(code, tier, owner string, at time.Time, missionId uint
 	// Tier is meta-only: it names the entry stage, not the run, and made
 	// filenames read like difficulty labels.
 	base := fmt.Sprintf("dungeon_%s_%s_%s", code,
-		sanitizeEntityName(owner), at.Format("20060102_150405"))
+		sanitizeEntityName(owner), util.FileStamp(at))
 	var fd *os.File
 	var err error
 	for i := 0; ; i++ {
