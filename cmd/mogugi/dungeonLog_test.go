@@ -17,7 +17,7 @@ func TestDungeonLogFilenameOmitsTier(t *testing.T) {
 	dungeonLogDirPath = dir
 
 	var d dungeonLog
-	if err := d.Open("brileith", "NRD_3S", "地域磨菇", time.Unix(1786800000, 0), 717000, nil); err != nil {
+	if err := d.Open("brileith", "NRD_3S", "地域磨菇", time.Unix(1786800000, 0), 717000, "", nil); err != nil {
 		t.Fatalf("open: %v", err)
 	}
 	d.Close()
@@ -41,7 +41,7 @@ func TestDungeonLogMetaCarriesLocalTime(t *testing.T) {
 
 	at := time.Date(2026, 8, 17, 9, 5, 3, 0, time.FixedZone("TW", 8*3600))
 	var d dungeonLog
-	if err := d.Open("brileith", "NRD_1S", "磨菇", at, 717000, nil); err != nil {
+	if err := d.Open("brileith", "NRD_1S", "磨菇", at, 717000, "", nil); err != nil {
 		t.Fatalf("open: %v", err)
 	}
 	d.Close()
@@ -70,7 +70,7 @@ func TestDungeonLogWritesMetaFirstLine(t *testing.T) {
 	dungeonLogDirPath = dir
 
 	var d dungeonLog
-	if err := d.Open("brileith", "NRD_1S", "地域磨菇", time.Unix(1786800000, 0), 717000, nil); err != nil {
+	if err := d.Open("brileith", "NRD_1S", "地域磨菇", time.Unix(1786800000, 0), 717000, "packet_capture_20260820_160455.pcapng", nil); err != nil {
 		t.Fatalf("open: %v", err)
 	}
 	d.Close()
@@ -92,6 +92,9 @@ func TestDungeonLogWritesMetaFirstLine(t *testing.T) {
 	if meta.Version == "" || meta.MissionId != 717000 {
 		t.Fatalf("meta = %+v", meta)
 	}
+	if meta.Pcapng != "packet_capture_20260820_160455.pcapng" {
+		t.Fatalf("meta.Pcapng = %q", meta.Pcapng)
+	}
 }
 
 // A blank tier (most historical map-changes carry no dynamic-region base)
@@ -111,7 +114,7 @@ func TestDungeonLogEmptyTierFallsBackToUnknown(t *testing.T) {
 	dungeonLogDirPath = dir
 
 	var d dungeonLog
-	if err := d.Open("brileith", "", "地域磨菇", time.Unix(1786800000, 0), 717000, nil); err != nil {
+	if err := d.Open("brileith", "", "地域磨菇", time.Unix(1786800000, 0), 717000, "", nil); err != nil {
 		t.Fatalf("open: %v", err)
 	}
 	d.Close()
@@ -147,7 +150,7 @@ func TestDungeonLogMetaPrecedesInitialEvents(t *testing.T) {
 		Name:      "地域磨菇",
 	}}
 	var d dungeonLog
-	if err := d.Open("brileith", "NRD_1S", "地域磨菇", time.Unix(1786800000, 0), 717000, initial); err != nil {
+	if err := d.Open("brileith", "NRD_1S", "地域磨菇", time.Unix(1786800000, 0), 717000, "", initial); err != nil {
 		t.Fatalf("open: %v", err)
 	}
 	d.Close()
@@ -220,7 +223,7 @@ func TestDungeonLogSummaryPerStageFights(t *testing.T) {
 	dungeonLogDirPath = dir
 
 	var d dungeonLog
-	if err := d.Open("brileith", "MRD_1S", "地域磨菇", time.Unix(1786800000, 0), 717000, nil); err != nil {
+	if err := d.Open("brileith", "MRD_1S", "地域磨菇", time.Unix(1786800000, 0), 717000, "", nil); err != nil {
 		t.Fatalf("open: %v", err)
 	}
 	p1, p2, b2, pcA, pcB, pet := "900", "901", "902", "100", "101", "102"
@@ -297,7 +300,7 @@ func TestDungeonLogSummaryPhase1Wipe(t *testing.T) {
 	dungeonLogDirPath = dir
 
 	var d dungeonLog
-	if err := d.Open("brileith", "MRD_1S", "地域磨菇", time.Unix(1786800000, 0), 717000, nil); err != nil {
+	if err := d.Open("brileith", "MRD_1S", "地域磨菇", time.Unix(1786800000, 0), 717000, "", nil); err != nil {
 		t.Fatalf("open: %v", err)
 	}
 	d.Write([]event.IEvent{
@@ -329,7 +332,7 @@ func TestDungeonLogNoBossWritesEmptyMarker(t *testing.T) {
 	dungeonLogDirPath = dir
 
 	var d dungeonLog
-	if err := d.Open("brileith", "MRD_1S", "地域磨菇", time.Unix(1786800000, 0), 717000, nil); err != nil {
+	if err := d.Open("brileith", "MRD_1S", "地域磨菇", time.Unix(1786800000, 0), 717000, "", nil); err != nil {
 		t.Fatalf("open: %v", err)
 	}
 	d.Write([]event.IEvent{mkAppear("100", 10001, "毛毛", "", 1000)})
@@ -352,7 +355,7 @@ func TestDungeonLogSummaryCleared(t *testing.T) {
 
 	run := func(down bool) bossFight {
 		var d dungeonLog
-		if err := d.Open("brileith", "MRD_3S", "地域磨菇", time.Unix(1786800000, 0), 717000, nil); err != nil {
+		if err := d.Open("brileith", "MRD_3S", "地域磨菇", time.Unix(1786800000, 0), 717000, "", nil); err != nil {
 			t.Fatalf("open: %v", err)
 		}
 		evs := []event.IEvent{
@@ -397,7 +400,7 @@ func TestDungeonLogFilenameStampFormat(t *testing.T) {
 
 	var d dungeonLog
 	at := time.Date(2026, 8, 19, 21, 5, 7, 0, time.Local)
-	if err := d.Open("brileith", "MRD_1S", "地域磨菇", at, 717000, nil); err != nil {
+	if err := d.Open("brileith", "MRD_1S", "地域磨菇", at, 717000, "", nil); err != nil {
 		t.Fatalf("open: %v", err)
 	}
 	d.Close()
@@ -414,7 +417,7 @@ func TestDungeonLogSummaryTrainingDummy(t *testing.T) {
 	dungeonLogDirPath = dir
 
 	var d dungeonLog
-	if err := d.Open("training", "x", "地域磨菇", time.Unix(1786800000, 0), 730017, nil); err != nil {
+	if err := d.Open("training", "x", "地域磨菇", time.Unix(1786800000, 0), 730017, "", nil); err != nil {
 		t.Fatalf("open: %v", err)
 	}
 	d.Write([]event.IEvent{
@@ -448,7 +451,7 @@ func TestDungeonLogSummaryRegretPractice(t *testing.T) {
 	dungeonLogDirPath = dir
 
 	var d dungeonLog
-	if err := d.Open("training", "x", "地域磨菇", time.Unix(1786800000, 0), 730017, nil); err != nil {
+	if err := d.Open("training", "x", "地域磨菇", time.Unix(1786800000, 0), 730017, "", nil); err != nil {
 		t.Fatalf("open: %v", err)
 	}
 	d.Write([]event.IEvent{

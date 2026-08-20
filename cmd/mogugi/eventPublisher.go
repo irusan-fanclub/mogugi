@@ -1401,7 +1401,14 @@ func (t *eventPublisher) handleSetLocation(p *packet.GamePacket) {
 		// Teammates already appeared before entry, so seed the file with an
 		// entityCache snapshot or damage events won't map to player names.
 		tier := t.regionBaseName(region)
-		if err := t.dgnLog.Open(code, tier, owner, p.At, missionID, t.snapshotEvents(true)); err != nil {
+		t.Lock()
+		r := t.r
+		t.Unlock()
+		pcapng := ""
+		if r != nil {
+			pcapng = r.SourceName()
+		}
+		if err := t.dgnLog.Open(code, tier, owner, p.At, missionID, pcapng, t.snapshotEvents(true)); err != nil {
 			logger.Println("dungeon-log open failed:", err)
 		}
 	} else {

@@ -280,6 +280,9 @@ type dungeonLogMeta struct {
 	// RFC3339 with the local offset: readable as local time, and still
 	// unambiguous when the file is read on another machine.
 	StartedAtLocal string `json:"StartedAtLocal"`
+	// Pcapng is the raw capture this run came from (basename): the file
+	// being written live, or the replayed input. Empty with --no-pcap.
+	Pcapng string `json:"Pcapng,omitempty"`
 }
 
 // Open creates a new file, writes the meta header, then initial (EntityAppear/
@@ -288,7 +291,7 @@ type dungeonLogMeta struct {
 // events that can't be matched back to player names. Closes any open file
 // first. tier is the dynamic region's base name; empty becomes "unknown" so
 // the filename never collapses to fewer segments.
-func (d *dungeonLog) Open(code, tier, owner string, at time.Time, missionId uint32, initial []event.IEvent) error {
+func (d *dungeonLog) Open(code, tier, owner string, at time.Time, missionId uint32, pcapng string, initial []event.IEvent) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.closeLocked()
@@ -331,6 +334,7 @@ func (d *dungeonLog) Open(code, tier, owner string, at time.Time, missionId uint
 		Player:         owner,
 		MissionId:      missionId,
 		StartedAtLocal: at.Format(time.RFC3339),
+		Pcapng:         pcapng,
 	}
 	// A file without its meta line is invisible to the battle index and
 	// looks corrupt to anything that trusts the header, so a failed header

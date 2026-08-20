@@ -37,6 +37,11 @@ type GameServerPacketReader struct {
 	logHandle *pcapgo.NgWriter
 	logFd     *os.File
 	linkType  layers.LinkType
+	// sourceName identifies the pcapng this reader is tied to (basename):
+	// the capture it writes in live mode, or the input it replays. Guarded
+	// by sourceMu — openLog runs on the reader goroutine.
+	sourceMu   sync.Mutex
+	sourceName string
 
 	// statistics (owned by packetLoop's goroutine — do not read elsewhere)
 	payloadCount    uint64 // number of received TCP payloads
@@ -116,6 +121,9 @@ func NewGameServerPacketReader(opt *GameServerPacketReaderOpt) (_ *GameServerPac
 		realtime:  opt.Realtime,
 		vetPort:   opt.VetLocalPort,
 		linkType:  layers.LinkTypeNull, // default, will be updated when opening
+	}
+	if opt.FileName != "" {
+		v.sourceName = filepath.Base(opt.FileName)
 	}
 
 	// Any failure after a handle/fd is opened must close it — the returned
@@ -360,6 +368,15 @@ func (t *GameServerPacketReader) openFile(file string, filter string) (chan game
 	return ch, nil
 }
 
+// SourceName returns the pcapng basename this reader is tied to — the
+// capture it writes (live), or the file it replays. Empty when neither
+// (live with NoCaptureFile, or before the capture file is created).
+func (t *GameServerPacketReader) SourceName() string {
+	t.sourceMu.Lock()
+	defer t.sourceMu.Unlock()
+	return t.sourceName
+}
+
 func (t *GameServerPacketReader) openLog() error {
 	logDir := "logs"
 	if err := os.MkdirAll(logDir, os.ModePerm); err != nil {
@@ -390,6 +407,9 @@ func (t *GameServerPacketReader) openLog() error {
 	}
 
 	t.logFd = fd
+	t.sourceMu.Lock()
+	t.sourceName = filepath.Base(fd.Name())
+	t.sourceMu.Unlock()
 
 	// Use actual link type from the network interface (or file)
 	// Default to LinkTypeNull for loopback, which is common for localhost
