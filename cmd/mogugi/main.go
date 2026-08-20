@@ -45,6 +45,26 @@ var packetLogFilename = ""
 // (every writer nil-checks it) so a failed open never blocks metering.
 var itemDB *itemStore
 
+
+// usageText is the exe's built-in documentation, printed by -h/--help and
+// on unknown flags.
+func usageText() string {
+	return fmt.Sprintf(`mogugi v%s — 瑪奇傷害計量器
+
+用法:
+  mogugi                      即時擷取(預設,自動偵測遊戲連線並開啟瀏覽器)
+  mogugi file <側錄.pcapng>   重放封包側錄檔
+         --realtime           依原始時間間隔重放(預設全速)
+  mogugi list                 列出網路介面
+  mogugi itemcsv [輸出目錄]   匯出物品紀錄 CSV(預設 items_log_export)
+
+參數(可放任意位置):
+  --no-pcap                   不輸出 logs/packet_capture_*.pcapng
+  --no-browser                啟動時不自動開啟瀏覽器
+  -h, --help                  顯示本說明
+`, Version)
+}
+
 func main() {
 	logFilePath := filepath.Join(_logDir, fmt.Sprintf("mogugi_%s.log", util.StartStamp))
 	if err := util.LogInit(logFilePath); err != nil {
@@ -63,7 +83,8 @@ func main() {
 	defer cancel()
 
 	// Flags may sit anywhere on the command line; whatever remains keeps
-	// the positional mode/argument behaviour below.
+	// the positional mode/argument behaviour below. Unknown --flags stop
+	// with the usage text instead of silently starting live capture.
 	rest := make([]string, 0, len(os.Args)-1)
 	for _, a := range os.Args[1:] {
 		switch a {
@@ -71,7 +92,14 @@ func main() {
 			noPcapFile = true
 		case "--no-browser":
 			noBrowser = true
+		case "-h", "--help", "help":
+			fmt.Print(usageText())
+			return
 		default:
+			if strings.HasPrefix(a, "--") && a != "--realtime" {
+				fmt.Printf("未知的參數 %q\n\n%s", a, usageText())
+				return
+			}
 			rest = append(rest, a)
 		}
 	}
