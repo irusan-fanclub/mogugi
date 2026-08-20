@@ -874,11 +874,27 @@ export default defineComponent({
                 canvases.forEach((c, i) => ctx.drawImage(c, 0, titleH + layout.ys[i]));
                 const blob = await new Promise<Blob | null>(res => final.toBlob(res, 'image/png'));
                 if (!blob) throw new Error('canvas.toBlob returned null');
-                await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-                shotMessage.value = '已截圖到剪貼簿';
+                try {
+                    // Clipboard writes need a focused, secure document; the
+                    // 1-3s render window invites both to lapse.
+                    window.focus();
+                    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+                    shotMessage.value = '已截圖到剪貼簿';
+                } catch (clipErr) {
+                    // Fall back to a download so the shot is never lost
+                    // (window unfocused during the render, or a non-localhost
+                    // origin without clipboard access).
+                    console.error('clipboard write failed:', clipErr);
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = `mogugi_${new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-')}.png`;
+                    a.click();
+                    URL.revokeObjectURL(a.href);
+                    shotMessage.value = '無法寫入剪貼簿（視窗失焦或權限不足），已改為下載 PNG';
+                }
             } catch (e) {
                 console.error('screenshot failed:', e);
-                shotMessage.value = '截圖失敗，無法寫入剪貼簿';
+                shotMessage.value = '截圖失敗';
             } finally {
                 listEl.value?.classList.remove('screenshot-capture');
                 capturing.value = false;
