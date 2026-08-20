@@ -7,15 +7,15 @@
                 <v-list-item v-bind="ip">
                     <template v-slot:append>
                         <v-btn v-if="item.raw[0]" icon="mdi-eye-off" size="x-small" variant="text"
-                            density="compact" title="從選單隱藏這個目標"
+                            density="compact" title="隱藏這種怪（同種類一起隱藏）"
                             @click.stop="hideTarget(item.raw[0])" />
                     </template>
                 </v-list-item>
             </template>
-            <template v-slot:append-item v-if="hiddenTargets.size > 0">
+            <template v-slot:append-item v-if="hiddenTargetCount > 0">
                 <v-list-item density="compact" @click="clearHiddenTargets">
                     <span class="text-medium-emphasis" style="font-size: 0.85em;">
-                        已隱藏 {{ hiddenTargets.size }} 個目標，點此恢復
+                        已隱藏 {{ hiddenTargetCount }} 種目標，點此恢復
                     </span>
                 </v-list-item>
             </template>
@@ -721,20 +721,36 @@ export default defineComponent({
             return `${prettyName(actor) ?? id} ${humanReadableNumber(dmg || 0)}`;
         };
         // Manually hidden targets (trash mobs cluttering the menu);
-        // session-only, like aliases.
+        // session-only, like aliases. Hiding one monster hides its whole
+        // race, so twenty goblins vanish with one click; entities whose
+        // race is unknown (placeholders) hide individually.
         const hiddenTargets = ref(new Set<string>());
+        const hiddenTargetRaces = ref(new Set<number>());
+        const isTargetHidden = (id: string) =>
+            hiddenTargets.value.has(id) ||
+            hiddenTargetRaces.value.has(actorOf(id)?.raceId ?? -1);
         const hideTarget = (id: string) => {
-            const next = new Set(hiddenTargets.value);
-            next.add(id);
-            hiddenTargets.value = next;
-            if (targetId.value === id) targetId.value = '';
+            const race = actorOf(id)?.raceId ?? 0;
+            if (race > 0) {
+                const next = new Set(hiddenTargetRaces.value);
+                next.add(race);
+                hiddenTargetRaces.value = next;
+            } else {
+                const next = new Set(hiddenTargets.value);
+                next.add(id);
+                hiddenTargets.value = next;
+            }
+            if (targetId.value && isTargetHidden(targetId.value)) targetId.value = '';
         };
+        const hiddenTargetCount = computed(() =>
+            hiddenTargets.value.size + hiddenTargetRaces.value.size);
         const clearHiddenTargets = () => {
             hiddenTargets.value = new Set();
+            hiddenTargetRaces.value = new Set();
         };
 
         const bossFilter = (list: [string, number][]) => {
-            let out = list.filter(([id]) => !id || !hiddenTargets.value.has(id));
+            let out = list.filter(([id]) => !id || !isTargetHidden(id));
             if (bossOnlyTarget.value) {
                 out = out.filter(([id]) => !id || BOSS_RACE_IDS.has(actorOf(id)?.raceId ?? -1));
             }
@@ -1214,6 +1230,7 @@ export default defineComponent({
             bossOnlyTarget,
             setBossOnlyTarget,
             hiddenTargets,
+            hiddenTargetCount,
             hideTarget,
             clearHiddenTargets,
             hiddenArcana,
