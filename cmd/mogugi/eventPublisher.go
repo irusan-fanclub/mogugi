@@ -1490,7 +1490,12 @@ var bossRaces = map[uint32]string{
 	5225: "布倫塔納斯", 7602: "布倫塔納斯",
 	5218: "雷楠的米勒", 7603: "雷楠的米勒",
 	7615: "雷楠的米勒:悔恨",
-	4856: "木頭人", 4857: "木頭人", 4858: "木頭人", 4859: "木頭人", 4860: "木頭人",
+	// 實戰課程-木頭人 (race table names; likely HP-tiered weakest→strongest)
+	4856: "和浣熊一樣虛弱的木頭人",
+	4857: "和泰赫圖殷之門一樣堅固的木頭人",
+	4858: "和魅魔女王一樣堅固的木頭人",
+	4859: "和伊魯夏一樣堅固的木頭人",
+	4860: "和卡莉亞赫一樣堅固的木頭人",
 }
 
 // handleBGMPlay detects boss-fight start/end by BGM change: switching to

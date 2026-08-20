@@ -433,7 +433,7 @@ func TestDungeonLogSummaryTrainingDummy(t *testing.T) {
 		t.Fatalf("want 1 fight, got %+v", sum)
 	}
 	f := sum.Fights[0]
-	if f.BossRace != 4858 || f.BossName != "木頭人" || f.DurationSec != 60 {
+	if f.BossRace != 4858 || f.BossName != "和魅魔女王一樣堅固的木頭人" || f.DurationSec != 60 {
 		t.Fatalf("dummy fight wrong: %+v", f)
 	}
 	if f.Cleared != nil {
