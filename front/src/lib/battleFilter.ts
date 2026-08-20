@@ -152,6 +152,7 @@ export function distinctOptions(list: BattleRecord[], pick: (v: BattleRecord) =>
 // so this is a presentation-only lookup.
 export const DUNGEON_NAMES: Record<string, string> = {
     brileith: '布里萊赫',
+    training: '實戰課程-木頭人',
 };
 
 // dungeonDisplayName: falls back to the raw code for anything not yet in

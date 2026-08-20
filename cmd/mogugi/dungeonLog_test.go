@@ -406,3 +406,34 @@ func TestDungeonLogFilenameStampFormat(t *testing.T) {
 		t.Fatalf("filename %q lacks yyyymmdd_hhmmss stamp", base)
 	}
 }
+
+// The training grounds (實戰課程-木頭人) summarize the last-fought dummy as
+// the fight.
+func TestDungeonLogSummaryTrainingDummy(t *testing.T) {
+	dir := t.TempDir()
+	dungeonLogDirPath = dir
+
+	var d dungeonLog
+	if err := d.Open("training", "x", "地域磨菇", time.Unix(1786800000, 0), 730017, nil); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	d.Write([]event.IEvent{
+		mkAppear("900", 35753, "dummy", "", 1000),
+		mkAppear("100", 10001, "毛毛", "", 1000),
+		mkDamage("100", "900", 59023, 500, 1000),
+		mkDamage("100", "900", 59023, 500, 1060),
+	})
+	d.Close()
+
+	var sum dungeonLogSummary
+	if err := json.Unmarshal(lastLine(t, dir), &sum); err != nil {
+		t.Fatal(err)
+	}
+	if len(sum.Fights) != 1 {
+		t.Fatalf("want 1 fight, got %+v", sum)
+	}
+	f := sum.Fights[0]
+	if f.BossRace != 35753 || f.BossName != "木頭人" || f.DurationSec != 60 {
+		t.Fatalf("dummy fight wrong: %+v", f)
+	}
+}

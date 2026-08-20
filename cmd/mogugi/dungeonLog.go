@@ -22,6 +22,7 @@ var dungeonLogDirPath = filepath.Join(_logDir, "dungeons")
 // only 布里萊赫 (Brileith); extend the whitelist as needed.
 var dungeonCodes = map[uint32]string{
 	717000: "brileith",
+	730017: "training", // 實戰課程-木頭人
 }
 
 // dungeonLog, on entering a whitelisted dungeon, tees the event stream to
@@ -118,6 +119,9 @@ var stageDefs = []stageDef{
 	{"MRD_1S", []uint32{7600, 7601}},
 	{"MRD_2S", []uint32{7602}},
 	{"MRD_3S", []uint32{7603}},
+	// Training dummy (實戰課程-木頭人): the summary tracks whichever dummy
+	// was fought last, so multi-dummy AOE practice undercounts.
+	{"木頭人", []uint32{35753}},
 }
 
 // battlePlayer is one party member in a fight summary.
