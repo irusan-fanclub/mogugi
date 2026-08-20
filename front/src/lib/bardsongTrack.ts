@@ -19,10 +19,11 @@ export const BARDSONG_CC_ID = 900206;
 //
 // An orphan start whose end notice never arrives (player dead or out of
 // range when the effect lapsed) auto-expires BARDSONG_MAX_SEC after the
-// last refresh — observed real ends land 20-50s after the last start.
+// last refresh — the effect refreshes announcements often enough that
+// 20s of silence means it is gone.
 //
 // Events are assumed already sorted by At (they are pushed in arrival order).
-export const BARDSONG_MAX_SEC = 60;
+export const BARDSONG_MAX_SEC = 20;
 
 export function buildBardsongConditionHistory(events: eventBardsong[]): EntityConditionState[] {
     const out: EntityConditionState[] = [];

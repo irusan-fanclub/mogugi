@@ -41,15 +41,15 @@ describe('buildBardsongConditionHistory', () => {
 
     // A start whose end notice never arrives (player dead/out of range when
     // the effect lapsed) must not paint the buff on forever.
-    it('auto-expires an orphan start 60s after its last refresh', () => {
-        const h = buildBardsongConditionHistory([start(10), start(30), start(500), end(520)]);
-        expect(h.map(v => v.At)).toEqual([10, 90, 500, 520]);
+    it('auto-expires an orphan start 20s after its last refresh', () => {
+        const h = buildBardsongConditionHistory([start(10), start(15), start(500), end(510)]);
+        expect(h.map(v => v.At)).toEqual([10, 35, 500, 510]);
         expect(h[1].List).toEqual([]);
     });
 
     it('auto-expires the tail when the stream ends while present', () => {
         const h = buildBardsongConditionHistory([start(10)]);
-        expect(h.map(v => v.At)).toEqual([10, 70]);
+        expect(h.map(v => v.At)).toEqual([10, 30]);
         expect(h[1].List).toEqual([]);
     });
 
