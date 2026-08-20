@@ -1490,7 +1490,7 @@ var bossRaces = map[uint32]string{
 	5225: "布倫塔納斯", 7602: "布倫塔納斯",
 	5218: "雷楠的米勒", 7603: "雷楠的米勒",
 	7615: "雷楠的米勒:悔恨",
-	35753: "木頭人",
+	4856: "木頭人", 4857: "木頭人", 4858: "木頭人", 4859: "木頭人", 4860: "木頭人",
 }
 
 // handleBGMPlay detects boss-fight start/end by BGM change: switching to

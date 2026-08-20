@@ -193,7 +193,7 @@ export function unhideTrack(id: string) {
 
 // Auto-select boss target in tab 3.
 export const autoSelectBoss = ref(_config.autoSelectBoss);
-export const BOSS_RACE_IDS = new Set([4860, 7600, 7601, 7602, 7603, 7160, 7615, 35753]);
+export const BOSS_RACE_IDS = new Set([4856, 4857, 4858, 4859, 4860, 7600, 7601, 7602, 7603, 7160, 7615]);
 
 export function setAutoSelectBoss(v: boolean) {
     autoSelectBoss.value = v;

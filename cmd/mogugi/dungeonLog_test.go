@@ -418,7 +418,7 @@ func TestDungeonLogSummaryTrainingDummy(t *testing.T) {
 		t.Fatalf("open: %v", err)
 	}
 	d.Write([]event.IEvent{
-		mkAppear("900", 35753, "dummy", "", 1000),
+		mkAppear("900", 4858, "dummy", "", 1000),
 		mkAppear("100", 10001, "毛毛", "", 1000),
 		mkDamage("100", "900", 59023, 500, 1000),
 		mkDamage("100", "900", 59023, 500, 1060),
@@ -433,7 +433,7 @@ func TestDungeonLogSummaryTrainingDummy(t *testing.T) {
 		t.Fatalf("want 1 fight, got %+v", sum)
 	}
 	f := sum.Fights[0]
-	if f.BossRace != 35753 || f.BossName != "木頭人" || f.DurationSec != 60 {
+	if f.BossRace != 4858 || f.BossName != "木頭人" || f.DurationSec != 60 {
 		t.Fatalf("dummy fight wrong: %+v", f)
 	}
 	if f.Cleared != nil {

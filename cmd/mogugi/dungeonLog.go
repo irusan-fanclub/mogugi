@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"sort"
+	"strings"
 	"path/filepath"
 	"sync"
 	"time"
@@ -119,9 +120,13 @@ var stageDefs = []stageDef{
 	{"MRD_1S", []uint32{7600, 7601}},
 	{"MRD_2S", []uint32{7602}},
 	{"MRD_3S", []uint32{7603}},
-	// Training dummy (實戰課程-木頭人): the summary tracks whichever dummy
-	// was fought last, so multi-dummy AOE practice undercounts.
-	{"木頭人", []uint32{35753}},
+	// Training dummies (實戰課程-木頭人): five stands, one fight row each,
+	// so hitting several in one session stays分開統計.
+	{"木頭人1", []uint32{4856}},
+	{"木頭人2", []uint32{4857}},
+	{"木頭人3", []uint32{4858}},
+	{"木頭人4", []uint32{4859}},
+	{"木頭人5", []uint32{4860}},
 }
 
 // battlePlayer is one party member in a fight summary.
@@ -221,7 +226,7 @@ func (a *runAccum) buildFight(def stageDef) *bossFight {
 	cleared := a.downed[primary]
 	// A training dummy never dies; "not cleared" would read as a wipe.
 	var clearedPtr *bool
-	if def.stage != "木頭人" {
+	if !strings.HasPrefix(def.stage, "木頭人") {
 		clearedPtr = &cleared
 	}
 	f := &bossFight{
