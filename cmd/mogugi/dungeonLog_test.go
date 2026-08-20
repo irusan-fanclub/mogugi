@@ -436,4 +436,7 @@ func TestDungeonLogSummaryTrainingDummy(t *testing.T) {
 	if f.BossRace != 35753 || f.BossName != "木頭人" || f.DurationSec != 60 {
 		t.Fatalf("dummy fight wrong: %+v", f)
 	}
+	if f.Cleared != nil {
+		t.Fatalf("a dummy fight must not carry a cleared verdict: %+v", f)
+	}
 }

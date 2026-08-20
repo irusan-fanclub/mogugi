@@ -219,6 +219,11 @@ func (a *runAccum) buildFight(def stageDef) *bossFight {
 	}
 
 	cleared := a.downed[primary]
+	// A training dummy never dies; "not cleared" would read as a wipe.
+	var clearedPtr *bool
+	if def.stage != "木頭人" {
+		clearedPtr = &cleared
+	}
 	f := &bossFight{
 		Stage:        def.stage,
 		BossRace:     a.races[primary],
@@ -227,7 +232,7 @@ func (a *runAccum) buildFight(def stageDef) *bossFight {
 		FightStartAt: start,
 		FightEndAt:   end,
 		DurationSec:  dur,
-		Cleared:      &cleared,
+		Cleared:      clearedPtr,
 	}
 	for who, total := range playerDmg {
 		if !playerRaceSet[a.races[who]] {
