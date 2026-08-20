@@ -1490,7 +1490,8 @@ var bossRaces = map[uint32]string{
 	5225: "布倫塔納斯", 7602: "布倫塔納斯",
 	5218: "雷楠的米勒", 7603: "雷楠的米勒",
 	7615: "雷楠的米勒:悔恨",
-	// 實戰課程-木頭人 (race table names; likely HP-tiered weakest→strongest)
+	// 實戰課程-木頭人: the names grade defense/protection (mimicking those
+	// bosses), not HP — all five share the same life pool.
 	4856: "和浣熊一樣虛弱的木頭人",
 	4857: "和泰赫圖殷之門一樣堅固的木頭人",
 	4858: "和魅魔女王一樣堅固的木頭人",
