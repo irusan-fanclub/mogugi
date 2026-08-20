@@ -127,7 +127,9 @@ var stageDefs = []stageDef{
 	{"木頭人3", []uint32{4858}},
 	{"木頭人4", []uint32{4859}},
 	{"木頭人5", []uint32{4860}},
-	// 實戰課程 boss-practice room (same mission as the dummies).
+	// 雷楠的米勒:悔恨 — a standalone raid (its mission id is still unknown,
+	// so it is not in dungeonCodes yet; this stage row activates the moment
+	// it is whitelisted).
 	{"悔恨", []uint32{7615}},
 }
 
