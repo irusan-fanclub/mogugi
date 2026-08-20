@@ -8,12 +8,16 @@
 # pixels) render natively.
 
 $ErrorActionPreference = "Stop"
-Set-Location (Join-Path $PSScriptRoot "..")
 
-$srcPath = "assets/appicon.png"
-$outDir = "assets/out"
-$icoPath = "$outDir/mogugi.ico"
-$faviconPath = "front/public/favicon.ico"
+# Absolute paths throughout: .NET file APIs ([IO.File]::WriteAllBytes etc.)
+# resolve relative paths against the PROCESS working directory, which
+# Set-Location does not change — a shell started elsewhere used to write to
+# ~ssets\out.
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$srcPath = Join-Path $repoRoot "assets/appicon.png"
+$outDir = Join-Path $repoRoot "assets/out"
+$icoPath = Join-Path $outDir "mogugi.ico"
+$faviconPath = Join-Path $repoRoot "front/public/favicon.ico"
 $sizes = @(16, 32, 48, 64, 128, 256)
 
 if (-not (Test-Path $srcPath)) {
@@ -89,7 +93,7 @@ function New-IcoFile {
     }
 }
 
-$src = [System.Drawing.Image]::FromFile((Resolve-Path $srcPath))
+$src = [System.Drawing.Image]::FromFile($srcPath)
 try {
     $pngs = @{}
     foreach ($s in $sizes) {
