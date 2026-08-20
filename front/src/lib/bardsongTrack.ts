@@ -10,30 +10,54 @@ import type { EntityConditionState } from '@/eventActor';
 // with SYNTHETIC_CC_ICONS's ccId — bardsongTrack.test.ts checks that instead.
 export const BARDSONG_CC_ID = 900206;
 
-// Folds eventBardsong start/end events into a synthetic CC history by depth
-// count, not pairing: unmatched ends are absorbed (depth floors at 0), and an
-// overlapping start does not reset the run's already-open start time.
+// Folds eventBardsong start/end events into a synthetic CC history. The
+// buff is a single non-stacking state: a start turns it on (a repeated
+// start only refreshes — the game re-announces every re-shout and the
+// server sometimes double-sends), a single end turns it off. Depth
+// counting is wrong here: starts are not balanced by ends, and one stray
+// duplicate kept the lane on for the rest of the fight (coverage 100%).
+//
+// An orphan start whose end notice never arrives (player dead or out of
+// range when the effect lapsed) auto-expires BARDSONG_MAX_SEC after the
+// last refresh — observed real ends land 20-50s after the last start.
 //
 // Events are assumed already sorted by At (they are pushed in arrival order).
+export const BARDSONG_MAX_SEC = 60;
+
 export function buildBardsongConditionHistory(events: eventBardsong[]): EntityConditionState[] {
     const out: EntityConditionState[] = [];
-    let depth = 0;
     let present = false;
+    let runStart = 0;
+    let lastRefresh = 0;
+
+    const off = (at: number) => {
+        out.push({ At: at, List: [] });
+        present = false;
+    };
 
     for (const e of events) {
-        depth = e.IsEnd ? Math.max(0, depth - 1) : depth + 1;
-        const nowPresent = depth > 0;
-        if (nowPresent === present) continue; // depth changed but presence did not
-
-        present = nowPresent;
-        out.push({
-            At: e.At,
-            // Unlike a real EntityCondition.At (bumped on every re-enable), this
-            // At is fixed to when the run started and is never refreshed.
-            List: present
-                ? [{ Id: '', At: e.At, CCId: BARDSONG_CC_ID, DisableAt: 0, AttackerId: '', Params: {} }]
-                : [],
-        });
+        if (present && e.At > lastRefresh + BARDSONG_MAX_SEC) {
+            off(lastRefresh + BARDSONG_MAX_SEC);
+        }
+        if (e.IsEnd) {
+            if (present) off(e.At);
+            continue;
+        }
+        lastRefresh = e.At;
+        if (!present) {
+            present = true;
+            runStart = e.At;
+            out.push({
+                At: e.At,
+                // Unlike a real EntityCondition.At (bumped on every re-enable),
+                // this At is fixed to when the run started, never refreshed.
+                List: [{ Id: '', At: runStart, CCId: BARDSONG_CC_ID, DisableAt: 0, AttackerId: '', Params: {} }],
+            });
+        }
+    }
+    if (present) {
+        // Live rebuilds replace this synthetic tail once a real end arrives.
+        off(lastRefresh + BARDSONG_MAX_SEC);
     }
 
     return out;

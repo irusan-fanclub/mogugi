@@ -18,30 +18,39 @@ describe('buildBardsongConditionHistory', () => {
         expect(h[1]).toEqual({ At: 30, List: [] });
     });
 
-    it('leaves an unfinished start as a single present state', () => {
-        const h = buildBardsongConditionHistory([start(10)]);
-        expect(h).toHaveLength(1);
-        expect(h[0].List).toHaveLength(1);
-    });
-
     it('produces nothing for an end with no matching start', () => {
         expect(buildBardsongConditionHistory([end(30)])).toEqual([]);
     });
 
-    it('collapses an overlapping start/end run into one present and one absent state, At pinned to the first start', () => {
-        const h = buildBardsongConditionHistory([start(10), start(20), end(30), end(40)]);
+    // The game re-announces on every re-shout but sends ONE end when the
+    // effect finally lapses, and the server sometimes double-sends a start —
+    // depth counting got permanently stuck present (coverage 100%). The
+    // buff is a single non-stacking state: start = on/refresh, end = off.
+    it('treats repeated starts as refreshes closed by a single end', () => {
+        const h = buildBardsongConditionHistory([start(10), start(20), start(20), end(40)]);
         expect(h).toHaveLength(2);
         expect(h[0].At).toBe(10);
-        expect(h[0].List[0].At).toBe(10);
         expect(h[1]).toEqual({ At: 40, List: [] });
     });
 
-    // Without Math.max(0, ...) this orphan end would leave depth at -1, so the
-    // following start would need two ends to close it instead of one.
-    it('does not let a stray unmatched end poison a later start (depth floor)', () => {
-        const h = buildBardsongConditionHistory([end(10), start(20)]);
-        expect(h).toHaveLength(1);
-        expect(h[0]).toEqual({ At: 20, List: [{ Id: '', At: 20, CCId: BARDSONG_CC_ID, DisableAt: 0, AttackerId: '', Params: {} }] });
+    it('ignores a second end after the state already closed', () => {
+        const h = buildBardsongConditionHistory([start(10), end(30), end(40)]);
+        expect(h).toHaveLength(2);
+        expect(h[1].At).toBe(30);
+    });
+
+    // A start whose end notice never arrives (player dead/out of range when
+    // the effect lapsed) must not paint the buff on forever.
+    it('auto-expires an orphan start 60s after its last refresh', () => {
+        const h = buildBardsongConditionHistory([start(10), start(30), start(500), end(520)]);
+        expect(h.map(v => v.At)).toEqual([10, 90, 500, 520]);
+        expect(h[1].List).toEqual([]);
+    });
+
+    it('auto-expires the tail when the stream ends while present', () => {
+        const h = buildBardsongConditionHistory([start(10)]);
+        expect(h.map(v => v.At)).toEqual([10, 70]);
+        expect(h[1].List).toEqual([]);
     });
 
     // Pins the synthetic id: changing it silently breaks hiddenTrackIds
