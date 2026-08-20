@@ -127,9 +127,8 @@ var stageDefs = []stageDef{
 	{"木頭人3", []uint32{4858}},
 	{"木頭人4", []uint32{4859}},
 	{"木頭人5", []uint32{4860}},
-	// 雷楠的米勒:悔恨 — a standalone raid (its mission id is still unknown,
-	// so it is not in dungeonCodes yet; this stage row activates the moment
-	// it is whitelisted).
+	// 雷楠的米勒:悔恨 — appears inside the brileith mission (717000)
+	// on the MRD_3S base, so the existing whitelist already records it.
 	{"悔恨", []uint32{7615}},
 }
 
