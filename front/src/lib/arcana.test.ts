@@ -7,8 +7,15 @@ import { ARCANA_NAMES } from './arcanaTable';
 const map = { 59004: 2, 59083: 5, 59165: 9 };
 
 describe('deriveArcana', () => {
-    it('returns the arcana of the first recognised skill', () => {
-        expect(deriveArcana([12345, 59004, 59083], map)).toBe(2);
+    // Arcana can be switched between dungeons within one session — the most
+    // recent recognised skill reflects the current arcana.
+    it('returns the arcana of the LAST recognised skill', () => {
+        expect(deriveArcana([12345, 59004, 59083], map)).toBe(5);
+    });
+
+    it('re-detects after a mid-session switch', () => {
+        // whole previous fight as bishop, then one puppeteer skill
+        expect(deriveArcana([59004, 59004, 59004, 59165], map)).toBe(9);
     });
 
     it('returns null when no arcana skill was used', () => {

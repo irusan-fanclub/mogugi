@@ -1,15 +1,16 @@
 import { ARCANA_NAMES } from './arcanaTable';
 
-/** One arcana per character per fight — the requirement rules out switching,
- *  so the first recognised skill settles it. */
 export function arcanaIconUrl(id: number | null): string {
     // id 0 is the "not yet detected" placeholder icon, not a real arcana.
     return `/icons/arcana/icon_arcana_${id ?? 0}.png`;
 }
 
+/** The LAST recognised skill wins: arcana can be switched between dungeons
+ *  within one session, so the most recent arcana skill reflects the current
+ *  one — earlier fights must not pin a stale icon. */
 export function deriveArcana(skillIds: number[], map: Record<number, number>): number | null {
-    for (const id of skillIds) {
-        const a = map[id];
+    for (let i = skillIds.length - 1; i >= 0; i--) {
+        const a = map[skillIds[i]];
         if (a !== undefined) return a;
     }
     return null;
