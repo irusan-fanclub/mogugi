@@ -17,13 +17,14 @@ export const BARDSONG_CC_ID = 900206;
 // counting is wrong here: starts are not balanced by ends, and one stray
 // duplicate kept the lane on for the rest of the fight (coverage 100%).
 //
-// An orphan start whose end notice never arrives (player dead or out of
-// range when the effect lapsed) auto-expires BARDSONG_MAX_SEC after the
-// last refresh — the effect refreshes announcements often enough that
-// 20s of silence means it is gone.
+// The end notice is the authoritative closer: a sustained performance
+// announces once and then goes silent for its whole (unbounded) duration,
+// so a short cap amputates long songs. BARDSONG_MAX_SEC is only a safety
+// net for the rare missed end notice (player dead or out of range when
+// the effect lapsed).
 //
 // Events are assumed already sorted by At (they are pushed in arrival order).
-export const BARDSONG_MAX_SEC = 20;
+export const BARDSONG_MAX_SEC = 300;
 
 export function buildBardsongConditionHistory(events: eventBardsong[]): EntityConditionState[] {
     const out: EntityConditionState[] = [];
