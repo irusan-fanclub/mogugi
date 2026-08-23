@@ -10,114 +10,56 @@ import type { EntityConditionState } from '@/eventActor';
 // with SYNTHETIC_CC_ICONS's ccId — bardsongTrack.test.ts checks that instead.
 export const BARDSONG_CC_ID = 900206;
 
-// 信念值狀態 — on the performer for as long as they are actually playing.
-// The announcement notice fires once per shout and sustained performances
-// go silent, so this condition is the "still performing" signal.
-export const BARDSONG_SUSTAIN_CC = 425;
-
 // Folds eventBardsong start/end events into a synthetic CC history. The
 // buff is a single non-stacking state: a start turns it on (a repeated
 // start only refreshes — the game re-announces every re-shout and the
-// server sometimes double-sends), an end notice turns it off immediately.
+// server sometimes double-sends), a single end turns it off. Depth
+// counting is wrong here: starts are not balanced by ends, and one stray
+// duplicate kept the lane on for the rest of the fight (coverage 100%).
 //
-// sustain intervals (the performers' 信念值狀態 presence, see
-// bardsongSustainIntervals) keep an open run alive through announcement
-// silence; without a fresh signal within BARDSONG_MAX_SEC the run closes
-// that long after the last one — the effect outlives the performance by
-// roughly that much.
+// An orphan start whose end notice never arrives (player dead or out of
+// range when the effect lapsed) auto-expires BARDSONG_MAX_SEC after the
+// last refresh — the effect refreshes announcements often enough that
+// 20s of silence means it is gone.
 //
 // Events are assumed already sorted by At (they are pushed in arrival order).
 export const BARDSONG_MAX_SEC = 20;
 
-export function buildBardsongConditionHistory(
-    events: eventBardsong[],
-    sustain: Array<[number, number]> = [],
-): EntityConditionState[] {
+export function buildBardsongConditionHistory(events: eventBardsong[]): EntityConditionState[] {
     const out: EntityConditionState[] = [];
     let present = false;
-    let lastSignal = 0;
-    const sorted = [...sustain].sort((a, b) => a[0] - b[0]);
+    let runStart = 0;
+    let lastRefresh = 0;
 
     const off = (at: number) => {
         out.push({ At: at, List: [] });
         present = false;
     };
-    // Chain sustain intervals: each one starting within the cap window
-    // extends the covered time to its end (bounded by `until`).
-    const advance = (until: number) => {
-        for (const [s, e] of sorted) {
-            if (s > lastSignal + BARDSONG_MAX_SEC) break;
-            if (e > lastSignal) lastSignal = Math.min(e, until);
-            if (lastSignal >= until) break;
-        }
-    };
 
     for (const e of events) {
-        if (present) {
-            advance(e.At);
-            if (e.At > lastSignal + BARDSONG_MAX_SEC) {
-                off(lastSignal + BARDSONG_MAX_SEC);
-            }
+        if (present && e.At > lastRefresh + BARDSONG_MAX_SEC) {
+            off(lastRefresh + BARDSONG_MAX_SEC);
         }
         if (e.IsEnd) {
             if (present) off(e.At);
             continue;
         }
-        lastSignal = Math.max(lastSignal, e.At);
+        lastRefresh = e.At;
         if (!present) {
             present = true;
+            runStart = e.At;
             out.push({
                 At: e.At,
                 // Unlike a real EntityCondition.At (bumped on every re-enable),
                 // this At is fixed to when the run started, never refreshed.
-                List: [{ Id: '', At: e.At, CCId: BARDSONG_CC_ID, DisableAt: 0, AttackerId: '', Params: {} }],
+                List: [{ Id: '', At: runStart, CCId: BARDSONG_CC_ID, DisableAt: 0, AttackerId: '', Params: {} }],
             });
         }
     }
     if (present) {
-        advance(Number.MAX_SAFE_INTEGER);
         // Live rebuilds replace this synthetic tail once a real end arrives.
-        off(lastSignal + BARDSONG_MAX_SEC);
+        off(lastRefresh + BARDSONG_MAX_SEC);
     }
 
     return out;
-}
-
-type SustainActor = { name: string; conditionHistory: EntityConditionState[] };
-
-// bardsongSustainIntervals: union of the performers' 信念值狀態 presence.
-// Performer names can be composite (character+partner), so an actor matches
-// on the whole name or either side of a '+'. Open intervals clamp to `now`
-// (the latest known time) — the live rebuild extends them naturally.
-export function bardsongSustainIntervals(
-    events: Array<{ Performer: string; IsEnd: boolean }>,
-    actors: SustainActor[],
-    now: number,
-): Array<[number, number]> {
-    const performers = new Set<string>();
-    for (const e of events) {
-        if (!e.IsEnd && e.Performer) performers.add(e.Performer);
-    }
-    const matches = (name: string) => {
-        for (const p of performers) {
-            if (p === name || p.startsWith(name + '+') || p.endsWith('+' + name)) return true;
-        }
-        return false;
-    };
-
-    const out: Array<[number, number]> = [];
-    for (const a of actors) {
-        if (!matches(a.name)) continue;
-        let openAt: number | null = null;
-        for (const state of a.conditionHistory) {
-            const on = state.List.some(c => c.CCId === BARDSONG_SUSTAIN_CC);
-            if (on && openAt === null) openAt = state.At;
-            else if (!on && openAt !== null) {
-                out.push([openAt, state.At]);
-                openAt = null;
-            }
-        }
-        if (openAt !== null) out.push([openAt, now]);
-    }
-    return out.sort((a, b) => a[0] - b[0]);
 }

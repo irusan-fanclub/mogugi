@@ -35,7 +35,7 @@ import { ccIconUrl, ccName } from '@/lib/util';
 import { ccTrackId, PLAYER_SIDE_CC_IDS } from '@/lib/buffTrack';
 import { CC_PARAMS_TOOLTIP } from '@/lib/ccConditionTooltip';
 import { mergeConditionHistories } from '@/lib/mergeConditions';
-import { buildBardsongConditionHistory, bardsongSustainIntervals } from '@/lib/bardsongTrack';
+import { buildBardsongConditionHistory } from '@/lib/bardsongTrack';
 
 type ChartEntity = { name: string, damages: EntityDamage[] };
 
@@ -131,19 +131,6 @@ export default defineComponent({
             return [ccId, ...aliases];
         };
 
-        // The performers' 信念值狀態 keeps sustained performances alive
-        // through announcement silence (the game only announces per shout).
-        const buildBardsongLane = (): EntityConditionState[] => {
-            const events = [...actorManager.value.bardsongEvents];
-            const now = Math.max(
-                events.length ? events[events.length - 1].At : 0,
-                ...props.partyActors.map(a =>
-                    a.conditionHistory.length ? a.conditionHistory[a.conditionHistory.length - 1].At : 0),
-            );
-            const sustain = bardsongSustainIntervals(events, props.partyActors, now);
-            return buildBardsongConditionHistory(events, sustain);
-        };
-
         const mergedHistory = computed((): EntityConditionState[] => {
             // Vue 3.4+ computed short-circuits on Object.is, and the actor
             // pushes _conditionHistory in place — merge always builds a new
@@ -158,7 +145,7 @@ export default defineComponent({
                     history: a.conditionHistory,
                     ccIds: PLAYER_SIDE_CC_IDS,
                 })),
-                { history: buildBardsongLane() },
+                { history: buildBardsongConditionHistory([...actorManager.value.bardsongEvents]) },
             ]);
         });
 

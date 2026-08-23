@@ -1,8 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-    buildBardsongConditionHistory, bardsongSustainIntervals,
-    BARDSONG_CC_ID, BARDSONG_SUSTAIN_CC,
-} from './bardsongTrack';
+import { buildBardsongConditionHistory, BARDSONG_CC_ID } from './bardsongTrack';
 import { ccName } from './util';
 import { eventIdBardsong, type eventBardsong } from '@/protocols';
 
@@ -56,65 +53,11 @@ describe('buildBardsongConditionHistory', () => {
         expect(h[1].List).toEqual([]);
     });
 
-    // Sustained performances announce once and then go silent — the
-    // performer's 信念值狀態 (CC 425) carries the "still playing" signal.
-    it('stays on while a sustain interval covers the silence', () => {
-        const h = buildBardsongConditionHistory([start(10)], [[12, 300]]);
-        expect(h.map(v => v.At)).toEqual([10, 320]);
-    });
-
-    it('chains sustain intervals across gaps under 20s', () => {
-        const h = buildBardsongConditionHistory([start(10)], [[12, 100], [110, 200]]);
-        expect(h.map(v => v.At)).toEqual([10, 220]);
-    });
-
-    it('a sustain gap over 20s still closes the run', () => {
-        const h = buildBardsongConditionHistory([start(10)], [[12, 100], [130, 200]]);
-        expect(h.map(v => v.At)).toEqual([10, 120]);
-    });
-
-    it('an end notice closes immediately even while sustain continues', () => {
-        const h = buildBardsongConditionHistory([start(10), end(50)], [[12, 300]]);
-        expect(h.map(v => v.At)).toEqual([10, 50]);
-    });
-
-    it('sustain before any start does not open the lane', () => {
-        expect(buildBardsongConditionHistory([], [[12, 300]])).toEqual([]);
-    });
-
     // Pins the synthetic id: changing it silently breaks hiddenTrackIds
     // persistence and PLAYER_SIDE_CC_IDS wiring in dpsDebuffChart.vue, and
     // nothing else would catch the drift.
     it('pins BARDSONG_CC_ID', () => {
         expect(BARDSONG_CC_ID).toBe(900206);
-    });
-});
-
-describe('bardsongSustainIntervals', () => {
-    const st = (At: number, on: boolean) => ({
-        At,
-        List: on ? [{ Id: '', At, CCId: BARDSONG_SUSTAIN_CC, DisableAt: 0, AttackerId: '', Params: {} }] : [],
-    });
-
-    it('extracts the performer\'s CC-425 presence intervals by name', () => {
-        const actors = [
-            { name: '毛毛', conditionHistory: [st(10, true), st(50, false), st(70, true)] },
-            { name: '圓圓', conditionHistory: [st(20, true), st(30, false)] },
-        ];
-        const evs = [{ ...start(10), Performer: '毛毛' }];
-        expect(bardsongSustainIntervals(evs, actors, 100)).toEqual([[10, 50], [70, 100]]);
-    });
-
-    it('matches a composite performer name (character+partner)', () => {
-        const actors = [{ name: '安黛莉', conditionHistory: [st(10, true), st(40, false)] }];
-        const evs = [{ ...start(10), Performer: '我是新手哈哈+安黛莉' }];
-        expect(bardsongSustainIntervals(evs, actors, 100)).toEqual([[10, 40]]);
-    });
-
-    it('ignores actors who never performed', () => {
-        const actors = [{ name: '圓圓', conditionHistory: [st(10, true), st(40, false)] }];
-        const evs = [{ ...start(10), Performer: '毛毛' }];
-        expect(bardsongSustainIntervals(evs, actors, 100)).toEqual([]);
     });
 });
 
