@@ -20,6 +20,8 @@ export const eventIdSkillUse = 17;
 export const eventIdSkillPrepareStart = 18;
 export const eventIdSkillStop = 19;
 export const eventIdMaxLife = 20;
+// eventIdEntityDown = 21 exists on the backend but has no frontend handler.
+export const eventIdCaptureStatus = 22;
 
 export const eventIdMessageBox = -1;
 export const eventIdSessionReset = -2;
@@ -167,6 +169,16 @@ export type eventSkillStop = eventBase & {
 export type eventMaxLife = eventBase & {
     EventId: 20;
     MaxLife: number;
+}
+
+/** Live capture health from the connection watchdog; LastPacketAt is 0 if
+ *  no reader has ever been installed. */
+export type eventCaptureStatus = eventBase & {
+    EventId: 22;
+    NpcapOk: boolean;
+    GameDetected: boolean;
+    Capturing: boolean;
+    LastPacketAt: number;
 }
 
 export type eventMessageBox = eventBase & {

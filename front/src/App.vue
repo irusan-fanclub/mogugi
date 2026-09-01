@@ -5,9 +5,16 @@
         <v-sheet width="100svw" class="d-flex">
             <span style="text-wrap-mode: nowrap;">mogugi <span style="opacity:0.5; font-size:0.85em;">v{{ appVersion }}</span><span v-if="licenseUser" style="opacity:0.6; font-size:0.85em;"> · {{ licenseUser }}</span><span v-if="ownerName" style="opacity:0.6; font-size:0.85em;"> · 當前角色:{{ ownerName }}</span><template v-if="isStandalone">
                 <v-icon icon="mdi-check" color="success" />standalone
-            </template><template v-else>, api
-                <span v-if="socketConnected"><v-icon icon="mdi-check" color="success" />connected</span>
-                <span v-else><v-icon icon="mdi-close" color="error" />disconnected</span>
+            </template><template v-else>
+                <span class="ml-2" style="font-size:0.85em;">
+                    <v-icon :icon="socketConnected ? 'mdi-check' : 'mdi-close'" :color="socketConnected ? 'success' : 'error'" />後端 {{ socketConnected ? '已連線' : '未連線' }}
+                </span>
+                <span class="ml-2" :style="{ fontSize: '0.85em', opacity: socketConnected ? 1 : 0.4 }">
+                    <template v-if="!captureStatus"><v-icon icon="mdi-help-circle-outline" color="grey" />遊戲 狀態未知</template>
+                    <template v-else-if="captureStatus.capturing"><v-icon icon="mdi-check" color="success" />遊戲 擷取中</template>
+                    <template v-else-if="captureStatus.gameDetected"><v-icon icon="mdi-dots-horizontal" color="warning" />遊戲 等待封包</template>
+                    <template v-else><v-icon icon="mdi-close" color="error" />遊戲 未偵測</template>
+                </span>
             </template></span>
             <span>
 
@@ -82,27 +89,7 @@
         </v-tabs-window-item>
 
         <v-tabs-window-item value="about">
-            <v-sheet class="pa-6" style="max-width: 640px;">
-                <div class="text-h5 mb-4">mogugi <span style="opacity:0.5; font-size:0.7em;">v{{ appVersion }}</span></div>
-                <div v-if="appTagline" class="mb-4" style="opacity:0.7; font-style: italic;">{{ appTagline }}</div>
-
-                <div class="mb-4">
-                    <div class="text-subtitle-2 mb-1" style="opacity:0.6;">中文</div>
-                    <p>本專案 fork 自 <strong>prilus/dilmatulgi</strong>，並在其基礎上進行二次開發。</p>
-                    <p style="opacity:0.7; font-size:0.9em;">在此感謝原作者 prilus。</p>
-                </div>
-
-                <div>
-                    <div class="text-subtitle-2 mb-1" style="opacity:0.6;">English</div>
-                    <p>This project is forked from <strong>prilus/dilmatulgi</strong> and further developed on top of it.</p>
-                    <p style="opacity:0.7; font-size:0.9em;">Thanks to the original author, prilus.</p>
-                </div>
-
-                <div class="mt-4">
-                    <v-btn href="https://discord.gg/pJQsN4HgsD" target="_blank" rel="noopener noreferrer"
-                        variant="tonal" size="small" prepend-icon="mdi-discord">加入 Discord</v-btn>
-                </div>
-            </v-sheet>
+            <about />
         </v-tabs-window-item>
     </v-tabs-window>
 
@@ -142,8 +129,8 @@ import { defineComponent, onMounted, inject, provide, ref } from "vue";
 
 import { useDialogStack } from '@/lib/useDialogStack';
 import { SocketClient } from '@/lib/socketClient';
-import { eventBase, eventIdMessageBox, eventIdSessionReset, eventIdOwnerCharacter, eventMessageBox, eventSessionReset, eventOwnerCharacter } from "./protocols";
-import { clearTimeRange } from '@/store';
+import { eventBase, eventIdMessageBox, eventIdSessionReset, eventIdOwnerCharacter, eventIdCaptureStatus, eventMessageBox, eventSessionReset, eventOwnerCharacter, eventCaptureStatus } from "./protocols";
+import { clearTimeRange, captureStatus } from '@/store';
 
 import ApplyDamageBySkillComponent from '@/components/applyDamageBySkill.vue';
 import EntityListComponent from "./components/entityList.vue";
@@ -152,6 +139,7 @@ import BattleRecordsComponent from "./components/battleRecords.vue";
 import ConfigDialogComponent from "./components/configDialog.vue";
 import FloatingWindowComponent from "./components/subComponents/floatingWindow.vue";
 import LicenseGateComponent from "./components/licenseGate.vue";
+import AboutComponent from "./components/about.vue";
 
 export default defineComponent({
     name: "App",
@@ -163,6 +151,7 @@ export default defineComponent({
         ConfigDialog: ConfigDialogComponent,
         FloatingWindow: FloatingWindowComponent,
         LicenseGate: LicenseGateComponent,
+        About: AboutComponent,
     },
     setup() {
         const isLoading = inject('isLoading');
@@ -229,7 +218,6 @@ export default defineComponent({
             }, true);
         });
         const appVersion = __APP_VERSION__;
-        const appTagline = __APP_TAGLINE__;
 
         const socket = new SocketClient(`/ws`);
         socket.onConnect = isConnected => socketConnected.value = isConnected;
@@ -245,6 +233,17 @@ export default defineComponent({
                 if (event.EventId === eventIdOwnerCharacter) {
                     const e = event as eventOwnerCharacter;
                     ownerName.value = e.Name;
+                    continue;
+                }
+
+                if (event.EventId === eventIdCaptureStatus) {
+                    const e = event as eventCaptureStatus;
+                    captureStatus.value = {
+                        npcapOk: e.NpcapOk,
+                        gameDetected: e.GameDetected,
+                        capturing: e.Capturing,
+                        lastPacketAt: e.LastPacketAt,
+                    };
                     continue;
                 }
 
@@ -521,10 +520,10 @@ export default defineComponent({
             onActivated,
 
             socketConnected,
+            captureStatus,
             msgBoxOpen,
             msgBoxText,
             appVersion,
-            appTagline,
             resetSnackbar,
             resetSnackbarText,
             forceRefresh,

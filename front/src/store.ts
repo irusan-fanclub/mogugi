@@ -45,6 +45,17 @@ export const appEvent = ref(new EventTarget());
 export const dcManager = shallowRef(new DamageCollectorManager());
 export const actorManager = shallowRef(new ActorManager(dcManager.value as DamageCollectorManager));
 
+// Live packet-capture status, fed by the backend watchdog over the socket
+// (App.vue) and seeded via GET /api/status as a fallback (about.vue).
+// null means "not known yet" — never overload it with all-false.
+export interface CaptureStatus {
+    npcapOk: boolean;
+    gameDetected: boolean;
+    capturing: boolean;
+    lastPacketAt: number;
+}
+export const captureStatus = ref<CaptureStatus | null>(null);
+
 export const timeRangeMin = ref<number | null>(null);
 export const timeRangeMax = ref<number | null>(null);
 export const hasTimeRange = computed(() => timeRangeMin.value !== null && timeRangeMax.value !== null);
