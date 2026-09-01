@@ -194,10 +194,10 @@ func mkDamage(attacker, target string, skill uint16, dmg float32, at int64) *eve
 	}
 }
 
-func mkCCEnable(id string, ccId uint32, params map[string]string, at int64) *event.EventCharacterConditionEnable {
+func mkCCEnable(id string, ccId uint32, params map[string]string, at, disableAt int64) *event.EventCharacterConditionEnable {
 	return &event.EventCharacterConditionEnable{
 		EventBase: event.EventBase{EventId: event.EventIdCharacterConditionEnable, At: at, Id: id},
-		CCId:      ccId, Params: params,
+		CCId:      ccId, DisableAt: disableAt, Params: params,
 	}
 }
 
@@ -500,16 +500,17 @@ func TestDungeonLogSummaryMusicBuffMaxPctWins(t *testing.T) {
 	d.Write([]event.IEvent{
 		mkAppear("900", 7603, "b", "", 1000),
 		mkAppear("100", 10001, "毛毛", "", 1000),
-		// before the fight window: must be ignored even though its pct is highest
-		mkCCEnable("100", 680, map[string]string{"MCMBAMIN": "99"}, 500),
+		// before the fight window, DisableAt unset (0): must be ignored even
+		// though its pct is highest (falls back to the in-window rule)
+		mkCCEnable("100", 680, map[string]string{"MCMBAMIN": "99"}, 500, 0),
 		mkDamage("100", "900", 59023, 500, 1000),
 		// inside the window: two different songs, the higher pct (680@8) wins
-		mkCCEnable("100", 192, map[string]string{"LSMA": "5"}, 1020),
-		mkCCEnable("100", 680, map[string]string{"MCMBAMIN": "not-a-number"}, 1030), // unparsable, ignored
-		mkCCEnable("100", 680, map[string]string{"MCMBAMIN": "8"}, 1050),
+		mkCCEnable("100", 192, map[string]string{"LSMA": "5"}, 1020, 0),
+		mkCCEnable("100", 680, map[string]string{"MCMBAMIN": "not-a-number"}, 1030, 0), // unparsable, ignored
+		mkCCEnable("100", 680, map[string]string{"MCMBAMIN": "8"}, 1050, 0),
 		mkDamage("100", "900", 59023, 500, 1100),
 		// after the fight window: must be ignored
-		mkCCEnable("100", 680, map[string]string{"MCMBAMIN": "50"}, 5000),
+		mkCCEnable("100", 680, map[string]string{"MCMBAMIN": "50"}, 5000, 0),
 	})
 	d.Close()
 
@@ -523,6 +524,99 @@ func TestDungeonLogSummaryMusicBuffMaxPctWins(t *testing.T) {
 	p := sum.Fights[0].Players[0]
 	if p.MusicCcId != 680 || p.MusicPct != 8 {
 		t.Fatalf("music wrong: %+v", p)
+	}
+}
+
+// A pre-fight enable still counts when DisableAt overlaps the fight
+// window (the real bug: CC680 enabled 198s before first damage, with
+// DisableAt covering the whole fight, yet MusicPct stayed empty).
+func TestDungeonLogSummaryMusicBuffPreWindowOverlapCounted(t *testing.T) {
+	dir := t.TempDir()
+	dungeonLogDirPath = dir
+
+	var d dungeonLog
+	if err := d.Open("brileith", "MRD_3S", "地域磨菇", time.Unix(1786800000, 0), 717000, "", nil); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	d.Write([]event.IEvent{
+		mkAppear("900", 7603, "b", "", 1000),
+		mkAppear("100", 10001, "毛毛", "", 1000),
+		// enabled well before the fight, but disables long after it ends
+		mkCCEnable("100", 680, map[string]string{"MCMBAMIN": "20"}, 802, 1500),
+		mkDamage("100", "900", 59023, 500, 1000),
+		mkDamage("100", "900", 59023, 500, 1100),
+	})
+	d.Close()
+
+	var sum dungeonLogSummary
+	if err := json.Unmarshal(lastLine(t, dir), &sum); err != nil {
+		t.Fatal(err)
+	}
+	p := sum.Fights[0].Players[0]
+	if p.MusicCcId != 680 || p.MusicPct != 20 {
+		t.Fatalf("pre-window buff overlapping the fight must count: %+v", p)
+	}
+}
+
+// A pre-window enable whose DisableAt still ends before the fight starts
+// never overlaps it, so it must not count.
+func TestDungeonLogSummaryMusicBuffDisableEndsBeforeFightNotCounted(t *testing.T) {
+	dir := t.TempDir()
+	dungeonLogDirPath = dir
+
+	var d dungeonLog
+	if err := d.Open("brileith", "MRD_3S", "地域磨菇", time.Unix(1786800000, 0), 717000, "", nil); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	d.Write([]event.IEvent{
+		mkAppear("900", 7603, "b", "", 1000),
+		mkAppear("100", 10001, "毛毛", "", 1000),
+		// expired well before the fight starts: no overlap
+		mkCCEnable("100", 680, map[string]string{"MCMBAMIN": "20"}, 500, 900),
+		mkDamage("100", "900", 59023, 500, 1000),
+		mkDamage("100", "900", 59023, 500, 1100),
+	})
+	d.Close()
+
+	var sum dungeonLogSummary
+	if err := json.Unmarshal(lastLine(t, dir), &sum); err != nil {
+		t.Fatal(err)
+	}
+	p := sum.Fights[0].Players[0]
+	if p.MusicCcId != 0 || p.MusicPct != 0 {
+		t.Fatalf("expired-before-fight buff must not count: %+v", p)
+	}
+}
+
+// DisableAt == 0 (unknown duration) falls back to the old in-window rule:
+// an out-of-window observation is ignored even if its pct is highest.
+func TestDungeonLogSummaryMusicBuffDisableAtZeroFallsBackToWindow(t *testing.T) {
+	dir := t.TempDir()
+	dungeonLogDirPath = dir
+
+	var d dungeonLog
+	if err := d.Open("brileith", "MRD_3S", "地域磨菇", time.Unix(1786800000, 0), 717000, "", nil); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	d.Write([]event.IEvent{
+		mkAppear("900", 7603, "b", "", 1000),
+		mkAppear("100", 10001, "毛毛", "", 1000),
+		// higher pct but before the window with no DisableAt: ignored
+		mkCCEnable("100", 680, map[string]string{"MCMBAMIN": "99"}, 500, 0),
+		// inside the window with no DisableAt: counted
+		mkCCEnable("100", 680, map[string]string{"MCMBAMIN": "20"}, 1050, 0),
+		mkDamage("100", "900", 59023, 500, 1000),
+		mkDamage("100", "900", 59023, 500, 1100),
+	})
+	d.Close()
+
+	var sum dungeonLogSummary
+	if err := json.Unmarshal(lastLine(t, dir), &sum); err != nil {
+		t.Fatal(err)
+	}
+	p := sum.Fights[0].Players[0]
+	if p.MusicCcId != 680 || p.MusicPct != 20 {
+		t.Fatalf("DisableAt=0 must fall back to the in-window rule: %+v", p)
 	}
 }
 

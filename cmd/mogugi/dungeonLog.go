@@ -41,10 +41,12 @@ type dungeonLog struct {
 var musicHeadlineKey = map[uint32]string{680: "MCMBAMIN", 192: "LSMA"}
 
 // musicObs is one recorded music-buff (CC 680/192) enable for an entity.
+// DisableAt is 0 when the enable event carried no known expiry.
 type musicObs struct {
-	At   int64
-	CCId uint32
-	Pct  float64
+	At        int64
+	DisableAt int64
+	CCId      uint32
+	Pct       float64
 }
 
 // runAccum aggregates the run's events so Close can append a whole-run
@@ -129,17 +131,24 @@ func (a *runAccum) observe(e event.IEvent) {
 		if err != nil {
 			return
 		}
-		a.music[v.Id] = append(a.music[v.Id], musicObs{At: v.At, CCId: v.CCId, Pct: pct})
+		a.music[v.Id] = append(a.music[v.Id], musicObs{At: v.At, DisableAt: v.DisableAt, CCId: v.CCId, Pct: pct})
 	}
 }
 
 // bestMusic returns the highest music-buff pct (and its CCId) recorded for
-// id within [start, end] (both ends inclusive); zero value if none.
+// id whose interval overlaps [start, end]; zero value if none. DisableAt
+// unset (0) falls back to requiring At itself inside the window.
 func (a *runAccum) bestMusic(id string, start, end int64) (uint32, float64) {
 	var ccId uint32
 	var pct float64
 	for _, m := range a.music[id] {
-		if m.At < start || m.At > end || m.Pct <= pct {
+		var overlaps bool
+		if m.DisableAt != 0 {
+			overlaps = m.At <= end && m.DisableAt >= start
+		} else {
+			overlaps = m.At >= start && m.At <= end
+		}
+		if !overlaps || m.Pct <= pct {
 			continue
 		}
 		ccId, pct = m.CCId, m.Pct
@@ -210,8 +219,10 @@ type dungeonLogSummary struct {
 	Fights         []bossFight `json:"Fights,omitempty"`
 }
 
-// v3 adds per-player music-buff (MusicCcId/MusicPct).
-const summaryVersion = 3
+// v4: bestMusic now counts an observation whose DisableAt overlaps the
+// fight window, not just enables that landed inside it — a buff enabled
+// well before the fight but still active throughout was being missed.
+const summaryVersion = 4
 
 // buildSummary derives one fight per stage that saw boss damage; nil when
 // no stage did.
