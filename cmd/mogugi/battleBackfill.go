@@ -46,6 +46,8 @@ func decodeDungeonEvent(line []byte) event.IEvent {
 		v = &event.EventMaxLife{}
 	case event.EventIdEntityDown:
 		v = &event.EventEntityDown{}
+	case event.EventIdCharacterConditionEnable:
+		v = &event.EventCharacterConditionEnable{}
 	default:
 		return nil
 	}

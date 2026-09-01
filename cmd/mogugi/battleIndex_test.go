@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -121,7 +122,7 @@ func TestScanBattleRecordsReadsSummaryTail(t *testing.T) {
 			`{"EventId":1}`+"\n"+
 			`{"Kind":"summary","SummaryVersion":2,"Fights":[`+
 			`{"Stage":"MRD_1S","BossRace":7601,"BossName":"佩塔克","DurationSec":100,"PartySize":2,"Cleared":true,"Players":[`+
-			`{"EntityId":"100","Name":"毛毛","Arcana":9,"Damage":6000,"Dps":60},`+
+			`{"EntityId":"100","Name":"毛毛","Arcana":9,"Damage":6000,"Dps":60,"MusicCcId":680,"MusicPct":8},`+
 			`{"EntityId":"101","Name":"圓圓","Arcana":1,"Damage":3000,"Dps":30}]},`+
 			`{"Stage":"MRD_2S","BossRace":7602,"BossName":"布倫塔納斯","DurationSec":200,"PartySize":2,"Players":[`+
 			`{"EntityId":"100","Name":"毛毛","Arcana":9,"Damage":9000,"Dps":45}]}]}`+"\n")
@@ -151,15 +152,22 @@ func TestScanBattleRecordsReadsSummaryTail(t *testing.T) {
 	if f1.OwnerDps != 60 || f1.OwnerArcana != 9 || f2.OwnerDps != 45 {
 		t.Fatalf("owner columns wrong: %+v %+v", f1, f2)
 	}
+	if f1.MusicCcId != 680 || f1.MusicPct != 8 {
+		t.Fatalf("owner music columns wrong: %+v", f1)
+	}
+	if f2.MusicCcId != 0 || f2.MusicPct != 0 {
+		t.Fatalf("fight2 must have no music (owner player carries none): %+v", f2)
+	}
 	if without.Fights != nil {
 		t.Fatalf("summary-less record must have no fights: %+v", without)
 	}
 }
 
 
-// Backfill: summary-less closed files get a v2 summary appended (Cleared
-// unknown without down events); v1 summaries are replaced in place; v2
-// files and the currently-open file are untouched.
+// Backfill: summary-less closed files get a current-version summary
+// appended (Cleared unknown without down events); stale (v1 / outdated
+// version) summaries are replaced in place; files already at the current
+// version and the currently-open file are untouched.
 func TestBackfillSummaries(t *testing.T) {
 	dir := t.TempDir()
 	dungeonLogDirPath = dir
@@ -172,8 +180,8 @@ func TestBackfillSummaries(t *testing.T) {
 	writeFile(t, dir, "open.ndjson", old)
 	writeFile(t, dir, "v1.ndjson", old+
 		`{"Kind":"summary","BossRace":7603,"BossName":"雷楠的米勒","DurationSec":5,"PartySize":0}`+"\n")
-	writeFile(t, dir, "v2.ndjson", old+
-		`{"Kind":"summary","SummaryVersion":2,"Fights":[{"Stage":"MRD_3S","BossRace":7603,"BossName":"雷楠的米勒","DurationSec":7,"PartySize":1,"Players":[]}]}`+"\n")
+	writeFile(t, dir, "current.ndjson", old+
+		fmt.Sprintf(`{"Kind":"summary","SummaryVersion":%d,"Fights":[{"Stage":"MRD_3S","BossRace":7603,"BossName":"雷楠的米勒","DurationSec":7,"PartySize":1,"Players":[]}]}`, summaryVersion)+"\n")
 
 	setOpenDungeonFile("open.ndjson")
 	defer setOpenDungeonFile("")
@@ -204,8 +212,8 @@ func TestBackfillSummaries(t *testing.T) {
 	if byFile["open.ndjson"].Fights != nil {
 		t.Fatal("open file must not be backfilled")
 	}
-	if got := byFile["v2.ndjson"]; len(got.Fights) != 1 || got.Fights[0].DurationSec != 7 {
-		t.Fatalf("v2 file must be untouched: %+v", got)
+	if got := byFile["current.ndjson"]; len(got.Fights) != 1 || got.Fights[0].DurationSec != 7 {
+		t.Fatalf("current-version file must be untouched: %+v", got)
 	}
 	// Idempotent: second run changes nothing.
 	sizes := func() map[string]int64 {

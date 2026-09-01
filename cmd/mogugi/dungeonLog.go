@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"path/filepath"
 	"sync"
@@ -35,6 +36,17 @@ type dungeonLog struct {
 	accum *runAccum
 }
 
+// musicHeadlineKey: per-song CCId -> its headline-magnitude Params key,
+// matching front/src/lib/musicBuff.ts. The two songs are mutually exclusive.
+var musicHeadlineKey = map[uint32]string{680: "MCMBAMIN", 192: "LSMA"}
+
+// musicObs is one recorded music-buff (CC 680/192) enable for an entity.
+type musicObs struct {
+	At   int64
+	CCId uint32
+	Pct  float64
+}
+
 // runAccum aggregates the run's events so Close can append a whole-run
 // summary line without re-reading the file.
 type runAccum struct {
@@ -49,6 +61,8 @@ type runAccum struct {
 	firstHit map[string]int64
 	lastHit  map[string]int64
 	skills   map[string]map[uint16]bool
+	// music[entityId] — every parsed music-buff enable seen for that entity.
+	music map[string][]musicObs
 }
 
 func newRunAccum(tier string) *runAccum {
@@ -63,6 +77,7 @@ func newRunAccum(tier string) *runAccum {
 		firstHit: map[string]int64{},
 		lastHit:  map[string]int64{},
 		skills:   map[string]map[uint16]bool{},
+		music:    map[string][]musicObs{},
 	}
 }
 
@@ -105,7 +120,31 @@ func (a *runAccum) observe(e event.IEvent) {
 			a.skills[who] = sk
 		}
 		sk[v.SkillId] = true
+	case *event.EventCharacterConditionEnable:
+		key, ok := musicHeadlineKey[v.CCId]
+		if !ok {
+			return
+		}
+		pct, err := strconv.ParseFloat(v.Params[key], 64)
+		if err != nil {
+			return
+		}
+		a.music[v.Id] = append(a.music[v.Id], musicObs{At: v.At, CCId: v.CCId, Pct: pct})
 	}
+}
+
+// bestMusic returns the highest music-buff pct (and its CCId) recorded for
+// id within [start, end] (both ends inclusive); zero value if none.
+func (a *runAccum) bestMusic(id string, start, end int64) (uint32, float64) {
+	var ccId uint32
+	var pct float64
+	for _, m := range a.music[id] {
+		if m.At < start || m.At > end || m.Pct <= pct {
+			continue
+		}
+		ccId, pct = m.CCId, m.Pct
+	}
+	return ccId, pct
 }
 
 // stageDefs: one whole run traverses every stage in one file (1S/2S/3S are
@@ -139,6 +178,10 @@ type battlePlayer struct {
 	Arcana   int     `json:"Arcana"` // 0 = unknown
 	Damage   int64   `json:"Damage"` // vs this fight's boss (all phases)
 	Dps      float64 `json:"Dps"`
+	// MusicCcId/MusicPct: highest music-buff (CC 680/192) pct seen for this
+	// player during the fight window; both zero (omitted) if none.
+	MusicCcId uint32  `json:"MusicCcId,omitempty"`
+	MusicPct  float64 `json:"MusicPct,omitempty"`
 }
 
 // bossFight is one stage's boss fight within a run.
@@ -167,7 +210,8 @@ type dungeonLogSummary struct {
 	Fights         []bossFight `json:"Fights,omitempty"`
 }
 
-const summaryVersion = 2
+// v3 adds per-player music-buff (MusicCcId/MusicPct).
+const summaryVersion = 3
 
 // buildSummary derives one fight per stage that saw boss damage; nil when
 // no stage did.
@@ -253,12 +297,15 @@ func (a *runAccum) buildFight(def stageDef) *bossFight {
 				break
 			}
 		}
+		musicCcId, musicPct := a.bestMusic(who, start, end)
 		f.Players = append(f.Players, battlePlayer{
-			EntityId: who,
-			Name:     a.names[who],
-			Arcana:   arcana,
-			Damage:   int64(math.Round(total)),
-			Dps:      math.Round(total/divisor*100) / 100,
+			EntityId:  who,
+			Name:      a.names[who],
+			Arcana:    arcana,
+			Damage:    int64(math.Round(total)),
+			Dps:       math.Round(total/divisor*100) / 100,
+			MusicCcId: musicCcId,
+			MusicPct:  musicPct,
 		})
 	}
 	sort.Slice(f.Players, func(i, j int) bool { return f.Players[i].Dps > f.Players[j].Dps })

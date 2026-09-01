@@ -23,6 +23,8 @@ type BattleFight struct {
 	PartySize    int            `json:"partySize"`
 	OwnerDps     float64        `json:"ownerDps,omitempty"`
 	OwnerArcana  int            `json:"ownerArcana,omitempty"`
+	MusicCcId    uint32         `json:"musicCcId,omitempty"`
+	MusicPct     float64        `json:"musicPct,omitempty"`
 	Players      []battlePlayer `json:"players"`
 }
 
@@ -130,6 +132,8 @@ func readBattleRecord(dir string, entry os.DirEntry) (BattleRecord, bool) {
 				if p.Name == meta.Player {
 					bf.OwnerDps = p.Dps
 					bf.OwnerArcana = p.Arcana
+					bf.MusicCcId = p.MusicCcId
+					bf.MusicPct = p.MusicPct
 					break
 				}
 			}

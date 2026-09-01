@@ -194,6 +194,13 @@ func mkDamage(attacker, target string, skill uint16, dmg float32, at int64) *eve
 	}
 }
 
+func mkCCEnable(id string, ccId uint32, params map[string]string, at int64) *event.EventCharacterConditionEnable {
+	return &event.EventCharacterConditionEnable{
+		EventBase: event.EventBase{EventId: event.EventIdCharacterConditionEnable, At: at, Id: id},
+		CCId:      ccId, Params: params,
+	}
+}
+
 func lastLine(t *testing.T, dir string) []byte {
 	t.Helper()
 	names, _ := filepath.Glob(filepath.Join(dir, "*.ndjson"))
@@ -252,7 +259,7 @@ func TestDungeonLogSummaryPerStageFights(t *testing.T) {
 	if err := json.Unmarshal(lastLine(t, dir), &sum); err != nil {
 		t.Fatalf("summary unmarshal: %v", err)
 	}
-	if sum.Kind != "summary" || sum.SummaryVersion != 2 || len(sum.Fights) != 2 {
+	if sum.Kind != "summary" || sum.SummaryVersion != summaryVersion || len(sum.Fights) != 2 {
 		t.Fatalf("summary shape wrong: %+v", sum)
 	}
 
@@ -476,5 +483,69 @@ func TestDungeonLogSummaryRegretPractice(t *testing.T) {
 	}
 	if f.Cleared == nil || !*f.Cleared {
 		t.Fatalf("regret fight must carry a cleared verdict: %+v", f)
+	}
+}
+
+// Music buffs (CC 680 戰場的序曲 / 192 活潑板) inside the fight window pick the
+// highest pct seen, across either song; events outside the window are
+// ignored, and an unparsable magnitude never wins.
+func TestDungeonLogSummaryMusicBuffMaxPctWins(t *testing.T) {
+	dir := t.TempDir()
+	dungeonLogDirPath = dir
+
+	var d dungeonLog
+	if err := d.Open("brileith", "MRD_3S", "地域磨菇", time.Unix(1786800000, 0), 717000, "", nil); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	d.Write([]event.IEvent{
+		mkAppear("900", 7603, "b", "", 1000),
+		mkAppear("100", 10001, "毛毛", "", 1000),
+		// before the fight window: must be ignored even though its pct is highest
+		mkCCEnable("100", 680, map[string]string{"MCMBAMIN": "99"}, 500),
+		mkDamage("100", "900", 59023, 500, 1000),
+		// inside the window: two different songs, the higher pct (680@8) wins
+		mkCCEnable("100", 192, map[string]string{"LSMA": "5"}, 1020),
+		mkCCEnable("100", 680, map[string]string{"MCMBAMIN": "not-a-number"}, 1030), // unparsable, ignored
+		mkCCEnable("100", 680, map[string]string{"MCMBAMIN": "8"}, 1050),
+		mkDamage("100", "900", 59023, 500, 1100),
+		// after the fight window: must be ignored
+		mkCCEnable("100", 680, map[string]string{"MCMBAMIN": "50"}, 5000),
+	})
+	d.Close()
+
+	var sum dungeonLogSummary
+	if err := json.Unmarshal(lastLine(t, dir), &sum); err != nil {
+		t.Fatal(err)
+	}
+	if len(sum.Fights) != 1 || len(sum.Fights[0].Players) != 1 {
+		t.Fatalf("want 1 fight with 1 player, got %+v", sum)
+	}
+	p := sum.Fights[0].Players[0]
+	if p.MusicCcId != 680 || p.MusicPct != 8 {
+		t.Fatalf("music wrong: %+v", p)
+	}
+}
+
+// A player with no recorded music events must omit MusicCcId/MusicPct from
+// the JSON entirely (omitempty), not serialize zero values.
+func TestDungeonLogSummaryMusicBuffOmittedWhenAbsent(t *testing.T) {
+	dir := t.TempDir()
+	dungeonLogDirPath = dir
+
+	var d dungeonLog
+	if err := d.Open("brileith", "MRD_3S", "地域磨菇", time.Unix(1786800000, 0), 717000, "", nil); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	d.Write([]event.IEvent{
+		mkAppear("900", 7603, "b", "", 1000),
+		mkAppear("100", 10001, "毛毛", "", 1000),
+		mkDamage("100", "900", 59023, 500, 1000),
+		mkDamage("100", "900", 59023, 500, 1100),
+	})
+	d.Close()
+
+	line := lastLine(t, dir)
+	if strings.Contains(string(line), "MusicCcId") || strings.Contains(string(line), "MusicPct") {
+		t.Fatalf("music fields must be omitted when absent: %s", line)
 	}
 }
