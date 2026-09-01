@@ -11,10 +11,16 @@
                 label="通關" hide-details density="compact" clearable style="width: 110px" />
             <v-combobox v-model="pageSizeInput" :items="pageSizeChoices" label="顯示列數"
                 hide-details density="compact" style="width: 90px" />
-            <v-text-field v-model="fromInput" type="datetime-local" label="從" hide-details
-                density="compact" clearable style="width: 175px" />
-            <v-text-field v-model="toInput" type="datetime-local" label="到" hide-details
-                density="compact" clearable style="width: 175px" />
+            <v-text-field :model-value="fromFocused ? fromInput : dateOnly(fromInput)"
+                :type="fromFocused ? 'datetime-local' : 'text'" label="從" hide-details
+                density="compact" clearable :style="{ width: fromFocused ? '200px' : '130px' }"
+                @update:model-value="v => fromInput = v"
+                @focus="fromFocused = true" @blur="fromFocused = false" />
+            <v-text-field :model-value="toFocused ? toInput : dateOnly(toInput)"
+                :type="toFocused ? 'datetime-local' : 'text'" label="到" hide-details
+                density="compact" clearable :style="{ width: toFocused ? '200px' : '130px' }"
+                @update:model-value="v => toInput = v"
+                @focus="toFocused = true" @blur="toFocused = false" />
             <v-btn :loading="loading" icon="mdi-refresh" size="small" variant="text" class="ml-auto"
                 title="重新整理" @click="reload" />
             <v-menu :close-on-content-click="false">
@@ -191,6 +197,11 @@ export default defineComponent({
         // to RFC3339-with-offset only when filtering.
         const fromInput = ref<string | null>(null);
         const toInput = ref<string | null>(null);
+        // Collapsed display shows the date only; focusing swaps back to the
+        // native datetime-local input (calendar button included).
+        const fromFocused = ref(false);
+        const toFocused = ref(false);
+        const dateOnly = (v: string | null | undefined) => v ? String(v).slice(0, 10) : '';
 
         const reload = async () => {
             loading.value = true;
@@ -420,7 +431,7 @@ export default defineComponent({
             noteDraft, saveNote,
             confirmDelete, askDelete, doDelete,
             battles, loading, error, reload, rows, humanReadableBytes, formatStartedAt, dungeonDisplayName,
-            codeFilter, bossNameFilter, playerFilter, clearedFilter, fromInput, toInput,
+            codeFilter, bossNameFilter, playerFilter, clearedFilter, fromInput, toInput, fromFocused, toFocused, dateOnly,
             codeOptions, bossNameOptions, playerOptions, clearedOptions,
         };
     },
