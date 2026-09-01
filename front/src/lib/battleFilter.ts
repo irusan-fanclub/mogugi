@@ -62,6 +62,15 @@ export function flattenBattles(records: BattleRecord[]): BattleRow[] {
     return rows;
 }
 
+// orderPartyArcana: recording player first (matched by name, as the backend
+// does — battleIndex.go picks the owner by name), rest by damage desc.
+export function orderPartyArcana(players: BattlePlayer[], ownerName: string): BattlePlayer[] {
+    const ownerIdx = players.findIndex(p => p.Name === ownerName);
+    if (ownerIdx === -1) return [...players].sort((a, b) => b.Damage - a.Damage);
+    const rest = players.filter((_, i) => i !== ownerIdx).sort((a, b) => b.Damage - a.Damage);
+    return [players[ownerIdx], ...rest];
+}
+
 export type BattleSortKey = 'startedAt' | 'dps' | 'duration';
 
 // sortBattles: stable sort of fight rows with rows lacking the key always
@@ -85,12 +94,13 @@ export function sortBattles(rows: BattleRow[], key: BattleSortKey, dir: 'asc' | 
 export type PersonalStat = { best: number; bestFile: string; avg: number; count: number };
 
 // personalStats: per player+boss history over the currently known records —
-// backs the "personal best" badge and the DPS tooltip.
+// backs the "personal best" badge and the DPS tooltip. Only cleared fights
+// count, so 木頭人 stages and pre-backfill files (cleared undefined) drop out.
 export function personalStats(rows: BattleRow[]): Map<string, PersonalStat> {
     const m = new Map<string, PersonalStat>();
     const sums = new Map<string, number>();
     for (const r of rows) {
-        if (!r.ownerDps || !r.bossRace) continue;
+        if (!r.ownerDps || !r.bossRace || r.cleared !== true) continue;
         const key = `${r.player}|${r.bossRace}`;
         const cur = m.get(key);
         if (!cur) {
@@ -111,7 +121,7 @@ export function personalStats(rows: BattleRow[]): Map<string, PersonalStat> {
     return m;
 };
 export type BattleFilter = {
-    code?: string; tier?: string; player?: string; from?: string; to?: string;
+    code?: string; player?: string; from?: string; to?: string;
 };
 
 // from/to are RFC3339-with-offset strings, same as startedAtLocal, so plain
@@ -119,10 +129,16 @@ export type BattleFilter = {
 export function filterBattles(list: BattleRecord[], f: BattleFilter): BattleRecord[] {
     return list.filter(v =>
         (f.code === undefined || v.code === f.code) &&
-        (f.tier === undefined || v.tier === f.tier) &&
         (f.player === undefined || v.player === f.player) &&
         (f.from === undefined || v.startedAtLocal >= f.from) &&
         (f.to === undefined || v.startedAtLocal <= f.to));
+}
+
+// filterByBossName: runs after flattenBattles since bossName is a per-fight
+// (row) property, not a per-file (record) one.
+export function filterByBossName(rows: BattleRow[], bossName?: string): BattleRow[] {
+    if (bossName === undefined) return rows;
+    return rows.filter(r => r.bossName === bossName);
 }
 
 const BYTE_UNITS = ['B', 'KB', 'MB', 'GB'];
@@ -144,7 +160,8 @@ export function humanReadableBytes(n: number): string {
 
 // distinctOptions: sorted, deduplicated values for a v-select's :items,
 // derived from the list itself so options never go stale against filters.
-export function distinctOptions(list: BattleRecord[], pick: (v: BattleRecord) => string): string[] {
+// Generic so it also works over flattened BattleRow[] (e.g. bossName).
+export function distinctOptions<T>(list: T[], pick: (v: T) => string): string[] {
     return [...new Set(list.map(pick))].sort((a, b) => a.localeCompare(b, 'zh-Hant'));
 }
 

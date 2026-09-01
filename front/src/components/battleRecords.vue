@@ -3,7 +3,7 @@
         <div class="d-flex align-center flex-wrap mb-2" style="gap: 8px">
             <v-select v-model="codeFilter" :items="codeOptions" item-title="title" item-value="value"
                 label="副本" hide-details density="compact" clearable style="min-width: 160px; max-width: 240px" />
-            <v-select v-model="tierFilter" :items="tierOptions" label="進入區域" hide-details
+            <v-select v-model="bossNameFilter" :items="bossNameOptions" label="BOSS 名稱" hide-details
                 density="compact" clearable style="min-width: 140px; max-width: 220px" />
             <v-select v-model="playerFilter" :items="playerOptions" label="角色" hide-details
                 density="compact" clearable style="min-width: 140px; max-width: 220px" />
@@ -54,8 +54,13 @@
                         {{ v.ownerDps ? humanReadableNumber(v.ownerDps) : '-' }}
                     </td>
                     <td class="text-right">{{ v.partySize || '-' }}</td>
-                    <td>
-                        <img v-if="v.ownerArcana" width="20" height="20" style="vertical-align: middle;"
+                    <td class="text-no-wrap">
+                        <template v-if="orderedArcana(v).length">
+                            <img v-for="pl in orderedArcana(v)" :key="pl.EntityId" width="18" height="18"
+                                style="vertical-align: middle; margin-right: 2px;"
+                                :src="arcanaIconUrl(pl.Arcana)" :title="`${arcanaTitle(pl.Arcana)}：${pl.Name}`" />
+                        </template>
+                        <img v-else-if="v.ownerArcana" width="20" height="20" style="vertical-align: middle;"
                             :src="arcanaIconUrl(v.ownerArcana)" :title="arcanaTitle(v.ownerArcana)" />
                         <span v-else>-</span>
                     </td>
@@ -121,7 +126,8 @@
 import { defineComponent, ref, computed, onMounted, inject } from 'vue';
 import {
     filterBattles, humanReadableBytes, distinctOptions, toLocalRFC3339,
-    formatStartedAt, dungeonDisplayName, type BattleRecord,
+    formatStartedAt, dungeonDisplayName, filterByBossName, orderPartyArcana,
+    type BattleRecord,
 } from '@/lib/battleFilter';
 import { humanReadableNumber, formatDuration, formatUnixLocal } from '@/lib/util';
 import { arcanaIconUrl, arcanaTitle } from '@/lib/arcana';
@@ -135,7 +141,7 @@ export default defineComponent({
         const error = ref<string | null>(null);
 
         const codeFilter = ref<string | null>(null);
-        const tierFilter = ref<string | null>(null);
+        const bossNameFilter = ref<string | null>(null);
         const playerFilter = ref<string | null>(null);
         // datetime-local text fields hold local wall-clock strings; converted
         // to RFC3339-with-offset only when filtering.
@@ -165,8 +171,11 @@ export default defineComponent({
 
         const codeOptions = computed(() => distinctOptions(battles.value, v => v.code)
             .map(code => ({ title: dungeonDisplayName(code), value: code })));
-        const tierOptions = computed(() => distinctOptions(battles.value, v => v.tier));
         const playerOptions = computed(() => distinctOptions(battles.value, v => v.player));
+        // Boss name is per-fight, not per-file, so options come from the
+        // flattened rows rather than the raw records.
+        const bossNameOptions = computed(() => distinctOptions(
+            flattenBattles(battles.value).filter(r => r.bossName), v => v.bossName ?? ''));
 
         const sortKey = ref<BattleSortKey>('startedAt');
         const sortDir = ref<'asc' | 'desc'>('desc');
@@ -181,13 +190,12 @@ export default defineComponent({
         const sortMark = (key: BattleSortKey) =>
             sortKey.value !== key ? '' : (sortDir.value === 'desc' ? '▼' : '▲');
 
-        const rows = computed(() => sortBattles(flattenBattles(filterBattles(battles.value, {
+        const rows = computed(() => sortBattles(filterByBossName(flattenBattles(filterBattles(battles.value, {
             code: codeFilter.value ?? undefined,
-            tier: tierFilter.value ?? undefined,
             player: playerFilter.value ?? undefined,
             from: toLocalRFC3339(fromInput.value),
             to: toLocalRFC3339(toInput.value),
-        })), sortKey.value, sortDir.value));
+        })), bossNameFilter.value ?? undefined), sortKey.value, sortDir.value));
 
         // Pagination keeps the DOM small once the history grows.
         const PAGE_SIZE = 50;
@@ -220,6 +228,10 @@ export default defineComponent({
         };
         const sortedPlayers = (v: BattleRow) =>
             [...(v.players ?? [])].sort((a, b) => b.Dps - a.Dps);
+        // Recording player first, rest by damage desc; undetected arcana
+        // (0) is dropped, matching the party-table convention below.
+        const orderedArcana = (v: BattleRow) =>
+            orderPartyArcana(v.players ?? [], v.player).filter(pl => pl.Arcana);
         const partyShare = (v: BattleRow, pl: BattlePlayer) => {
             const total = (v.players ?? []).reduce((s, p) => s + p.Damage, 0);
             return total > 0 ? `${(pl.Damage / total * 100).toFixed(1)}%` : '-';
@@ -294,12 +306,12 @@ export default defineComponent({
             sortKey, sortDir, toggleSort, sortMark,
             page, pageCount, pageRows,
             isPersonalBest, dpsTooltip, rowTime,
-            expanded, toggleExpand, sortedPlayers, partyShare,
+            expanded, toggleExpand, sortedPlayers, partyShare, orderedArcana,
             noteDraft, saveNote,
             confirmDelete, askDelete, doDelete,
             battles, loading, error, reload, rows, humanReadableBytes, formatStartedAt, dungeonDisplayName,
-            codeFilter, tierFilter, playerFilter, fromInput, toInput,
-            codeOptions, tierOptions, playerOptions,
+            codeFilter, bossNameFilter, playerFilter, fromInput, toInput,
+            codeOptions, bossNameOptions, playerOptions,
         };
     },
 });

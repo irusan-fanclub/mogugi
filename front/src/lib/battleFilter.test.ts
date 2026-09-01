@@ -2,7 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 import {
     toLocalRFC3339, filterBattles, humanReadableBytes, distinctOptions,
     formatStartedAt, dungeonDisplayName, sortBattles, personalStats,
-    flattenBattles, type BattleRecord, type BattleRow,
+    flattenBattles, filterByBossName, orderPartyArcana,
+    type BattleRecord, type BattleRow, type BattlePlayer,
 } from './battleFilter';
 
 const b = (code: string, tier: string, player: string, startedAtLocal: string) =>
@@ -18,16 +19,14 @@ describe('filterBattles', () => {
         expect(filterBattles(list, {})).toHaveLength(3);
     });
 
-    it('filters by tier', () => {
-        expect(filterBattles(list, { tier: 'NRD_3S' })).toHaveLength(2);
-    });
-
     it('filters by player', () => {
         expect(filterBattles(list, { player: '哞菇' })).toHaveLength(1);
     });
 
     it('combines filters with AND', () => {
-        expect(filterBattles(list, { tier: 'NRD_3S', player: '磨菇' })).toHaveLength(1);
+        expect(filterBattles(list, {
+            player: '磨菇', from: '2026-08-19T09:00:03+08:00',
+        })).toHaveLength(1);
     });
 
     it('filters by time range inclusively', () => {
@@ -64,7 +63,7 @@ describe('distinctOptions', () => {
     });
 
     it('returns an empty array for an empty list', () => {
-        expect(distinctOptions([], v => v.code)).toEqual([]);
+        expect(distinctOptions([] as BattleRecord[], v => v.code)).toEqual([]);
     });
 });
 
@@ -162,15 +161,19 @@ describe('sortBattles', () => {
 });
 
 describe('personalStats', () => {
+    // f/g have higher DPS than a/b but must not win best/avg: f is an
+    // explicit wipe and g is an old un-backfilled fight (cleared undefined).
     const rows = [
-        { key: 'a#1', file: 'a', player: '毛', bossRace: 7603, ownerDps: 50 },
-        { key: 'b#1', file: 'b', player: '毛', bossRace: 7603, ownerDps: 80 },
-        { key: 'c#1', file: 'c', player: '毛', bossRace: 7602, ownerDps: 10 },
-        { key: 'd#1', file: 'd', player: '圓', bossRace: 7603, ownerDps: 99 },
-        { key: 'e#1', file: 'e', player: '毛', bossRace: 7603 },
+        { key: 'a#1', file: 'a', player: '毛', bossRace: 7603, ownerDps: 50, cleared: true },
+        { key: 'b#1', file: 'b', player: '毛', bossRace: 7603, ownerDps: 80, cleared: true },
+        { key: 'c#1', file: 'c', player: '毛', bossRace: 7602, ownerDps: 10, cleared: true },
+        { key: 'd#1', file: 'd', player: '圓', bossRace: 7603, ownerDps: 99, cleared: true },
+        { key: 'e#1', file: 'e', player: '毛', bossRace: 7603, cleared: true },
+        { key: 'f#1', file: 'f', player: '毛', bossRace: 7603, ownerDps: 300, cleared: false },
+        { key: 'g#1', file: 'g', player: '毛', bossRace: 7603, ownerDps: 999 },
     ] as unknown as BattleRow[];
 
-    it('groups best and average per player+boss', () => {
+    it('groups best and average per player+boss, counting only cleared fights', () => {
         const m = personalStats(rows);
         const g = m.get('毛|7603')!;
         expect(g.best).toBe(80);
@@ -179,5 +182,52 @@ describe('personalStats', () => {
         expect(g.count).toBe(2);
         expect(m.get('毛|7602')!.best).toBe(10);
         expect(m.get('圓|7603')!.best).toBe(99);
+    });
+
+    it('excludes wipes and un-flagged (old-file) fights even at higher DPS', () => {
+        const m = personalStats(rows);
+        expect(m.get('毛|7603')!.best).not.toBe(300);
+        expect(m.get('毛|7603')!.best).not.toBe(999);
+    });
+});
+
+describe('filterByBossName', () => {
+    const rows = [
+        { key: 'a#1', bossName: '佩塔克' },
+        { key: 'b#1', bossName: '雷楠的米勒' },
+        { key: 'c#1', bossName: '佩塔克' },
+        { key: 'd#1' },
+    ] as unknown as BattleRow[];
+
+    it('returns everything when no boss name is set', () => {
+        expect(filterByBossName(rows, undefined)).toHaveLength(4);
+    });
+
+    it('keeps only rows matching the given boss name', () => {
+        expect(filterByBossName(rows, '佩塔克').map(r => r.key)).toEqual(['a#1', 'c#1']);
+    });
+
+    it('excludes rows with no boss name when a filter is set', () => {
+        expect(filterByBossName(rows, '佩塔克').some(r => r.key === 'd#1')).toBe(false);
+    });
+});
+
+describe('orderPartyArcana', () => {
+    const players: BattlePlayer[] = [
+        { EntityId: '1', Name: '哞菇', Arcana: 2, Damage: 500, Dps: 10 },
+        { EntityId: '2', Name: '磨菇', Arcana: 1, Damage: 300, Dps: 5 },
+        { EntityId: '3', Name: '圓', Arcana: 3, Damage: 800, Dps: 20 },
+    ];
+
+    it('puts the recording player first, then the rest by damage desc', () => {
+        expect(orderPartyArcana(players, '磨菇').map(p => p.Name)).toEqual(['磨菇', '圓', '哞菇']);
+    });
+
+    it('falls back to damage-desc order when the recording player is not found', () => {
+        expect(orderPartyArcana(players, '不存在').map(p => p.Name)).toEqual(['圓', '哞菇', '磨菇']);
+    });
+
+    it('handles an empty party', () => {
+        expect(orderPartyArcana([], '磨菇')).toEqual([]);
     });
 });
