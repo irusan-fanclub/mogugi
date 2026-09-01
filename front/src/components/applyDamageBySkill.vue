@@ -1081,12 +1081,12 @@ export default defineComponent({
             return actorManager.value.entityMap[targetId.value] ?? null;
         });
 
-        // "damage dealt / max HP" next to the target dropdown; hidden until
-        // maxLife is known. Prefers targetIdList's time-filtered total,
-        // falling back to the actor's running total.
+        // "damage dealt / max HP" next to the target dropdown; hidden unless
+        // the target is a boss (any mob with an HP gauge sends maxLife) with
+        // known maxLife. Prefers targetIdList's time-filtered total.
         const bossDamageProgress = computed(() => {
             const t = selectedTarget.value;
-            if (!t || !t.maxLife) return null;
+            if (!t || !t.maxLife || !BOSS_RACE_IDS.has(t.raceId)) return null;
             const entry = targetIdList.value.find(([id]) => id === targetId.value);
             const dealt = entry ? entry[1] : t.totalTakeDamage;
             return `造成傷害 ${formatThousands(dealt)} / ${formatThousands(t.maxLife)}`;
