@@ -33,7 +33,7 @@
                     </v-list-item>
                 </v-list>
             </v-menu>
-            <span class="text-caption text-medium-emphasis">{{ rows.length }} / {{ battles.length }} 筆</span>
+            <span class="text-caption text-medium-emphasis">{{ rows.length }}場戰鬥/{{ battles.length }}個檔案</span>
         </div>
 
         <v-sheet v-if="error" class="pa-6 text-medium-emphasis">
