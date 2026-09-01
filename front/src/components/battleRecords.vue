@@ -48,9 +48,8 @@
                 <tr>
                     <template v-for="col in visibleCols" :key="col.key">
                         <th v-if="col.sortKey" class="sortable" :class="col.align === 'right' ? 'text-right' : ''"
-                            :style="{ width: col.width + 'px' }"
                             @click="toggleSort(col.sortKey)">{{ col.label }} {{ sortMark(col.sortKey) }}</th>
-                        <th v-else :class="col.align === 'right' ? 'text-right' : ''" :style="{ width: col.width + 'px' }">
+                        <th v-else :class="[col.align === 'right' ? 'text-right' : '', col.key === 'arcana' ? 'arcana-col' : '']">
                             {{ col.label }}</th>
                     </template>
                     <th style="width: 190px;"></th>
@@ -61,20 +60,20 @@
                 <tr :title="v.file">
                     <template v-for="col in visibleCols" :key="col.key">
                     <td v-if="col.key === 'startedAt'">{{ rowTime(v) }}</td>
-                    <td v-else-if="col.key === 'bossName'" class="text-truncate" :title="v.bossName">{{ v.bossName || '-' }}</td>
+                    <td v-else-if="col.key === 'bossName'">{{ v.bossName || '-' }}</td>
                     <td v-else-if="col.key === 'duration'">{{ v.durationSec ? formatDuration(v.durationSec) : '-' }}</td>
                     <td v-else-if="col.key === 'cleared'">
                         <span v-if="v.cleared === true" style="color: #6c6;">✓</span>
                         <span v-else-if="v.cleared === false" style="color: #e66;">✗</span>
                         <span v-else>-</span>
                     </td>
-                    <td v-else-if="col.key === 'player'" class="text-truncate" :title="v.player">{{ v.player }}</td>
+                    <td v-else-if="col.key === 'player'">{{ v.player }}</td>
                     <td v-else-if="col.key === 'dps'" class="text-right text-no-wrap" :title="dpsTooltip(v)">
                         <span v-if="isPersonalBest(v)" title="這場是同 BOSS 的個人最佳">⭐</span>
                         {{ v.ownerDps ? humanReadableNumber(v.ownerDps) : '-' }}
                     </td>
                     <td v-else-if="col.key === 'partySize'" class="text-right">{{ v.partySize || '-' }}</td>
-                    <td v-else-if="col.key === 'arcana'" class="text-no-wrap">
+                    <td v-else-if="col.key === 'arcana'" class="text-no-wrap arcana-col">
                         <template v-if="arcanaOwner(v) || arcanaTeammates(v).length">
                             <img v-if="arcanaOwner(v)" width="18" height="18"
                                 style="vertical-align: middle; margin-right: 2px;"
@@ -229,22 +228,19 @@ export default defineComponent({
         const sortMark = (key: BattleSortKey) =>
             sortKey.value !== key ? '' : (sortDir.value === 'desc' ? '▼' : '▲');
 
-        // Column definitions: label/sort-key/alignment/width per key. Order
-        // and visibility come from colState below, not from this list's
-        // order. width pairs with table-layout:fixed in <style> so paging
-        // and filtering never reflow column widths.
-        type BattleColDef = { key: BattleColKey; label: string; sortKey?: BattleSortKey; align?: 'right'; width: number };
+        // Column definitions: label/sort-key/alignment per key. Order and
+        // visibility come from colState below, not from this list's order.
+        type BattleColDef = { key: BattleColKey; label: string; sortKey?: BattleSortKey; align?: 'right' };
         const COL_DEFS: Record<BattleColKey, BattleColDef> = {
-            startedAt: { key: 'startedAt', label: '開始時間', sortKey: 'startedAt', width: 170 },
-            bossName: { key: 'bossName', label: 'BOSS 名稱', width: 200 },
-            duration: { key: 'duration', label: '戰鬥時間', sortKey: 'duration', width: 90 },
-            cleared: { key: 'cleared', label: '通關', width: 70 },
-            player: { key: 'player', label: '角色', width: 100 },
-            dps: { key: 'dps', label: '整場DPS', sortKey: 'dps', align: 'right', width: 130 },
-            partySize: { key: 'partySize', label: '人數', align: 'right', width: 70 },
-            // 176px reserves up to 8 icons + separator (8 * 20px slot + ~16px).
-            arcana: { key: 'arcana', label: '秘法', width: 176 },
-            music: { key: 'music', label: '音樂', width: 100 },
+            startedAt: { key: 'startedAt', label: '開始時間', sortKey: 'startedAt' },
+            bossName: { key: 'bossName', label: 'BOSS 名稱' },
+            duration: { key: 'duration', label: '戰鬥時間', sortKey: 'duration' },
+            cleared: { key: 'cleared', label: '通關' },
+            player: { key: 'player', label: '角色' },
+            dps: { key: 'dps', label: '整場DPS', sortKey: 'dps', align: 'right' },
+            partySize: { key: 'partySize', label: '人數', align: 'right' },
+            arcana: { key: 'arcana', label: '秘法' },
+            music: { key: 'music', label: '音樂' },
         };
         const colLabel = (key: BattleColKey) => COL_DEFS[key].label;
 
@@ -458,12 +454,10 @@ export default defineComponent({
     overflow-y: visible;
 }
 
-/* table-layout:fixed + per-column widths (COL_DEFS) keep widths stable
-   across paging/filtering; width:auto stops those fixed widths from
-   being stretched to fill the container. */
-:deep(.v-table__wrapper > table) {
-    table-layout: fixed !important;
-    width: auto !important;
+/* Reserve room for up to 8 icons + separator (8 * 20px slot + ~16px
+   separator) so the column doesn't resize across pages/filters. */
+.arcana-col {
+    min-width: 176px;
 }
 
 .arcana-sep {
