@@ -27,6 +27,18 @@ func deriveCaptureStatus(npcapOk, gameDetected bool, lastPacketAtUnix int64, now
 	}
 }
 
+// shouldPublishStatus gates the watchdog's publish on the three meaningful
+// booleans only; LastPacketAt is excluded because it changes every second
+// while packets flow and would otherwise trigger a publish on every tick.
+func shouldPublishStatus(hasPrev bool, prev, next event.EventCaptureStatus) bool {
+	if !hasPrev {
+		return true
+	}
+	return prev.NpcapOk != next.NpcapOk ||
+		prev.GameDetected != next.GameDetected ||
+		prev.Capturing != next.Capturing
+}
+
 // checkNpcapOk reports whether Npcap is installed and enumerable. Cheap
 // enough to call at watchdog startup and after a discover failure.
 func checkNpcapOk() bool {

@@ -549,3 +549,38 @@ func TestDungeonLogSummaryMusicBuffOmittedWhenAbsent(t *testing.T) {
 		t.Fatalf("music fields must be omitted when absent: %s", line)
 	}
 }
+
+// EventCaptureStatus is transient UI state (published ~every watchdog tick
+// while packets flow), not battle data; it must never land in a run's file.
+func TestDungeonLogSkipsCaptureStatus(t *testing.T) {
+	dir := t.TempDir()
+	dungeonLogDirPath = dir
+
+	var d dungeonLog
+	if err := d.Open("brileith", "MRD_1S", "地域磨菇", time.Unix(1786800000, 0), 717000, "", nil); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	d.Write([]event.IEvent{
+		mkAppear("100", 10001, "毛毛", "", 1000),
+		&event.EventCaptureStatus{
+			EventBase:    event.EventBase{EventId: event.EventIdCaptureStatus, At: 1000},
+			NpcapOk:      true,
+			GameDetected: true,
+			Capturing:    true,
+			LastPacketAt: 1000,
+		},
+	})
+	d.Close()
+
+	names, _ := filepath.Glob(filepath.Join(dir, "*.ndjson"))
+	if len(names) != 1 {
+		t.Fatalf("got %d files", len(names))
+	}
+	b, err := os.ReadFile(names[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "\"EventId\":22") {
+		t.Fatalf("EventIdCaptureStatus must not be written to the dungeon log: %s", b)
+	}
+}

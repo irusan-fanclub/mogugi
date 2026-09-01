@@ -344,7 +344,7 @@ func startConnectionWatchdog(ctx context.Context, pub *eventPublisher) {
 			lastPacketAtUnix = real.Unix()
 		}
 		status := deriveCaptureStatus(npcapOk, gameDetected, lastPacketAtUnix, time.Now())
-		if hasStatus && status == lastStatus {
+		if !shouldPublishStatus(hasStatus, lastStatus, status) {
 			return
 		}
 		hasStatus = true

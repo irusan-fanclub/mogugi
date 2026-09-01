@@ -412,7 +412,9 @@ func (d *dungeonLog) writeLocked(events []event.IEvent) {
 		return
 	}
 	for _, e := range events {
-		if e.GetEventId() < 0 {
+		// CaptureStatus is transient UI state, not battle data; skip it
+		// like negative (system-layer) events.
+		if e.GetEventId() < 0 || e.GetEventId() == event.EventIdCaptureStatus {
 			continue
 		}
 		if d.accum != nil {
