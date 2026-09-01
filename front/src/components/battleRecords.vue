@@ -1,20 +1,6 @@
 <template>
     <div class="pa-2">
         <div class="d-flex align-center flex-wrap mb-2" style="gap: 8px">
-            <v-select v-model="codeFilter" :items="codeOptions" item-title="title" item-value="value"
-                label="副本" hide-details density="compact" clearable style="width: 210px" />
-            <v-select v-model="bossNameFilter" :items="bossNameOptions" label="BOSS 名稱" hide-details
-                density="compact" clearable style="width: 190px" />
-            <v-select v-model="playerFilter" :items="playerOptions" label="角色" hide-details
-                density="compact" clearable style="width: 170px" />
-            <v-select v-model="clearedFilter" :items="clearedOptions" item-title="title" item-value="value"
-                label="通關" hide-details density="compact" clearable style="width: 140px" />
-            <v-select v-model="pageSize" :items="pageSizeOptions" item-title="title" item-value="value"
-                label="顯示列數" hide-details density="compact" style="width: 110px" />
-            <v-text-field v-model="fromInput" type="datetime-local" label="從" hide-details
-                density="compact" clearable style="min-width: 200px" />
-            <v-text-field v-model="toInput" type="datetime-local" label="到" hide-details
-                density="compact" clearable style="min-width: 200px" />
             <v-btn :loading="loading" icon="mdi-refresh" size="small" variant="text"
                 title="重新整理" @click="reload" />
             <v-menu :close-on-content-click="false">
@@ -39,6 +25,21 @@
                 <div>{{ rows.length }}場戰鬥</div>
                 <div class="battle-count-line2">{{ battles.length }}個檔案</div>
             </div>
+            <v-select v-model="codeFilter" :items="codeOptions" item-title="title" item-value="value"
+                label="副本" hide-details density="compact" clearable style="width: 210px" />
+            <v-select v-model="bossNameFilter" :items="bossNameOptions" label="BOSS 名稱" hide-details
+                density="compact" clearable style="width: 190px" />
+            <v-select v-model="playerFilter" :items="playerOptions" label="角色" hide-details
+                density="compact" clearable style="width: 170px" />
+            <v-select v-model="clearedFilter" :items="clearedOptions" item-title="title" item-value="value"
+                label="通關" hide-details density="compact" clearable style="width: 140px" />
+            <v-combobox v-model="pageSizeInput" :items="pageSizeChoices" label="顯示列數"
+                hide-details density="compact" style="width: 110px" />
+            <v-text-field v-model="fromInput" type="datetime-local" label="從" hide-details
+                density="compact" clearable style="min-width: 200px" />
+            <v-text-field v-model="toInput" type="datetime-local" label="到" hide-details
+                density="compact" clearable style="min-width: 200px" />
+
         </div>
 
         <v-sheet v-if="error" class="pa-6 text-medium-emphasis">
@@ -289,12 +290,14 @@ export default defineComponent({
         })), bossNameFilter.value ?? undefined), clearedFilter.value ?? undefined), sortKey.value, sortDir.value));
 
         // Pagination keeps the DOM small once the history grows.
-        // pageSize 0 means "show everything".
-        const pageSize = ref(50);
-        const pageSizeOptions = [
-            { title: '25', value: 25 }, { title: '50', value: 50 },
-            { title: '100', value: 100 }, { title: '全部', value: 0 },
-        ];
+        // Free-typed or picked; '全部' (internal 0) shows everything.
+        const pageSizeChoices = ['25', '50', '100', '全部'];
+        const pageSizeInput = ref('50');
+        const pageSize = computed(() => {
+            if (pageSizeInput.value === '全部') return 0;
+            const n = parseInt(String(pageSizeInput.value), 10);
+            return Number.isFinite(n) && n > 0 ? n : 50;
+        });
         const page = ref(1);
         watch(pageSize, () => { page.value = 1; });
         const pageCount = computed(() =>
@@ -410,7 +413,7 @@ export default defineComponent({
             sortKey, sortDir, toggleSort, sortMark,
             colState, visibleCols, colLabel,
             dragFrom, dragIndex, onColDragStart, onColDragOver, onColDrop, onColDragEnd,
-            page, pageCount, pageRows, pageSize, pageSizeOptions,
+            page, pageCount, pageRows, pageSizeInput, pageSizeChoices,
             isPersonalBest, dpsTooltip, rowTime,
             expanded, toggleExpand, sortedPlayers, partyShare, arcanaOwner, arcanaTeammates,
             musicIconUrl, musicTitle,

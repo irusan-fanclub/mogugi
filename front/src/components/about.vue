@@ -16,8 +16,8 @@
         </div>
 
         <div class="mt-4">
-            <v-btn href="https://discord.gg/pJQsN4HgsD" target="_blank" rel="noopener noreferrer"
-                variant="tonal" size="small" prepend-icon="mdi-discord">加入 Discord</v-btn>
+            <v-btn variant="tonal" size="small" prepend-icon="mdi-discord" :title="DISCORD_URL"
+                @click="shareDiscord">{{ discordCopied ? '已複製連結' : '分享 Discord 連結' }}</v-btn>
         </div>
 
         <v-divider class="my-6" />
@@ -33,14 +33,18 @@
             <p v-if="isStandalone" style="opacity:0.6; font-size:0.9em;">（此版本不含擷取功能）</p>
             <v-list v-else density="compact" class="pl-0">
                 <v-list-item class="pl-0">
+                    <v-icon :icon="socketConnected ? 'mdi-check' : 'mdi-close'"
+                        :color="socketConnected ? 'success' : 'error'" class="mr-1" />後端已連線
+                </v-list-item>
+                <v-list-item class="pl-0">
                     <v-icon :icon="status.npcapOk ? 'mdi-check' : 'mdi-close'"
                         :color="status.npcapOk ? 'success' : 'error'" class="mr-1" />Npcap 已安裝
                 </v-list-item>
-                <v-list-item class="pl-0">
+                <v-list-item class="pl-0" :style="{ opacity: socketConnected ? 1 : 0.4 }">
                     <v-icon :icon="status.gameDetected ? 'mdi-check' : 'mdi-close'"
                         :color="status.gameDetected ? 'success' : 'error'" class="mr-1" />偵測到遊戲連線
                 </v-list-item>
-                <v-list-item class="pl-0">
+                <v-list-item class="pl-0" :style="{ opacity: socketConnected ? 1 : 0.4 }">
                     <v-icon :icon="status.capturing ? 'mdi-check' : 'mdi-close'"
                         :color="status.capturing ? 'success' : 'error'" class="mr-1" />正在擷取封包
                 </v-list-item>
@@ -50,11 +54,14 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, computed, onMounted } from 'vue';
+import { defineComponent, ref, computed, onMounted } from 'vue';
 import { captureStatus } from '@/store';
 
 export default defineComponent({
     name: 'About',
+    props: {
+        socketConnected: { type: Boolean, default: false },
+    },
     setup() {
         const appVersion = __APP_VERSION__;
         const appTagline = __APP_TAGLINE__;
@@ -83,7 +90,21 @@ export default defineComponent({
             } catch { /* keep unknown; the guide text still explains setup */ }
         });
 
-        return { appVersion, appTagline, isStandalone, status };
+        // Share = copy the invite link; fall back to opening it when the
+        // clipboard is unavailable.
+        const DISCORD_URL = 'https://discord.gg/pJQsN4HgsD';
+        const discordCopied = ref(false);
+        async function shareDiscord() {
+            try {
+                await navigator.clipboard.writeText(DISCORD_URL);
+                discordCopied.value = true;
+                setTimeout(() => discordCopied.value = false, 2000);
+            } catch {
+                window.open(DISCORD_URL, '_blank', 'noopener');
+            }
+        }
+
+        return { appVersion, appTagline, isStandalone, status, DISCORD_URL, discordCopied, shareDiscord };
     },
 });
 </script>

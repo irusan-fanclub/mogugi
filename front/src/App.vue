@@ -89,7 +89,7 @@
         </v-tabs-window-item>
 
         <v-tabs-window-item value="about">
-            <about />
+            <about :socket-connected="socketConnected" />
         </v-tabs-window-item>
     </v-tabs-window>
 
