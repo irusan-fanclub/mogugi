@@ -542,6 +542,12 @@ func ParseEntityAppearPacket(msg Message) (*EntityInfo, error) {
 		return nil, err
 	}
 
+	if msg[6].Type() != MessageElemTypeByte {
+		err := fmt.Errorf("unk4Flag has unexpected type %v", msg[6].Type())
+		logger.Println(err)
+		return nil, err
+	}
+
 	unk4Flag := msg[6].Data().(uint8)
 	msg = msg[7:]
 

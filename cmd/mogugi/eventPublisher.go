@@ -12,6 +12,7 @@ import (
 
 	"github.com/irusan-fanclub/mogugi/lib/event"
 	"github.com/irusan-fanclub/mogugi/lib/packet"
+	"runtime/debug"
 )
 
 const (
@@ -338,6 +339,14 @@ func (t *eventPublisher) loop() {
 }
 
 func (t *eventPublisher) handlePacket(p *packet.GamePacket) {
+	// A parser panic must cost one packet, not the whole meter; the raw
+	// stream can always carry layout surprises.
+	defer func() {
+		if rec := recover(); rec != nil {
+			logger.Printf("handlePacket panic (op=%v): %v\n%s", p.Op, rec, debug.Stack())
+		}
+	}()
+
 	switch p.Op {
 	case 0:
 		// short packet; nothing to do
