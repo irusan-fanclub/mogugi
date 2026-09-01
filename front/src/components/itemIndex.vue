@@ -130,7 +130,7 @@ import {
     type IndexEntity, type Holder, type ExcludeColumn, type ExcludeEntry,
 } from '@/lib/itemIndex';
 import {
-    buildTip, displayName as buildDisplayName, isRelicPocket, POCKET_NAMES,
+    buildTip, displayName as buildDisplayName, isRelicPocket, POCKET_NAMES, effectColumnText,
     type TooltipDeps,
 } from '@/lib/itemTooltip';
 import type { EnchantInfo, ItemUpgrade, ManualForm, MetalwareAbility } from '@/store';
@@ -317,6 +317,7 @@ export default defineComponent({
             return holders.map(h => ({
                 item: displayName(h),
                 itemId: h.id,
+                effect: effectColumnText(h, enchantInfoMap.value),
                 entity: h.entity,
                 master: h.master,
                 storage: storageText(h),
@@ -341,6 +342,7 @@ export default defineComponent({
         const allHeaders = [
             { title: '物品', key: 'item' },
             { title: '物品ID', key: 'itemId' },
+            { title: '效果', key: 'effect' },
             { title: '細工', key: 'metalware' },
             { title: '角色', key: 'entity' },
             { title: 'Owner', key: 'master' },
@@ -349,7 +351,7 @@ export default defineComponent({
             { title: '數量', key: 'qty' },
             { title: '座標', key: 'pos' },
         ];
-        const COLS_STORAGE_KEY = 'itemIndexCols.v2';
+        const COLS_STORAGE_KEY = 'itemIndexCols.v3';
         const defaultCols = allHeaders.map(h => h.key).filter(k => k !== 'metalware');
         const loadCols = (): string[] => {
             try {

@@ -1,6 +1,8 @@
 // itemTooltip.test.ts — buildTip 純函式的單元測試（vitest）。
 import { describe, it, expect } from 'vitest';
-import { buildTip, formatRelicEffect, formatMagicCircleAbility, type TooltipDeps } from './itemTooltip';
+import {
+    buildTip, formatRelicEffect, formatMagicCircleAbility, effectColumnText, type TooltipDeps,
+} from './itemTooltip';
 import type { Holder } from './itemIndex';
 import type { EnchantInfo } from '@/store';
 
@@ -204,5 +206,36 @@ describe('formatMagicCircleAbility', () => {
 
     it('未知 id（對照表查無）→ null', () => {
         expect(formatMagicCircleAbility(999999, 10)).toBeNull();
+    });
+});
+
+describe('effectColumnText', () => {
+    it('遺物：IMROM 命中 optionset → 回傳 formatRelicEffect 結果原樣', () => {
+        const h = holder({
+            metadata: 'IMROM:4:73021;',
+            relicEffects: [{ code: 2558, value: 400 }],
+        });
+        const enchantInfoMap = {
+            73021: { name: '穆利亞斯的遺物', level: 0, desc: '死亡準星傷害增加{0}%(上限400%)' },
+        };
+        expect(effectColumnText(h, enchantInfoMap)).toBe('死亡準星傷害增加400%(上限400%)');
+    });
+
+    it('魔法陣：MCAID+MCELV 代入模板，並去掉開頭固定樣板文字', () => {
+        const h = holder({ metadata: 'MCAID:2:102;MCELV:2:10;' });
+        expect(effectColumnText(h, {})).toBe('敵人防禦和保護減少 10');
+    });
+
+    it('一般物品（無 IMROM/MCAID）→ 空字串', () => {
+        const h = holder({ balance: 10 });
+        expect(effectColumnText(h, {})).toBe('');
+    });
+
+    it('遺物：IMROM 未知（optionset 查無）→ 空字串（不 fallback 舊版 code 顯示）', () => {
+        const h = holder({
+            metadata: 'IMROM:4:99999;',
+            relicEffects: [{ code: 2558, value: 30 }],
+        });
+        expect(effectColumnText(h, {})).toBe('');
     });
 });

@@ -45,6 +45,31 @@ export function formatMagicCircleAbility(id: number, level: number): string | nu
     return substituted.replace(/\s*\(\*\d+(?:\.\d+)?等級\)\s*$/, '');
 }
 
+// Boilerplate prefix common to every magic-circle ability text; stripped
+// only for the compact 效果 column (tooltip keeps the full sentence).
+const MAGIC_CIRCLE_PREFIX = '在地面設置瑪奇魔法陣, 讓半徑3m範圍內的';
+
+// effectColumnText: one-line 效果 column summary — relic effect (IMROM-based,
+// used as-is) or magic-circle ability (boilerplate prefix stripped);
+// '' for items with neither (or an unresolved IMROM/MCAID).
+export function effectColumnText(h: Holder, enchantInfoMap: Record<number, EnchantInfo>): string {
+    const meta = parseItemMetadata(h.metadata);
+
+    const imrom = Number(meta.IMROM) || undefined;
+    const relic = formatRelicEffect(imrom, h.relicEffects?.[0]?.value, enchantInfoMap);
+    if (relic) return relic;
+
+    const mcaid = Number(meta.MCAID) || undefined;
+    if (mcaid) {
+        const mcelv = Number(meta.MCELV) || 0;
+        const line = formatMagicCircleAbility(mcaid, mcelv);
+        if (line) {
+            return line.startsWith(MAGIC_CIRCLE_PREFIX) ? line.slice(MAGIC_CIRCLE_PREFIX.length) : line;
+        }
+    }
+    return '';
+}
+
 // 效果行參數碼 → 顯示名（由 OptionList SetParamOnEquip 逐行對照驗證）。
 const PARAM_NAMES: Record<number, string> = {
     1: '最大生命值', 3: '最大魔法值', 16: '最大傷害', 19: '暴擊率',
