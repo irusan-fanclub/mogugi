@@ -13,11 +13,15 @@
                 hide-details density="compact" style="width: 90px" />
             <v-text-field :model-value="fromFocused ? fromInput : dateOnly(fromInput)"
                 :type="fromFocused ? 'datetime-local' : 'text'" label="從" hide-details
+                :ref="el => fromField = el" append-inner-icon="mdi-calendar"
+                @click:append-inner="openPicker('from')"
                 density="compact" clearable :style="{ width: fromFocused ? '200px' : '130px' }"
                 @update:model-value="v => fromInput = v"
                 @focus="fromFocused = true" @blur="fromFocused = false" />
             <v-text-field :model-value="toFocused ? toInput : dateOnly(toInput)"
                 :type="toFocused ? 'datetime-local' : 'text'" label="到" hide-details
+                :ref="el => toField = el" append-inner-icon="mdi-calendar"
+                @click:append-inner="openPicker('to')"
                 density="compact" clearable :style="{ width: toFocused ? '200px' : '130px' }"
                 @update:model-value="v => toInput = v"
                 @focus="toFocused = true" @blur="toFocused = false" />
@@ -166,7 +170,7 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, ref, computed, onMounted, inject, watch } from 'vue';
+import { defineComponent, ref, computed, onMounted, inject, watch, nextTick } from 'vue';
 import {
     filterBattles, humanReadableBytes, distinctOptions, toLocalRFC3339,
     formatStartedAt, dungeonDisplayName, filterByBossName, filterByCleared, splitOwnerArcana,
@@ -202,6 +206,17 @@ export default defineComponent({
         const fromFocused = ref(false);
         const toFocused = ref(false);
         const dateOnly = (v: string | null | undefined) => v ? String(v).slice(0, 10) : '';
+        // The wrapped input hides the native picker button; open it explicitly.
+        const fromField = ref();
+        const toField = ref();
+        async function openPicker(which: 'from' | 'to') {
+            if (which === 'from') fromFocused.value = true; else toFocused.value = true;
+            await nextTick();
+            const host = (which === 'from' ? fromField.value : toField.value)?.$el as HTMLElement | undefined;
+            const input = host?.querySelector('input');
+            input?.focus();
+            try { (input as HTMLInputElement & { showPicker?: () => void })?.showPicker?.(); } catch { /* gesture-gated; focus already opens editing */ }
+        }
 
         const reload = async () => {
             loading.value = true;
@@ -431,7 +446,7 @@ export default defineComponent({
             noteDraft, saveNote,
             confirmDelete, askDelete, doDelete,
             battles, loading, error, reload, rows, humanReadableBytes, formatStartedAt, dungeonDisplayName,
-            codeFilter, bossNameFilter, playerFilter, clearedFilter, fromInput, toInput, fromFocused, toFocused, dateOnly,
+            codeFilter, bossNameFilter, playerFilter, clearedFilter, fromInput, toInput, fromFocused, toFocused, dateOnly, fromField, toField, openPicker,
             codeOptions, bossNameOptions, playerOptions, clearedOptions,
         };
     },
@@ -483,6 +498,11 @@ export default defineComponent({
 .battle-count {
     line-height: 1.2;
     white-space: nowrap;
+}
+
+/* One calendar icon only - ours; the native indicator is hidden. */
+:deep(input[type="datetime-local"]::-webkit-calendar-picker-indicator) {
+    display: none;
 }
 
 
