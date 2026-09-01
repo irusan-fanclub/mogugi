@@ -8,14 +8,15 @@ import type { EnchantInfo, ItemUpgrade, ManualForm, MetalwareAbility } from '@/s
 const RANKS = ['F', 'E', 'D', 'C', 'B', 'A', '9', '8', '7', '6', '5', '4', '3', '2', '1'];
 
 // 遺物效果碼 → 顯示名（kind-11；逐項與遊戲 tooltip 對照）。
-// 此表已知不可靠（同碼可能對到不同效果）；僅作 IMROM 缺/未知時的 fallback。
+// This table is known unreliable (same code may map to different effects);
+// used only as fallback when IMROM is missing/unknown.
 const RELIC_EFFECT_NAMES: Record<number, string> = {
     2558: '死亡準星傷害',
 };
 
-// formatRelicEffect: 遺物真正效果來自 metadata IMROM（optionset id），
-// 敘述模板 "{0}" 依單位縮放：後接 % 或無單位＝值直接代入；後接 秒＝值/1000。
-// IMROM 缺、對照表查無、或敘述無 {0} 時回 null（呼叫端 fallback 舊版顯示）。
+// formatRelicEffect: the relic's true effect comes from metadata IMROM
+// (optionset id); "{0}" scales by unit ("秒" suffix / 1000, else direct).
+// Returns null if IMROM/lookup/{0} is missing (caller falls back to legacy).
 export function formatRelicEffect(
     imrom: number | undefined,
     value: number | undefined,
@@ -175,8 +176,8 @@ export function buildTip(h: Holder, deps: TooltipDeps): Tip | null {
     const bless = (h.blessEffects ?? []).map(e =>
         `${PARAM_NAMES[e.code] ?? `#${e.code}`} ${e.value > 0 ? '+' : ''}${e.value}`);
 
-    // 遺物效果：真正效果識別是 metadata IMROM（kind-11 code 欄位不可靠），
-    // 值用 relicEffects[0]；IMROM 缺/查無時 fallback 舊版依 code 顯示。
+    // Relic effect: true identity is metadata IMROM (kind-11 code is unreliable).
+    // Value uses relicEffects[0]; fallback to legacy code-based line if unresolved.
     const imrom = Number(meta.IMROM) || undefined;
     const relicByImrom = formatRelicEffect(imrom, h.relicEffects?.[0]?.value, deps.enchantInfoMap);
     const relic = relicByImrom
