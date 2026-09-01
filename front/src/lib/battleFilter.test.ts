@@ -119,7 +119,7 @@ describe('flattenBattles', () => {
                 file: 'a.ndjson', code: 'brileith', tier: 'MRD_1S', player: '毛',
                 startedAtLocal: '2026-08-19T20:58:27+08:00', sizeBytes: 1,
                 fights: [
-                    { stage: 'MRD_1S', bossRace: 7601, bossName: '佩塔克', fightStartAt: 100, fightEndAt: 200, durationSec: 90, partySize: 2, ownerDps: 5, players: [] },
+                    { stage: 'MRD_1S', bossRace: 7601, bossName: '佩塔克', fightStartAt: 100, fightEndAt: 200, durationSec: 90, partySize: 2, ownerDps: 5, musicCcId: 680, musicPct: 8, players: [] },
                     { stage: 'MRD_3S', bossRace: 7603, bossName: '雷楠的米勒', fightStartAt: 300, fightEndAt: 400, durationSec: 100, cleared: true, partySize: 2, players: [] },
                 ],
             },
@@ -131,6 +131,23 @@ describe('flattenBattles', () => {
         expect(rows[1].cleared).toBe(true);
         expect(rows[2].bossName).toBeUndefined();
         expect(rows[2].sortTime).toBeGreaterThan(0);
+    });
+
+    it('copies musicCcId/musicPct from the fight, leaving them undefined when absent', () => {
+        const rows = flattenBattles([
+            {
+                file: 'a.ndjson', code: 'brileith', tier: 'MRD_1S', player: '毛',
+                startedAtLocal: '2026-08-19T20:58:27+08:00', sizeBytes: 1,
+                fights: [
+                    { stage: 'MRD_1S', bossRace: 7601, bossName: '佩塔克', fightStartAt: 100, fightEndAt: 200, durationSec: 90, partySize: 2, musicCcId: 192, musicPct: 12.5, players: [] },
+                    { stage: 'MRD_2S', bossRace: 7602, bossName: '布倫塔納斯', fightStartAt: 300, fightEndAt: 400, durationSec: 90, partySize: 2, players: [] },
+                ],
+            },
+        ] as BattleRecord[]);
+        expect(rows[0].musicCcId).toBe(192);
+        expect(rows[0].musicPct).toBe(12.5);
+        expect(rows[1].musicCcId).toBeUndefined();
+        expect(rows[1].musicPct).toBeUndefined();
     });
 });
 

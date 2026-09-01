@@ -34,6 +34,7 @@
                     <th class="text-right sortable" @click="toggleSort('dps')">整場DPS {{ sortMark('dps') }}</th>
                     <th class="text-right">人數</th>
                     <th>秘法</th>
+                    <th>音樂</th>
                     <th style="width: 190px;"></th>
                 </tr>
             </thead>
@@ -64,6 +65,12 @@
                             :src="arcanaIconUrl(v.ownerArcana)" :title="arcanaTitle(v.ownerArcana)" />
                         <span v-else>-</span>
                     </td>
+                    <td class="text-no-wrap">
+                        <template v-if="v.musicCcId && v.musicPct">
+                            <img width="18" height="18" style="vertical-align: middle; margin-right: 2px;"
+                                :src="musicIconUrl(v.musicCcId)" :title="musicTitle(v.musicCcId)" />{{ v.musicPct.toFixed(1) }}%
+                        </template>
+                    </td>
                     <td class="text-no-wrap actions">
                         <v-btn icon="mdi-chevron-down" size="small" variant="text"
                             :style="{ transform: expanded.has(v.key) ? 'rotate(180deg)' : '' }"
@@ -80,7 +87,7 @@
                     </td>
                 </tr>
                 <tr v-if="expanded.has(v.key)">
-                    <td :colspan="9" class="expand-cell">
+                    <td :colspan="10" class="expand-cell">
                         <div class="d-flex flex-wrap" style="gap: 24px; padding: 8px 4px;">
                             <table v-if="v.players?.length" class="party-table">
                                 <thead>
@@ -237,6 +244,11 @@ export default defineComponent({
             return total > 0 ? `${(pl.Damage / total * 100).toFixed(1)}%` : '-';
         };
 
+        // Music-buff column: 戰場的序曲 (680) / 活潑板 (192), mutually exclusive.
+        const MUSIC_NAMES: Record<number, string> = { 680: '戰場的序曲', 192: '活潑板' };
+        const musicIconUrl = (ccId: number) => `/icons/cc/${ccId}.png`;
+        const musicTitle = (ccId: number) => MUSIC_NAMES[ccId] ?? String(ccId);
+
         const noteDraft = ref<Record<string, string>>({});
         const saveNote = async (v: BattleRow) => {
             const note = noteDraft.value[v.file] ?? v.note ?? '';
@@ -307,6 +319,7 @@ export default defineComponent({
             page, pageCount, pageRows,
             isPersonalBest, dpsTooltip, rowTime,
             expanded, toggleExpand, sortedPlayers, partyShare, orderedArcana,
+            musicIconUrl, musicTitle,
             noteDraft, saveNote,
             confirmDelete, askDelete, doDelete,
             battles, loading, error, reload, rows, humanReadableBytes, formatStartedAt, dungeonDisplayName,

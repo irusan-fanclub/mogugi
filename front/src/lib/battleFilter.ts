@@ -10,6 +10,9 @@ export type BattleFight = {
     fightStartAt: number; fightEndAt: number; durationSec: number;
     cleared?: boolean; partySize: number;
     ownerDps?: number; ownerArcana?: number;
+    // Owner's highest music-buff (CC 680 戰場的序曲 / 192 活潑板) pct in the
+    // fight window; both absent when no music buff was active.
+    musicCcId?: number; musicPct?: number;
     players: BattlePlayer[];
 }
 
@@ -29,6 +32,7 @@ export type BattleRow = {
     sortTime: number; // fight start (unix s), or the file's start time
     bossName?: string; bossRace?: number; durationSec?: number;
     cleared?: boolean; partySize?: number; ownerDps?: number; ownerArcana?: number;
+    musicCcId?: number; musicPct?: number;
     fightStartAt?: number;
     players?: BattlePlayer[];
 }
@@ -52,6 +56,7 @@ export function flattenBattles(records: BattleRecord[]): BattleRow[] {
                     durationSec: f.durationSec, cleared: f.cleared,
                     partySize: f.partySize, ownerDps: f.ownerDps,
                     ownerArcana: f.ownerArcana, fightStartAt: f.fightStartAt,
+                    musicCcId: f.musicCcId, musicPct: f.musicPct,
                     players: f.players,
                 });
             }
