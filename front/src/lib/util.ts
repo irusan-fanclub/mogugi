@@ -33,6 +33,14 @@ export function humanReadableNumber(n: number): string {
     return sign + value.toFixed(2) + NUMBER_SUFFIXES[i];
 }
 
+// formatThousands: full-precision comma-grouped integer, e.g. 1234567 ->
+// "1,234,567". Unlike humanReadableNumber's K/M/B abbreviation, no digits
+// are hidden — for spots where the exact number matters (boss HP/damage).
+export function formatThousands(n: number): string {
+    if (typeof n !== 'number' || isNaN(n) || !isFinite(n)) return '0';
+    return Math.round(n).toLocaleString('en-US');
+}
+
 export function formatDuration(seconds: number): string {
     const min = Math.floor(seconds / 60);
     const sec = Math.floor(seconds % 60);

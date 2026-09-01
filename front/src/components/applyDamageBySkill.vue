@@ -20,6 +20,9 @@
                 </v-list-item>
             </template>
         </v-select>
+        <span v-if="bossDamageProgress" class="text-medium-emphasis" style="white-space: nowrap; font-size: 0.9em;">
+            {{ bossDamageProgress }}
+        </span>
         <v-switch :model-value="bossOnlyTarget" @update:model-value="v => setBossOnlyTarget(!!v)"
             label="只顯示BOSS" color="primary" density="compact" hide-details />
     </v-sheet>
@@ -299,7 +302,7 @@
 import { defineComponent, inject, ref, computed, onUnmounted, onMounted, watch } from "vue";
 
 import { hiddenSkillColumns, toggleSkillColumn, skillRowLimit, setSkillRowLimit, showPetSkills, setShowPetSkills, skillColumnOrder, setSkillColumnOrder, resetSkillSettings } from '@/store';
-import { getMabiNameColor, prettyEntityName, humanReadableNumber, formatDuration, ccIconUrl, ccName, bossTargetLabel, bossTitleLabel, stackLayout, resolveThemeBackground } from '@/lib/util';
+import { getMabiNameColor, prettyEntityName, humanReadableNumber, formatDuration, ccIconUrl, ccName, bossTargetLabel, bossTitleLabel, stackLayout, resolveThemeBackground, formatThousands } from '@/lib/util';
 import { ccTrackId, PLAYER_SIDE_CC_IDS } from '@/lib/buffTrack';
 import { hiddenTrackIds, hideTrack, unhideTrack } from '@/store';
 import type { EntityDamage, EntityActor } from '@/eventActor';
@@ -1078,6 +1081,17 @@ export default defineComponent({
             return actorManager.value.entityMap[targetId.value] ?? null;
         });
 
+        // "damage dealt / max HP" next to the target dropdown; hidden until
+        // maxLife is known. Prefers targetIdList's time-filtered total,
+        // falling back to the actor's running total.
+        const bossDamageProgress = computed(() => {
+            const t = selectedTarget.value;
+            if (!t || !t.maxLife) return null;
+            const entry = targetIdList.value.find(([id]) => id === targetId.value);
+            const dealt = entry ? entry[1] : t.totalTakeDamage;
+            return `造成傷害 ${formatThousands(dealt)} / ${formatThousands(t.maxLife)}`;
+        });
+
         // --- Tracked CC management (ordered list, persisted in localStorage) ---
         const CC_STORAGE_KEY = 'trackedDebuffCCIds';
         const PINNED_CC = 494; // always first, cannot be removed or moved
@@ -1275,6 +1289,7 @@ export default defineComponent({
 
             dpsChartEntities,
             selectedTarget,
+            bossDamageProgress,
             trackedCCIdList,
             removeCC,
             addCC,

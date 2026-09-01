@@ -1,5 +1,25 @@
 import { describe, it, expect } from 'vitest';
-import { humanReadableNumber, bossTargetLabel, bossTitleLabel, stackLayout } from './util';
+import { humanReadableNumber, bossTargetLabel, bossTitleLabel, stackLayout, formatThousands } from './util';
+
+describe('formatThousands', () => {
+    // Unlike humanReadableNumber's K/M/B abbreviation, this keeps full
+    // precision — needed where the exact damage/HP number matters.
+    it('groups digits by thousands', () => {
+        expect(formatThousands(1234567)).toBe('1,234,567');
+        expect(formatThousands(999)).toBe('999');
+        expect(formatThousands(0)).toBe('0');
+    });
+
+    it('rounds fractional input', () => {
+        expect(formatThousands(1234.6)).toBe('1,235');
+    });
+
+    it('renders zero for unusable input', () => {
+        expect(formatThousands(NaN)).toBe('0');
+        expect(formatThousands(Infinity)).toBe('0');
+        expect(formatThousands(undefined as unknown as number)).toBe('0');
+    });
+});
 
 describe('humanReadableNumber', () => {
     // Sub-thousand values still read in K, so a column never mixes a bare
