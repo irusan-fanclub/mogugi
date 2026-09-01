@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
     toLocalRFC3339, filterBattles, humanReadableBytes, distinctOptions,
     formatStartedAt, dungeonDisplayName, sortBattles, personalStats,
-    flattenBattles, filterByBossName, orderPartyArcana, splitOwnerArcana,
+    flattenBattles, filterByBossName, filterByCleared, orderPartyArcana, splitOwnerArcana,
     mergeBattleCols, moveBattleCol, DEFAULT_BATTLE_COLS,
     type BattleRecord, type BattleRow, type BattlePlayer, type BattleColState,
 } from './battleFilter';
@@ -227,6 +227,31 @@ describe('filterByBossName', () => {
 
     it('excludes rows with no boss name when a filter is set', () => {
         expect(filterByBossName(rows, '佩塔克').some(r => r.key === 'd#1')).toBe(false);
+    });
+});
+
+describe('filterByCleared', () => {
+    const rows = [
+        { key: 'a#1', cleared: true },
+        { key: 'b#1', cleared: false },
+        { key: 'c#1', cleared: true },
+        { key: 'd#1' },
+    ] as unknown as BattleRow[];
+
+    it('returns everything when no cleared filter is set', () => {
+        expect(filterByCleared(rows, undefined)).toHaveLength(4);
+    });
+
+    it('keeps only cleared rows', () => {
+        expect(filterByCleared(rows, 'cleared').map(r => r.key)).toEqual(['a#1', 'c#1']);
+    });
+
+    it('keeps only not-cleared rows', () => {
+        expect(filterByCleared(rows, 'notCleared').map(r => r.key)).toEqual(['b#1']);
+    });
+
+    it('keeps only rows with unknown (undefined) cleared status', () => {
+        expect(filterByCleared(rows, 'unknown').map(r => r.key)).toEqual(['d#1']);
     });
 });
 

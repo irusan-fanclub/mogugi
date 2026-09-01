@@ -158,6 +158,17 @@ export function filterByBossName(rows: BattleRow[], bossName?: string): BattleRo
     return rows.filter(r => r.bossName === bossName);
 }
 
+export type ClearedFilterValue = 'cleared' | 'notCleared' | 'unknown';
+
+// filterByCleared: mirrors the table's tri-state ✓ / ✗ / - on
+// cleared true / false / undefined.
+export function filterByCleared(rows: BattleRow[], cleared?: ClearedFilterValue): BattleRow[] {
+    if (cleared === undefined) return rows;
+    if (cleared === 'cleared') return rows.filter(r => r.cleared === true);
+    if (cleared === 'notCleared') return rows.filter(r => r.cleared === false);
+    return rows.filter(r => r.cleared === undefined);
+}
+
 const BYTE_UNITS = ['B', 'KB', 'MB', 'GB'];
 
 // humanReadableBytes: sizeBytes -> display string for the file-size column.

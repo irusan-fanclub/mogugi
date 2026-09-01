@@ -7,6 +7,8 @@
                 density="compact" clearable style="min-width: 140px; max-width: 220px" />
             <v-select v-model="playerFilter" :items="playerOptions" label="角色" hide-details
                 density="compact" clearable style="min-width: 140px; max-width: 220px" />
+            <v-select v-model="clearedFilter" :items="clearedOptions" item-title="title" item-value="value"
+                label="通關" hide-details density="compact" clearable style="min-width: 140px; max-width: 220px" />
             <v-text-field v-model="fromInput" type="datetime-local" label="從" hide-details
                 density="compact" clearable style="min-width: 200px" />
             <v-text-field v-model="toInput" type="datetime-local" label="到" hide-details
@@ -155,9 +157,9 @@
 import { defineComponent, ref, computed, onMounted, inject, watch } from 'vue';
 import {
     filterBattles, humanReadableBytes, distinctOptions, toLocalRFC3339,
-    formatStartedAt, dungeonDisplayName, filterByBossName, splitOwnerArcana,
+    formatStartedAt, dungeonDisplayName, filterByBossName, filterByCleared, splitOwnerArcana,
     mergeBattleCols, moveBattleCol,
-    type BattleRecord, type BattleColKey, type BattleColState,
+    type BattleRecord, type BattleColKey, type BattleColState, type ClearedFilterValue,
 } from '@/lib/battleFilter';
 import { humanReadableNumber, formatDuration, formatUnixLocal } from '@/lib/util';
 import { arcanaIconUrl, arcanaTitle } from '@/lib/arcana';
@@ -173,6 +175,12 @@ export default defineComponent({
         const codeFilter = ref<string | null>(null);
         const bossNameFilter = ref<string | null>(null);
         const playerFilter = ref<string | null>(null);
+        const clearedFilter = ref<ClearedFilterValue | null>(null);
+        const clearedOptions = [
+            { title: '通關', value: 'cleared' },
+            { title: '未通關', value: 'notCleared' },
+            { title: '未知', value: 'unknown' },
+        ];
         // datetime-local text fields hold local wall-clock strings; converted
         // to RFC3339-with-offset only when filtering.
         const fromInput = ref<string | null>(null);
@@ -268,12 +276,12 @@ export default defineComponent({
         const onColDrop = () => { dragFrom.value = null; dragIndex.value = null; };
         const onColDragEnd = () => { dragFrom.value = null; dragIndex.value = null; };
 
-        const rows = computed(() => sortBattles(filterByBossName(flattenBattles(filterBattles(battles.value, {
+        const rows = computed(() => sortBattles(filterByCleared(filterByBossName(flattenBattles(filterBattles(battles.value, {
             code: codeFilter.value ?? undefined,
             player: playerFilter.value ?? undefined,
             from: toLocalRFC3339(fromInput.value),
             to: toLocalRFC3339(toInput.value),
-        })), bossNameFilter.value ?? undefined), sortKey.value, sortDir.value));
+        })), bossNameFilter.value ?? undefined), clearedFilter.value ?? undefined), sortKey.value, sortDir.value));
 
         // Pagination keeps the DOM small once the history grows.
         const PAGE_SIZE = 50;
@@ -396,8 +404,8 @@ export default defineComponent({
             noteDraft, saveNote,
             confirmDelete, askDelete, doDelete,
             battles, loading, error, reload, rows, humanReadableBytes, formatStartedAt, dungeonDisplayName,
-            codeFilter, bossNameFilter, playerFilter, fromInput, toInput,
-            codeOptions, bossNameOptions, playerOptions,
+            codeFilter, bossNameFilter, playerFilter, clearedFilter, fromInput, toInput,
+            codeOptions, bossNameOptions, playerOptions, clearedOptions,
         };
     },
 });
@@ -473,8 +481,14 @@ export default defineComponent({
     font-size: 0.8rem;
 }
 
+/* Default v-list-item prepend/icon spacer is 32px; collapse it so the
+   drag handle, checkbox, and label sit close together. */
+.col-editor-item :deep(.v-list-item__prepend) {
+    --v-list-prepend-gap: 4px;
+}
+
 .col-drag-handle {
-    margin-right: 2px;
+    margin-right: 0;
 }
 
 .col-editor-drag-over {
