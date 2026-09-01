@@ -208,7 +208,7 @@ export function buildTip(h: Holder, deps: TooltipDeps): Tip | null {
         const mcelv = Number(meta.MCELV) || 0;
         const line = formatMagicCircleAbility(mcaid, mcelv);
         if (line) magicCircle.push(line);
-        if (meta.IMDN) magicCircle.push(`陣名:${meta.IMDN}`);
+        if (meta.IMDN) magicCircle.push(`陣名：${meta.IMDN}`);
     }
 
     // 改造（UPR1..n）："upgrade_id,effect_id,v1,v2,..." → 名稱＋該次數值。
