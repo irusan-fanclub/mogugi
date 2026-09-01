@@ -9,6 +9,8 @@
                 density="compact" clearable style="width: 170px" />
             <v-select v-model="clearedFilter" :items="clearedOptions" item-title="title" item-value="value"
                 label="通關" hide-details density="compact" clearable style="width: 140px" />
+            <v-select v-model="pageSize" :items="pageSizeOptions" item-title="title" item-value="value"
+                label="顯示列數" hide-details density="compact" style="width: 110px" />
             <v-text-field v-model="fromInput" type="datetime-local" label="從" hide-details
                 density="compact" clearable style="min-width: 200px" />
             <v-text-field v-model="toInput" type="datetime-local" label="到" hide-details
@@ -33,7 +35,10 @@
                     </v-list-item>
                 </v-list>
             </v-menu>
-            <span class="text-caption text-medium-emphasis">{{ rows.length }}場戰鬥/{{ battles.length }}個檔案</span>
+            <div class="text-caption text-medium-emphasis battle-count">
+                <div>{{ rows.length }}場戰鬥</div>
+                <div class="battle-count-line2">{{ battles.length }}個檔案</div>
+            </div>
         </div>
 
         <v-sheet v-if="error" class="pa-6 text-medium-emphasis">
@@ -284,12 +289,20 @@ export default defineComponent({
         })), bossNameFilter.value ?? undefined), clearedFilter.value ?? undefined), sortKey.value, sortDir.value));
 
         // Pagination keeps the DOM small once the history grows.
-        const PAGE_SIZE = 50;
+        // pageSize 0 means "show everything".
+        const pageSize = ref(50);
+        const pageSizeOptions = [
+            { title: '25', value: 25 }, { title: '50', value: 50 },
+            { title: '100', value: 100 }, { title: '全部', value: 0 },
+        ];
         const page = ref(1);
-        const pageCount = computed(() => Math.max(1, Math.ceil(rows.value.length / PAGE_SIZE)));
+        watch(pageSize, () => { page.value = 1; });
+        const pageCount = computed(() =>
+            pageSize.value ? Math.max(1, Math.ceil(rows.value.length / pageSize.value)) : 1);
         const pageRows = computed(() => {
+            if (!pageSize.value) return rows.value;
             const p = Math.min(page.value, pageCount.value);
-            return rows.value.slice((p - 1) * PAGE_SIZE, p * PAGE_SIZE);
+            return rows.value.slice((p - 1) * pageSize.value, p * pageSize.value);
         });
 
         // Personal best/average per player+boss over the whole history
@@ -397,7 +410,7 @@ export default defineComponent({
             sortKey, sortDir, toggleSort, sortMark,
             colState, visibleCols, colLabel,
             dragFrom, dragIndex, onColDragStart, onColDragOver, onColDrop, onColDragEnd,
-            page, pageCount, pageRows,
+            page, pageCount, pageRows, pageSize, pageSizeOptions,
             isPersonalBest, dpsTooltip, rowTime,
             expanded, toggleExpand, sortedPlayers, partyShare, arcanaOwner, arcanaTeammates,
             musicIconUrl, musicTitle,
@@ -446,12 +459,21 @@ export default defineComponent({
     text-align: right;
 }
 
-/* Vuetify's wrapper defaults overflow:auto on both axes; keep horizontal
-   scroll for wide tables but let vertical content flow to the page
-   instead of a nested scrollbar. */
+/* overflow-y:visible computes to auto beside overflow-x:auto, which kept
+   the nested scrollbar; drop the scroll container entirely, matching the
+   plain table used by the item-index tab. */
 :deep(.v-table__wrapper) {
-    overflow-x: auto;
-    overflow-y: visible;
+    overflow: visible;
+}
+
+.battle-count {
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+/* Second line staggered slightly per user preference. */
+.battle-count-line2 {
+    margin-left: 10px;
 }
 
 /* Reserve room for up to 8 icons + separator (8 * 20px slot + ~16px
