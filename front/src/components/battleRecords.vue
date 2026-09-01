@@ -1,6 +1,6 @@
 <template>
     <div class="pa-2">
-        <div class="d-flex align-center mb-2 battle-toolbar" style="gap: 8px">
+        <div class="d-flex align-center flex-wrap mb-2" style="gap: 8px">
             <v-select v-model="codeFilter" :items="codeOptions" item-title="title" item-value="value"
                 label="副本" hide-details density="compact" clearable style="width: 210px" />
             <v-select v-model="bossNameFilter" :items="bossNameOptions" label="BOSS 名稱" hide-details
@@ -474,15 +474,6 @@ export default defineComponent({
     white-space: nowrap;
 }
 
-/* Never wrap the toolbar; a narrow window scrolls it horizontally. */
-.battle-toolbar {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-}
-
-.battle-toolbar > * {
-    flex-shrink: 0;
-}
 
 /* Reserve room for up to 8 icons + separator (8 * 20px slot + ~16px
    separator) so the column doesn't resize across pages/filters. */
