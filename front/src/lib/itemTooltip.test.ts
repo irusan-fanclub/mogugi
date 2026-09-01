@@ -1,6 +1,6 @@
 // itemTooltip.test.ts — buildTip 純函式的單元測試（vitest）。
 import { describe, it, expect } from 'vitest';
-import { buildTip, formatRelicEffect, type TooltipDeps } from './itemTooltip';
+import { buildTip, formatRelicEffect, formatMagicCircleAbility, type TooltipDeps } from './itemTooltip';
 import type { Holder } from './itemIndex';
 import type { EnchantInfo } from '@/store';
 
@@ -148,6 +148,23 @@ describe('buildTip', () => {
         expect(tip).not.toBeNull();
         expect(tip!.relic).toEqual(['死亡準星傷害 增加30%']);
     });
+
+    it('(i) 魔法陣：MCAID+MCELV 代入模板，IMDN 附加「陣名:」行', () => {
+        const h = holder({ metadata: 'MCAID:2:102;MCELV:2:10;IMDN:s:測試陣;' });
+        const tip = buildTip(h, makeDeps());
+        expect(tip).not.toBeNull();
+        expect(tip!.magicCircle).toEqual([
+            '在地面設置瑪奇魔法陣, 讓半徑3m範圍內的敵人防禦和保護減少 10',
+            '陣名:測試陣',
+        ]);
+    });
+
+    it('(j) 魔法陣：無 MCAID 時 magicCircle 為空陣列（即使有 IMDN）', () => {
+        const h = holder({ balance: 10, metadata: 'IMDN:s:測試陣;' });
+        const tip = buildTip(h, makeDeps());
+        expect(tip).not.toBeNull();
+        expect(tip!.magicCircle).toEqual([]);
+    });
 });
 
 describe('formatRelicEffect', () => {
@@ -176,5 +193,16 @@ describe('formatRelicEffect', () => {
 
     it('IMROM 為 undefined（metadata 無此欄位）→ null', () => {
         expect(formatRelicEffect(undefined, 100, infoMap('死亡準星傷害增加{0}%(上限400%)'))).toBeNull();
+    });
+});
+
+describe('formatMagicCircleAbility', () => {
+    it('id 102 於 lv10：[*1] 代入 1*10=10，並去掉結尾 (*1等級)', () => {
+        const s = formatMagicCircleAbility(102, 10);
+        expect(s).toBe('在地面設置瑪奇魔法陣, 讓半徑3m範圍內的敵人防禦和保護減少 10');
+    });
+
+    it('未知 id（對照表查無）→ null', () => {
+        expect(formatMagicCircleAbility(999999, 10)).toBeNull();
     });
 });

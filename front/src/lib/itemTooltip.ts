@@ -3,6 +3,7 @@
 // 由 itemIndex.vue 傳入反應式 map 的 .value。
 import { parseItemMetadata, type Holder, type IndexEnchantEffect } from './itemIndex';
 import type { EnchantInfo, ItemUpgrade, ManualForm, MetalwareAbility } from '@/store';
+import { MAGIC_CIRCLE_ABILITIES } from './magicCircleAbilities.gen';
 
 // 賦予等級 → 遊戲位階字母（level 1=F … 6=A, 7=9, 8=8 …15=1）。
 const RANKS = ['F', 'E', 'D', 'C', 'B', 'A', '9', '8', '7', '6', '5', '4', '3', '2', '1'];
@@ -29,6 +30,19 @@ export function formatRelicEffect(
     if (idx < 0) return null;
     const scaled = desc[idx + 3] === '秒' ? value / 1000 : value;
     return desc.replace('{0}', `${scaled}`).replaceAll('\\n', '\n');
+}
+
+// formatMagicCircleAbility: MAGIC_CIRCLE_ABILITIES template text has "[*N]"
+// tokens (N x circle level) and a trailing "(*N等級)" explainer to drop.
+// Returns null when the ability id is unknown (not in the generated table).
+export function formatMagicCircleAbility(id: number, level: number): string | null {
+    const template = MAGIC_CIRCLE_ABILITIES[id];
+    if (!template) return null;
+    const substituted = template.replace(/\[\*(\d+(?:\.\d+)?)\]/g, (_, n) => {
+        const v = Math.round(Number(n) * level * 10000) / 10000;
+        return `${v}`;
+    });
+    return substituted.replace(/\s*\(\*\d+(?:\.\d+)?等級\)\s*$/, '');
 }
 
 // 效果行參數碼 → 顯示名（由 OptionList SetParamOnEquip 逐行對照驗證）。
@@ -85,6 +99,7 @@ export interface Tip {
     bless: string[];
     relic: string[];
     relicDesc: string | null;
+    magicCircle: string[];
     upgrades: string[];
     special: string | null;
     energy: string | null;
@@ -186,6 +201,16 @@ export function buildTip(h: Holder, deps: TooltipDeps): Tip | null {
     const relicDesc = isRelicPocket(h.pocket) && deps.itemDescMap[h.id]
         ? deps.itemDescMap[h.id].replaceAll('\\n', '\n') : null;
 
+    // Magic-circle ability: MCAID=ability id, MCELV=circle level, IMDN=circle name.
+    const mcaid = Number(meta.MCAID) || undefined;
+    const magicCircle: string[] = [];
+    if (mcaid) {
+        const mcelv = Number(meta.MCELV) || 0;
+        const line = formatMagicCircleAbility(mcaid, mcelv);
+        if (line) magicCircle.push(line);
+        if (meta.IMDN) magicCircle.push(`陣名:${meta.IMDN}`);
+    }
+
     // 改造（UPR1..n）："upgrade_id,effect_id,v1,v2,..." → 名稱＋該次數值。
     const upgrades: string[] = [];
     for (let i = 1; i <= 9; i++) {
@@ -240,6 +265,9 @@ export function buildTip(h: Holder, deps: TooltipDeps): Tip | null {
 
     if (!props.length && !enchants.length && !metalware.length && !bless.length
         && !imprint && !upgrades.length && !special && !energy && !relic.length
-        && !relicDesc && !colorGroups.length) return null;
-    return { props, imprint, enchants, bless, relic, relicDesc, upgrades, special, energy, metalware, colorGroups };
+        && !relicDesc && !colorGroups.length && !magicCircle.length) return null;
+    return {
+        props, imprint, enchants, bless, relic, relicDesc, magicCircle,
+        upgrades, special, energy, metalware, colorGroups,
+    };
 }

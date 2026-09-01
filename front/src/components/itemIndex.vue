@@ -61,6 +61,10 @@
                             <div v-for="(l, i) in item.tip.relic" :key="`r${i}`" class="tip-line tip-mw">{{ l }}</div>
                             <div v-if="item.tip.relicDesc" class="tip-line tip-desc">{{ item.tip.relicDesc }}</div>
                         </template>
+                        <template v-if="item.tip.magicCircle.length">
+                            <div class="tip-section">魔法陣效果</div>
+                            <div v-for="(l, i) in item.tip.magicCircle" :key="`mc${i}`" class="tip-line tip-mw">{{ l }}</div>
+                        </template>
                         <template v-if="item.tip.enchants.length">
                             <div class="tip-section">魔力賦予</div>
                             <template v-for="(e, i) in item.tip.enchants" :key="`e${i}`">
