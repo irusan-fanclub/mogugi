@@ -1,0 +1,2 @@
+# esbuild/vitest chokes on CRLF .mjs after autocrlf checkout; pin them to LF.
+*.mjs text eol=lf
