@@ -2,8 +2,9 @@ import { describe, it, expect, vi } from 'vitest';
 import {
     toLocalRFC3339, filterBattles, humanReadableBytes, distinctOptions,
     formatStartedAt, dungeonDisplayName, sortBattles, personalStats,
-    flattenBattles, filterByBossName, orderPartyArcana,
-    type BattleRecord, type BattleRow, type BattlePlayer,
+    flattenBattles, filterByBossName, orderPartyArcana, splitOwnerArcana,
+    mergeBattleCols, moveBattleCol, DEFAULT_BATTLE_COLS,
+    type BattleRecord, type BattleRow, type BattlePlayer, type BattleColState,
 } from './battleFilter';
 
 const b = (code: string, tier: string, player: string, startedAtLocal: string) =>
@@ -246,5 +247,112 @@ describe('orderPartyArcana', () => {
 
     it('handles an empty party', () => {
         expect(orderPartyArcana([], '磨菇')).toEqual([]);
+    });
+});
+
+describe('splitOwnerArcana', () => {
+    const players: BattlePlayer[] = [
+        { EntityId: '1', Name: '哞菇', Arcana: 2, Damage: 500, Dps: 10 },
+        { EntityId: '2', Name: '磨菇', Arcana: 1, Damage: 300, Dps: 5 },
+        { EntityId: '3', Name: '圓', Arcana: 3, Damage: 800, Dps: 20 },
+    ];
+
+    it('splits the owner (by name) from teammates ordered by damage desc', () => {
+        const { owner, teammates } = splitOwnerArcana(players, '磨菇');
+        expect(owner?.Name).toBe('磨菇');
+        expect(teammates.map(p => p.Name)).toEqual(['圓', '哞菇']);
+    });
+
+    it('has no owner when the owner has no arcana, putting everyone in teammates', () => {
+        const noArcanaOwner = players.map(p => p.Name === '磨菇' ? { ...p, Arcana: 0 } : p);
+        const { owner, teammates } = splitOwnerArcana(noArcanaOwner, '磨菇');
+        expect(owner).toBeUndefined();
+        expect(teammates.map(p => p.Name)).toEqual(['圓', '哞菇']);
+    });
+
+    it('has no teammates when only the owner has arcana', () => {
+        const soloArcana = players.map(p => p.Name === '磨菇' ? p : { ...p, Arcana: 0 });
+        const { owner, teammates } = splitOwnerArcana(soloArcana, '磨菇');
+        expect(owner?.Name).toBe('磨菇');
+        expect(teammates).toEqual([]);
+    });
+
+    it('has no owner when the recording player is not in the party', () => {
+        const { owner, teammates } = splitOwnerArcana(players, '不存在');
+        expect(owner).toBeUndefined();
+        expect(teammates.map(p => p.Name)).toEqual(['圓', '哞菇', '磨菇']);
+    });
+
+    it('handles an empty party', () => {
+        expect(splitOwnerArcana([], '磨菇')).toEqual({ owner: undefined, teammates: [] });
+    });
+});
+
+describe('mergeBattleCols', () => {
+    const defaults = ['a', 'b', 'c'] as unknown as typeof DEFAULT_BATTLE_COLS;
+
+    it('returns all-visible defaults in order when nothing is stored', () => {
+        expect(mergeBattleCols(null, defaults)).toEqual([
+            { key: 'a', visible: true }, { key: 'b', visible: true }, { key: 'c', visible: true },
+        ]);
+        expect(mergeBattleCols(undefined, defaults)).toEqual(mergeBattleCols(null, defaults));
+    });
+
+    it('keeps stored order and visibility when it matches the current defaults', () => {
+        const stored = [
+            { key: 'c', visible: false }, { key: 'a', visible: true }, { key: 'b', visible: true },
+        ] as unknown as BattleColState[];
+        expect(mergeBattleCols(stored, defaults)).toEqual(stored);
+    });
+
+    it('drops a stored column that no longer exists in defaults', () => {
+        const stored = [
+            { key: 'a', visible: true }, { key: 'removed', visible: true }, { key: 'b', visible: false },
+        ] as unknown as BattleColState[];
+        expect(mergeBattleCols(stored, defaults)).toEqual([
+            { key: 'a', visible: true }, { key: 'b', visible: false }, { key: 'c', visible: true },
+        ]);
+    });
+
+    it('appends a new default column not present in storage, visible by default', () => {
+        const stored = [{ key: 'b', visible: false }, { key: 'a', visible: true }] as unknown as BattleColState[];
+        expect(mergeBattleCols(stored, defaults)).toEqual([
+            { key: 'b', visible: false }, { key: 'a', visible: true }, { key: 'c', visible: true },
+        ]);
+    });
+
+    it('treats an empty stored array the same as nothing stored', () => {
+        expect(mergeBattleCols([], defaults)).toEqual(mergeBattleCols(null, defaults));
+    });
+});
+
+describe('moveBattleCol', () => {
+    const cols = [
+        { key: 'a', visible: true }, { key: 'b', visible: true },
+        { key: 'c', visible: true }, { key: 'd', visible: true },
+    ] as unknown as BattleColState[];
+
+    it('moves an item forward', () => {
+        expect(moveBattleCol(cols, 0, 2).map(c => c.key)).toEqual(['b', 'c', 'a', 'd']);
+    });
+
+    it('moves an item backward', () => {
+        expect(moveBattleCol(cols, 3, 1).map(c => c.key)).toEqual(['a', 'd', 'b', 'c']);
+    });
+
+    it('is a no-op (but still returns a copy) when from equals to', () => {
+        const result = moveBattleCol(cols, 1, 1);
+        expect(result).toEqual(cols);
+        expect(result).not.toBe(cols);
+    });
+
+    it('does not mutate the input', () => {
+        moveBattleCol(cols, 0, 3);
+        expect(cols.map(c => c.key)).toEqual(['a', 'b', 'c', 'd']);
+    });
+
+    it('clamps an out-of-range from index to a no-op copy', () => {
+        expect(moveBattleCol(cols, -1, 2)).toEqual(cols);
+        expect(moveBattleCol(cols, 10, 2)).toEqual(cols);
     });
 });

@@ -13,6 +13,24 @@
                 density="compact" clearable style="min-width: 200px" />
             <v-btn :loading="loading" icon="mdi-refresh" size="small" variant="text"
                 title="重新整理" @click="reload" />
+            <v-menu :close-on-content-click="false">
+                <template #activator="{ props }">
+                    <v-btn v-bind="props" icon="mdi-view-column" size="small" variant="text" title="顯示欄位" />
+                </template>
+                <v-list density="compact" class="col-editor-list">
+                    <v-list-item v-for="(col, i) in colState" :key="col.key" class="col-editor-item"
+                        density="compact" draggable="true"
+                        :class="{ 'col-editor-drag-over': dragIndex === i && dragIndex !== dragFrom }"
+                        @dragstart="onColDragStart($event, i)" @dragover.prevent="onColDragOver(i)"
+                        @drop.prevent="onColDrop" @dragend="onColDragEnd">
+                        <template #prepend>
+                            <v-icon icon="mdi-drag" size="small" class="col-drag-handle" />
+                        </template>
+                        <v-checkbox v-model="col.visible" :label="colLabel(col.key)"
+                            hide-details density="compact" />
+                    </v-list-item>
+                </v-list>
+            </v-menu>
             <span class="text-caption text-medium-emphasis">{{ rows.length }} / {{ battles.length }} 筆</span>
         </div>
 
@@ -26,38 +44,41 @@
         <v-table density="compact">
             <thead>
                 <tr>
-                    <th class="sortable" @click="toggleSort('startedAt')">開始時間 {{ sortMark('startedAt') }}</th>
-                    <th>BOSS 名稱</th>
-                    <th class="sortable" @click="toggleSort('duration')">戰鬥時間 {{ sortMark('duration') }}</th>
-                    <th>通關</th>
-                    <th>角色</th>
-                    <th class="text-right sortable" @click="toggleSort('dps')">整場DPS {{ sortMark('dps') }}</th>
-                    <th class="text-right">人數</th>
-                    <th>秘法</th>
-                    <th>音樂</th>
+                    <template v-for="col in visibleCols" :key="col.key">
+                        <th v-if="col.sortKey" class="sortable" :class="col.align === 'right' ? 'text-right' : ''"
+                            @click="toggleSort(col.sortKey)">{{ col.label }} {{ sortMark(col.sortKey) }}</th>
+                        <th v-else :class="[col.align === 'right' ? 'text-right' : '', col.key === 'arcana' ? 'arcana-col' : '']">
+                            {{ col.label }}</th>
+                    </template>
                     <th style="width: 190px;"></th>
                 </tr>
             </thead>
             <tbody>
                 <template v-for="v in pageRows" :key="v.key">
                 <tr :title="v.file">
-                    <td>{{ rowTime(v) }}</td>
-                    <td>{{ v.bossName || '-' }}</td>
-                    <td>{{ v.durationSec ? formatDuration(v.durationSec) : '-' }}</td>
-                    <td>
+                    <template v-for="col in visibleCols" :key="col.key">
+                    <td v-if="col.key === 'startedAt'">{{ rowTime(v) }}</td>
+                    <td v-else-if="col.key === 'bossName'">{{ v.bossName || '-' }}</td>
+                    <td v-else-if="col.key === 'duration'">{{ v.durationSec ? formatDuration(v.durationSec) : '-' }}</td>
+                    <td v-else-if="col.key === 'cleared'">
                         <span v-if="v.cleared === true" style="color: #6c6;">✓</span>
                         <span v-else-if="v.cleared === false" style="color: #e66;">✗</span>
                         <span v-else>-</span>
                     </td>
-                    <td>{{ v.player }}</td>
-                    <td class="text-right text-no-wrap" :title="dpsTooltip(v)">
+                    <td v-else-if="col.key === 'player'">{{ v.player }}</td>
+                    <td v-else-if="col.key === 'dps'" class="text-right text-no-wrap" :title="dpsTooltip(v)">
                         <span v-if="isPersonalBest(v)" title="這場是同 BOSS 的個人最佳">⭐</span>
                         {{ v.ownerDps ? humanReadableNumber(v.ownerDps) : '-' }}
                     </td>
-                    <td class="text-right">{{ v.partySize || '-' }}</td>
-                    <td class="text-no-wrap">
-                        <template v-if="orderedArcana(v).length">
-                            <img v-for="pl in orderedArcana(v)" :key="pl.EntityId" width="18" height="18"
+                    <td v-else-if="col.key === 'partySize'" class="text-right">{{ v.partySize || '-' }}</td>
+                    <td v-else-if="col.key === 'arcana'" class="text-no-wrap arcana-col">
+                        <template v-if="arcanaOwner(v) || arcanaTeammates(v).length">
+                            <img v-if="arcanaOwner(v)" width="18" height="18"
+                                style="vertical-align: middle; margin-right: 2px;"
+                                :src="arcanaIconUrl(arcanaOwner(v)!.Arcana)"
+                                :title="`${arcanaTitle(arcanaOwner(v)!.Arcana)}：${arcanaOwner(v)!.Name}`" />
+                            <span v-if="arcanaOwner(v) && arcanaTeammates(v).length" class="arcana-sep">|</span>
+                            <img v-for="pl in arcanaTeammates(v)" :key="pl.EntityId" width="18" height="18"
                                 style="vertical-align: middle; margin-right: 2px;"
                                 :src="arcanaIconUrl(pl.Arcana)" :title="`${arcanaTitle(pl.Arcana)}：${pl.Name}`" />
                         </template>
@@ -65,12 +86,13 @@
                             :src="arcanaIconUrl(v.ownerArcana)" :title="arcanaTitle(v.ownerArcana)" />
                         <span v-else>-</span>
                     </td>
-                    <td class="text-no-wrap">
+                    <td v-else-if="col.key === 'music'" class="text-no-wrap">
                         <template v-if="v.musicCcId && v.musicPct">
                             <img width="18" height="18" style="vertical-align: middle; margin-right: 2px;"
                                 :src="musicIconUrl(v.musicCcId)" :title="musicTitle(v.musicCcId)" />{{ v.musicPct.toFixed(1) }}%
                         </template>
                     </td>
+                    </template>
                     <td class="text-no-wrap actions">
                         <v-btn icon="mdi-chevron-down" size="small" variant="text"
                             :style="{ transform: expanded.has(v.key) ? 'rotate(180deg)' : '' }"
@@ -87,7 +109,7 @@
                     </td>
                 </tr>
                 <tr v-if="expanded.has(v.key)">
-                    <td :colspan="10" class="expand-cell">
+                    <td :colspan="visibleCols.length + 1" class="expand-cell">
                         <div class="d-flex flex-wrap" style="gap: 24px; padding: 8px 4px;">
                             <table v-if="v.players?.length" class="party-table">
                                 <thead>
@@ -130,11 +152,12 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, ref, computed, onMounted, inject } from 'vue';
+import { defineComponent, ref, computed, onMounted, inject, watch } from 'vue';
 import {
     filterBattles, humanReadableBytes, distinctOptions, toLocalRFC3339,
-    formatStartedAt, dungeonDisplayName, filterByBossName, orderPartyArcana,
-    type BattleRecord,
+    formatStartedAt, dungeonDisplayName, filterByBossName, splitOwnerArcana,
+    mergeBattleCols, moveBattleCol,
+    type BattleRecord, type BattleColKey, type BattleColState,
 } from '@/lib/battleFilter';
 import { humanReadableNumber, formatDuration, formatUnixLocal } from '@/lib/util';
 import { arcanaIconUrl, arcanaTitle } from '@/lib/arcana';
@@ -197,6 +220,54 @@ export default defineComponent({
         const sortMark = (key: BattleSortKey) =>
             sortKey.value !== key ? '' : (sortDir.value === 'desc' ? '▼' : '▲');
 
+        // Column definitions: label/sort-key/alignment per key. Order and
+        // visibility come from colState below, not from this list's order.
+        type BattleColDef = { key: BattleColKey; label: string; sortKey?: BattleSortKey; align?: 'right' };
+        const COL_DEFS: Record<BattleColKey, BattleColDef> = {
+            startedAt: { key: 'startedAt', label: '開始時間', sortKey: 'startedAt' },
+            bossName: { key: 'bossName', label: 'BOSS 名稱' },
+            duration: { key: 'duration', label: '戰鬥時間', sortKey: 'duration' },
+            cleared: { key: 'cleared', label: '通關' },
+            player: { key: 'player', label: '角色' },
+            dps: { key: 'dps', label: '整場DPS', sortKey: 'dps', align: 'right' },
+            partySize: { key: 'partySize', label: '人數', align: 'right' },
+            arcana: { key: 'arcana', label: '秘法' },
+            music: { key: 'music', label: '音樂' },
+        };
+        const colLabel = (key: BattleColKey) => COL_DEFS[key].label;
+
+        const COLS_STORAGE_KEY = 'battleRecordsCols.v1';
+        const loadCols = (): BattleColState[] => {
+            try {
+                const raw = localStorage.getItem(COLS_STORAGE_KEY);
+                return mergeBattleCols(raw ? JSON.parse(raw) as BattleColState[] : null);
+            } catch {
+                return mergeBattleCols(null);
+            }
+        };
+        const colState = ref<BattleColState[]>(loadCols());
+        watch(colState, v => localStorage.setItem(COLS_STORAGE_KEY, JSON.stringify(v)), { deep: true });
+        const visibleCols = computed(() => colState.value.filter(c => c.visible).map(c => COL_DEFS[c.key]));
+
+        // Drag-to-reorder: reorder live on dragover so the list visually
+        // shifts as you drag, tracking the dragged item's current index.
+        const dragFrom = ref<number | null>(null);
+        const dragIndex = ref<number | null>(null);
+        const onColDragStart = (e: DragEvent, i: number) => {
+            dragFrom.value = i;
+            dragIndex.value = i;
+            // Firefox needs setData for the drag to actually start.
+            e.dataTransfer?.setData('text/plain', String(i));
+            if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+        };
+        const onColDragOver = (i: number) => {
+            if (dragIndex.value === null || dragIndex.value === i) return;
+            colState.value = moveBattleCol(colState.value, dragIndex.value, i);
+            dragIndex.value = i;
+        };
+        const onColDrop = () => { dragFrom.value = null; dragIndex.value = null; };
+        const onColDragEnd = () => { dragFrom.value = null; dragIndex.value = null; };
+
         const rows = computed(() => sortBattles(filterByBossName(flattenBattles(filterBattles(battles.value, {
             code: codeFilter.value ?? undefined,
             player: playerFilter.value ?? undefined,
@@ -235,10 +306,10 @@ export default defineComponent({
         };
         const sortedPlayers = (v: BattleRow) =>
             [...(v.players ?? [])].sort((a, b) => b.Dps - a.Dps);
-        // Recording player first, rest by damage desc; undetected arcana
-        // (0) is dropped, matching the party-table convention below.
-        const orderedArcana = (v: BattleRow) =>
-            orderPartyArcana(v.players ?? [], v.player).filter(pl => pl.Arcana);
+        // Owner's icon vs. teammates', so the template can put a「|」
+        // separator between them; undetected arcana (0) is dropped.
+        const arcanaOwner = (v: BattleRow) => splitOwnerArcana(v.players ?? [], v.player).owner;
+        const arcanaTeammates = (v: BattleRow) => splitOwnerArcana(v.players ?? [], v.player).teammates;
         const partyShare = (v: BattleRow, pl: BattlePlayer) => {
             const total = (v.players ?? []).reduce((s, p) => s + p.Damage, 0);
             return total > 0 ? `${(pl.Damage / total * 100).toFixed(1)}%` : '-';
@@ -316,9 +387,11 @@ export default defineComponent({
             loadRecord, revealRecord, loadingFile,
             humanReadableNumber, formatDuration, arcanaIconUrl, arcanaTitle,
             sortKey, sortDir, toggleSort, sortMark,
+            colState, visibleCols, colLabel,
+            dragFrom, dragIndex, onColDragStart, onColDragOver, onColDrop, onColDragEnd,
             page, pageCount, pageRows,
             isPersonalBest, dpsTooltip, rowTime,
-            expanded, toggleExpand, sortedPlayers, partyShare, orderedArcana,
+            expanded, toggleExpand, sortedPlayers, partyShare, arcanaOwner, arcanaTeammates,
             musicIconUrl, musicTitle,
             noteDraft, saveNote,
             confirmDelete, askDelete, doDelete,
@@ -363,5 +436,48 @@ export default defineComponent({
 
 .party-table .text-right {
     text-align: right;
+}
+
+/* Reserve room for up to 8 icons + separator (8 * 20px slot + ~16px
+   separator) so the column doesn't resize across pages/filters. */
+.arcana-col {
+    min-width: 176px;
+}
+
+.arcana-sep {
+    display: inline-block;
+    margin: 0 4px;
+    color: #888;
+}
+
+/* Denser than itemIndex's column editor, per explicit request. */
+.col-editor-list {
+    padding: 0;
+}
+
+.col-editor-item {
+    min-height: 26px;
+    padding: 0 8px;
+    cursor: grab;
+}
+
+.col-editor-item :deep(.v-list-item__content) {
+    min-height: unset;
+}
+
+.col-editor-item :deep(.v-selection-control) {
+    min-height: 22px;
+}
+
+.col-editor-item :deep(.v-label) {
+    font-size: 0.8rem;
+}
+
+.col-drag-handle {
+    margin-right: 2px;
+}
+
+.col-editor-drag-over {
+    background: rgba(255, 255, 255, 0.06);
 }
 </style>

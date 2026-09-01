@@ -76,6 +76,18 @@ export function orderPartyArcana(players: BattlePlayer[], ownerName: string): Ba
     return [players[ownerIdx], ...rest];
 }
 
+// splitOwnerArcana: same owner-first order as orderPartyArcana, but split so
+// the UI can render a separator between the owner's icon and teammates'.
+// No owner when the owner has no arcana (filtered out) or isn't in the party.
+export function splitOwnerArcana(players: BattlePlayer[], ownerName: string):
+    { owner?: BattlePlayer; teammates: BattlePlayer[] } {
+    const ordered = orderPartyArcana(players, ownerName).filter(p => p.Arcana);
+    if (ordered.length && ordered[0].Name === ownerName) {
+        return { owner: ordered[0], teammates: ordered.slice(1) };
+    }
+    return { teammates: ordered };
+}
+
 export type BattleSortKey = 'startedAt' | 'dps' | 'duration';
 
 // sortBattles: stable sort of fight rows with rows lacking the key always
@@ -211,4 +223,42 @@ export function toLocalRFC3339(v: string | null): string | undefined {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
         `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}` +
         `${sign}${pad(Math.floor(absMin / 60))}:${pad(absMin % 60)}`;
+}
+
+// Battle-records table column keys, in their default display order.
+export type BattleColKey =
+    | 'startedAt' | 'bossName' | 'duration' | 'cleared' | 'player'
+    | 'dps' | 'partySize' | 'arcana' | 'music';
+
+export const DEFAULT_BATTLE_COLS: BattleColKey[] = [
+    'startedAt', 'bossName', 'duration', 'cleared', 'player',
+    'dps', 'partySize', 'arcana', 'music',
+];
+
+export type BattleColState = { key: BattleColKey; visible: boolean };
+
+// mergeBattleCols: reconciles a persisted column order/visibility list
+// against the current default keys — drops columns no longer defined,
+// appends new ones (visible) at the end, otherwise keeps stored order.
+export function mergeBattleCols(
+    stored: BattleColState[] | null | undefined,
+    defaults: BattleColKey[] = DEFAULT_BATTLE_COLS,
+): BattleColState[] {
+    if (!stored || !stored.length) return defaults.map(key => ({ key, visible: true }));
+    const known = new Set<string>(defaults);
+    const kept = stored.filter(c => known.has(c.key));
+    const present = new Set(kept.map(c => c.key));
+    const added = defaults.filter(k => !present.has(k)).map(key => ({ key, visible: true }));
+    return [...kept, ...added];
+}
+
+// moveBattleCol: pure array-move for drag-to-reorder; out-of-range `from`
+// or a no-op from===to still returns a fresh copy, never the same reference.
+export function moveBattleCol(cols: BattleColState[], from: number, to: number): BattleColState[] {
+    if (from < 0 || from >= cols.length || from === to) return [...cols];
+    const next = [...cols];
+    const [item] = next.splice(from, 1);
+    const clampedTo = Math.max(0, Math.min(to, next.length));
+    next.splice(clampedTo, 0, item);
+    return next;
 }
