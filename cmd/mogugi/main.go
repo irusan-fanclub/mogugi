@@ -149,6 +149,7 @@ var onLicenseActivated func()
 // activate endpoint — so we don't touch the network before activation.
 func runLive(ctx context.Context) {
 	pub := newEventPublisher(ctx, nil)
+	currentPub = pub
 	go runPacketWriter(ctx, pub)
 
 	var once sync.Once
@@ -180,6 +181,7 @@ func runFile(ctx context.Context, fileName string, realtime bool) {
 	}
 
 	pub := newEventPublisher(ctx, r)
+	currentPub = pub
 	go runPacketWriter(ctx, pub)
 	serve(pub)
 }
@@ -288,6 +290,7 @@ func startWebsocketServer(newClientCb func(*websocket.Conn)) {
 	http.Handle("/api/battles/delete", requireLicense(http.HandlerFunc(httpHandlerBattleDelete)))
 	http.HandleFunc("/api/license/status", httpHandlerLicenseStatus)
 	http.HandleFunc("/api/license/oauth/start", httpHandlerLicenseOAuthStart)
+	http.HandleFunc("/api/status", httpHandlerStatus)
 
 	var staticFS = fs.FS(staticFiles)
 	htmlContent, err := fs.Sub(staticFS, "static")
@@ -325,6 +328,26 @@ func startConnectionWatchdog(ctx context.Context, pub *eventPublisher) {
 	var switching int32
 	installed := false
 	lastFilter := ""
+	npcapOk := checkNpcapOk()
+
+	// lastStatus/hasStatus dedupe live publishes to state changes only, but
+	// still force one publish up front so /api/status and new clients never
+	// see a permanently-nil status.
+	var lastStatus event.EventCaptureStatus
+	hasStatus := false
+	publishStatus := func(gameDetected bool) {
+		lastPacketAtUnix := int64(0)
+		if installed {
+			lastPacketAtUnix = pub.LastPacketAt().Unix()
+		}
+		status := deriveCaptureStatus(npcapOk, gameDetected, lastPacketAtUnix, time.Now())
+		if hasStatus && status == lastStatus {
+			return
+		}
+		hasStatus = true
+		lastStatus = status
+		pub.PublishCaptureStatus(status)
+	}
 
 	rebuild := func(reason string) {
 		if !atomic.CompareAndSwapInt32(&switching, 0, 1) {
@@ -335,6 +358,7 @@ func startConnectionWatchdog(ctx context.Context, pub *eventPublisher) {
 		nicName, err := pcaputil.FindNic()
 		if err != nil {
 			logger.Println("watchdog: discover failed:", err)
+			npcapOk = checkNpcapOk()
 			return
 		}
 		conns, _ := pcaputil.PollClientConnections()
@@ -353,6 +377,7 @@ func startConnectionWatchdog(ctx context.Context, pub *eventPublisher) {
 		}
 		pub.SwitchReader(newR, reason)
 		installed = true
+		publishStatus(true)
 	}
 
 	for {
@@ -366,6 +391,7 @@ func startConnectionWatchdog(ctx context.Context, pub *eventPublisher) {
 				logger.Println("watchdog: poll failed:", err)
 				continue
 			}
+			publishStatus(len(conns) > 0)
 			if len(conns) == 0 {
 				continue
 			}

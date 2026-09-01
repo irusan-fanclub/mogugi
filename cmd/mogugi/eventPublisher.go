@@ -46,6 +46,7 @@ type eventPublisher struct {
 	bossEntities    map[uint64]string           // live boss entity id -> boss name (race-id detection)
 	maxLifeSeen     map[uint64]float64          // entity id -> last published max life (0x7532)
 	downedEntities  map[uint64]bool             // boss ids whose life already crossed zero
+	captureStatus   *event.EventCaptureStatus   // last known capture status; nil until the watchdog computes one
 	snapshotNames   map[uint64]string           // entity id -> name from 0x5209 snapshots (survives cache eviction)
 	dynRegions      map[uint32]dynRegion        // dynamic region id -> static region it clones (0xA9A0)
 	statTables      map[uint64]packet.StatTable // entity id -> stat table (0x5209 base + 0x7530/2 deltas)
@@ -224,6 +225,30 @@ func (t *eventPublisher) LastPacketAt() time.Time {
 	t.Lock()
 	defer t.Unlock()
 	return t.lastPacketAt
+}
+
+// PublishCaptureStatus stores the given status for new clients' initial
+// snapshot and broadcasts it live. Called by the watchdog on state change.
+func (t *eventPublisher) PublishCaptureStatus(s event.EventCaptureStatus) {
+	s.EventBase = event.EventBase{
+		EventId: event.EventIdCaptureStatus,
+		At:      time.Now().Unix(),
+		Id:      "0",
+	}
+
+	t.Lock()
+	t.captureStatus = &s
+	t.Unlock()
+
+	t.publish(&s)
+}
+
+// CaptureStatus returns the last known capture status, or nil if the
+// watchdog hasn't computed one yet (e.g. license not yet activated).
+func (t *eventPublisher) CaptureStatus() *event.EventCaptureStatus {
+	t.Lock()
+	defer t.Unlock()
+	return t.captureStatus
 }
 
 // publish appends an event to the pending buffer and triggers a flush
@@ -1721,6 +1746,7 @@ func (t *eventPublisher) snapshotEvents(playersOnly bool) []event.IEvent {
 		}
 	}
 	ownerId, ownerName := t.ownerId, t.ownerName
+	capStatus := t.captureStatus
 	t.Unlock()
 
 	if ownerName != "" {
@@ -1732,6 +1758,12 @@ func (t *eventPublisher) snapshotEvents(playersOnly bool) []event.IEvent {
 			},
 			Name: ownerName,
 		})
+	}
+
+	// Seed a late-attaching client with the current capture status; live
+	// publishes only fire on change (mirrors the maxLifeSeen ride-along above).
+	if capStatus != nil {
+		initial = append(initial, capStatus)
 	}
 
 	return initial

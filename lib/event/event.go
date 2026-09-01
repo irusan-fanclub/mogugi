@@ -24,6 +24,7 @@ const (
 	EventIdSkillStop
 	EventIdMaxLife
 	EventIdEntityDown
+	EventIdCaptureStatus
 )
 
 // System-level events use negative IDs so they can be filtered out
@@ -213,4 +214,15 @@ type EventMaxLife struct {
 // crosses zero — the definitive kill signal for run summaries.
 type EventEntityDown struct {
 	EventBase
+}
+
+// EventCaptureStatus reports live packet-capture health, published by the
+// connection watchdog on any state change and included in a new client's
+// initial snapshot. LastPacketAt is 0 if no reader has ever been installed.
+type EventCaptureStatus struct {
+	EventBase
+	NpcapOk      bool
+	GameDetected bool
+	Capturing    bool
+	LastPacketAt int64
 }
