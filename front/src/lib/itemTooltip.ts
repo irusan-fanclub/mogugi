@@ -226,14 +226,14 @@ export function buildTip(h: Holder, deps: TooltipDeps): Tip | null {
     const relicDesc = isRelicPocket(h.pocket) && deps.itemDescMap[h.id]
         ? deps.itemDescMap[h.id].replaceAll('\\n', '\n') : null;
 
-    // Magic-circle ability: MCAID=ability id, MCELV=circle level, IMDN=circle name.
+    // Magic-circle ability: MCAID=ability id, MCELV=circle level.
+    // IMDN is the AUTHOR name, not the circle name - deliberately not shown.
     const mcaid = Number(meta.MCAID) || undefined;
     const magicCircle: string[] = [];
     if (mcaid) {
         const mcelv = Number(meta.MCELV) || 0;
         const line = formatMagicCircleAbility(mcaid, mcelv);
         if (line) magicCircle.push(line);
-        if (meta.IMDN) magicCircle.push(`陣名：${meta.IMDN}`);
     }
 
     // 改造（UPR1..n）："upgrade_id,effect_id,v1,v2,..." → 名稱＋該次數值。

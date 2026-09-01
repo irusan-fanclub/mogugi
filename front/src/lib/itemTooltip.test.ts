@@ -151,13 +151,12 @@ describe('buildTip', () => {
         expect(tip!.relic).toEqual(['死亡準星傷害 增加30%']);
     });
 
-    it('(i) 魔法陣：MCAID+MCELV 代入模板，IMDN 附加「陣名：」行', () => {
+    it('(i) 魔法陣：MCAID+MCELV 代入模板（IMDN 為作者，不顯示）', () => {
         const h = holder({ metadata: 'MCAID:2:102;MCELV:2:10;IMDN:s:測試陣;' });
         const tip = buildTip(h, makeDeps());
         expect(tip).not.toBeNull();
         expect(tip!.magicCircle).toEqual([
             '在地面設置瑪奇魔法陣, 讓半徑3m範圍內的敵人防禦和保護減少 10',
-            '陣名：測試陣',
         ]);
     });
 

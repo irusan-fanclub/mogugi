@@ -201,9 +201,9 @@ export default defineComponent({
                 .join(' / ');
         };
 
-        // searchText: 文字搜尋的比對範圍 = 顯示名稱（含賦予名）+ 細工能力名。
+        // searchText: 文字搜尋的比對範圍 = 顯示名稱（含賦予名）+ 細工能力名 + 效果欄。
         const searchText = (h: Holder): string =>
-            `${displayName(h)} ${metalwareText(h)}`.toLowerCase();
+            `${displayName(h)} ${metalwareText(h)} ${effectColumnText(h, enchantInfoMap.value)}`.toLowerCase();
 
         const reload = async () => {
             loading.value = true;
