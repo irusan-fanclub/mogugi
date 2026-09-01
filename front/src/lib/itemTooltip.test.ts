@@ -1,7 +1,8 @@
 // itemTooltip.test.ts — buildTip 純函式的單元測試（vitest）。
 import { describe, it, expect } from 'vitest';
-import { buildTip, type TooltipDeps } from './itemTooltip';
+import { buildTip, formatRelicEffect, type TooltipDeps } from './itemTooltip';
 import type { Holder } from './itemIndex';
+import type { EnchantInfo } from '@/store';
 
 // --- 測試用 stub ---
 
@@ -117,5 +118,63 @@ describe('buildTip', () => {
         expect(tip).not.toBeNull();
         expect(tip!.colorGroups[0].label).toBe('道具顏色');
         expect(tip!.colorGroups[0].colors).toEqual(['ff0000', '00ff00', '0000ff']);
+    });
+
+    it('(g) 遺物（穆利亞斯的遺物）：metadata 帶 IMROM 時，依 optionset 敘述顯示，蓋過舊版 效果#code', () => {
+        const h = holder({
+            id: 5000,
+            pocket: 32,
+            metadata: 'IMROM:4:73003;',
+            relicEffects: [{ code: 2558, value: 800 }],
+        });
+        const deps = makeDeps({
+            enchantInfoMap: {
+                73003: { name: '穆利亞斯的遺物', level: 0, desc: '閃電雷擊傷害增加{0}%(上限800%)' },
+            },
+        });
+        const tip = buildTip(h, deps);
+        expect(tip).not.toBeNull();
+        expect(tip!.relic).toEqual(['閃電雷擊傷害增加800%(上限800%)']);
+    });
+
+    it('(h) 遺物：IMROM 未知（optionset 對照表查無）時 fallback 舊版 效果#code 顯示', () => {
+        const h = holder({
+            id: 5000,
+            pocket: 32,
+            metadata: 'IMROM:4:99999;',
+            relicEffects: [{ code: 2558, value: 30 }],
+        });
+        const tip = buildTip(h, makeDeps());
+        expect(tip).not.toBeNull();
+        expect(tip!.relic).toEqual(['死亡準星傷害 增加30%']);
+    });
+});
+
+describe('formatRelicEffect', () => {
+    const infoMap = (desc: string): Record<number, EnchantInfo> => ({
+        1: { name: '穆利亞斯的遺物', level: 0, desc },
+    });
+
+    it('%-direct：{0} 後接 % → 值直接代入（73021/400）', () => {
+        const s = formatRelicEffect(1, 400, infoMap('死亡準星傷害增加{0}%(上限400%)'));
+        expect(s).toBe('死亡準星傷害增加400%(上限400%)');
+    });
+
+    it('秒-scaling：{0} 後接 秒 → 值 / 1000（73005/1500 → 1.5秒）', () => {
+        const s = formatRelicEffect(1, 1500, infoMap('淨化的鼓動持續時間增加{0}秒(上限5秒)'));
+        expect(s).toBe('淨化的鼓動持續時間增加1.5秒(上限5秒)');
+    });
+
+    it('flat：{0} 後無單位 → 值直接代入（73004/150）', () => {
+        const s = formatRelicEffect(1, 150, infoMap('救贖的迴聲恢復量增加{0}(上限500)'));
+        expect(s).toBe('救贖的迴聲恢復量增加150(上限500)');
+    });
+
+    it('IMROM 未知（不在對照表中）→ null（呼叫端 fallback 舊版顯示）', () => {
+        expect(formatRelicEffect(99999, 100, infoMap('死亡準星傷害增加{0}%(上限400%)'))).toBeNull();
+    });
+
+    it('IMROM 為 undefined（metadata 無此欄位）→ null', () => {
+        expect(formatRelicEffect(undefined, 100, infoMap('死亡準星傷害增加{0}%(上限400%)'))).toBeNull();
     });
 });
