@@ -1,7 +1,21 @@
 <template>
     <div class="pa-2">
-        <div class="d-flex align-center flex-wrap mb-2" style="gap: 8px">
-            <v-btn :loading="loading" icon="mdi-refresh" size="small" variant="text"
+        <div class="d-flex align-center mb-2 battle-toolbar" style="gap: 8px">
+            <v-select v-model="codeFilter" :items="codeOptions" item-title="title" item-value="value"
+                label="副本" hide-details density="compact" clearable style="width: 210px" />
+            <v-select v-model="bossNameFilter" :items="bossNameOptions" label="BOSS 名稱" hide-details
+                density="compact" clearable style="width: 190px" />
+            <v-select v-model="playerFilter" :items="playerOptions" label="角色" hide-details
+                density="compact" clearable style="width: 170px" />
+            <v-select v-model="clearedFilter" :items="clearedOptions" item-title="title" item-value="value"
+                label="通關" hide-details density="compact" clearable style="width: 140px" />
+            <v-combobox v-model="pageSizeInput" :items="pageSizeChoices" label="顯示列數"
+                hide-details density="compact" style="width: 110px" />
+            <v-text-field v-model="fromInput" type="datetime-local" label="從" hide-details
+                density="compact" clearable style="min-width: 200px" />
+            <v-text-field v-model="toInput" type="datetime-local" label="到" hide-details
+                density="compact" clearable style="min-width: 200px" />
+            <v-btn :loading="loading" icon="mdi-refresh" size="small" variant="text" class="ml-auto"
                 title="重新整理" @click="reload" />
             <v-menu :close-on-content-click="false">
                 <template #activator="{ props }">
@@ -23,22 +37,8 @@
             </v-menu>
             <div class="text-caption text-medium-emphasis battle-count">
                 <div>{{ rows.length }}場戰鬥</div>
-                <div class="battle-count-line2">{{ battles.length }}個檔案</div>
+                <div>{{ battles.length }}個檔案</div>
             </div>
-            <v-select v-model="codeFilter" :items="codeOptions" item-title="title" item-value="value"
-                label="副本" hide-details density="compact" clearable style="width: 210px" />
-            <v-select v-model="bossNameFilter" :items="bossNameOptions" label="BOSS 名稱" hide-details
-                density="compact" clearable style="width: 190px" />
-            <v-select v-model="playerFilter" :items="playerOptions" label="角色" hide-details
-                density="compact" clearable style="width: 170px" />
-            <v-select v-model="clearedFilter" :items="clearedOptions" item-title="title" item-value="value"
-                label="通關" hide-details density="compact" clearable style="width: 140px" />
-            <v-combobox v-model="pageSizeInput" :items="pageSizeChoices" label="顯示列數"
-                hide-details density="compact" style="width: 110px" />
-            <v-text-field v-model="fromInput" type="datetime-local" label="從" hide-details
-                density="compact" clearable style="min-width: 200px" />
-            <v-text-field v-model="toInput" type="datetime-local" label="到" hide-details
-                density="compact" clearable style="min-width: 200px" />
 
         </div>
 
@@ -474,9 +474,14 @@ export default defineComponent({
     white-space: nowrap;
 }
 
-/* Second line staggered slightly per user preference. */
-.battle-count-line2 {
-    margin-left: 10px;
+/* Never wrap the toolbar; a narrow window scrolls it horizontally. */
+.battle-toolbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+}
+
+.battle-toolbar > * {
+    flex-shrink: 0;
 }
 
 /* Reserve room for up to 8 icons + separator (8 * 20px slot + ~16px
