@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -873,6 +874,31 @@ func newEventPublisherForTest(t *testing.T) *eventPublisher {
 		downedEntities: make(map[uint64]bool),
 		lastSentAt:  time.Now(),
 		ownerId:     999,
+	}
+}
+
+// TestSwitchReaderDoesNotMarkGenuinePacketReceipt guards the capture-status
+// glue: SwitchReader stamps lastPacketAt for its own idle-retry grace period,
+// which must never be read as "a real packet arrived just now".
+func TestSwitchReaderDoesNotMarkGenuinePacketReceipt(t *testing.T) {
+	p := &eventPublisher{
+		ctx:         context.Background(),
+		entityCache: make(entityCache),
+		clientMap:   make(map[uint32]*eventClient),
+		packetCh:    make(chan *packet.GamePacket, 1),
+	}
+
+	if !p.LastRealPacketAt().IsZero() {
+		t.Fatal("LastRealPacketAt should start zero")
+	}
+
+	p.SwitchReader(nil, "initial")
+
+	if p.LastPacketAt().IsZero() {
+		t.Error("SwitchReader should still stamp LastPacketAt (idle-retry grace period)")
+	}
+	if !p.LastRealPacketAt().IsZero() {
+		t.Error("SwitchReader must not mark a genuine packet as received")
 	}
 }
 

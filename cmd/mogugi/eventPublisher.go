@@ -37,23 +37,27 @@ type eventPublisher struct {
 	pendingEvents   []event.IEvent
 	lastSentAt      time.Time
 	lastPacketAt    time.Time
-	lastRegion      uint32                      // current region id (26009); 0 = unknown
-	lastRegionName  string                      // resolved display name of lastRegion (for "from X" logging)
-	lastMission     string                      // latest mission code (22007 enter_<code>), e.g. mrd
-	lastMissionID   uint32                      // latest mission id (36000 kind-7 quest entry); resolves via dungeonNames
-	lastMissionName string                      // mission display name carried by the same 36000 entry
-	lastBGM         string                      // currently playing BGM (43302); Boss_* means a boss fight
-	bossEntities    map[uint64]string           // live boss entity id -> boss name (race-id detection)
-	maxLifeSeen     map[uint64]float64          // entity id -> last published max life (0x7532)
-	downedEntities  map[uint64]bool             // boss ids whose life already crossed zero
-	captureStatus   *event.EventCaptureStatus   // last known capture status; nil until the watchdog computes one
-	snapshotNames   map[uint64]string           // entity id -> name from 0x5209 snapshots (survives cache eviction)
-	dynRegions      map[uint32]dynRegion        // dynamic region id -> static region it clones (0xA9A0)
-	statTables      map[uint64]packet.StatTable // entity id -> stat table (0x5209 base + 0x7530/2 deltas)
-	dgnLog          dungeonLog                  // per-run event file for whitelisted dungeons (own lock)
-	ownerId         uint64                      // local player's own entity id (0 = unknown)
-	ownerName       string                      // local player's own character name ("" = unknown)
-	preparingSkill  uint16                      // skillId from the last 0x6984; consumed and cleared by 0x698B
+	// lastRealPacketAt is a genuine packet-receipt signal: set only in
+	// loop()'s packet path, never by the constructor or SwitchReader (which
+	// both stamp lastPacketAt for the idle-retry grace period, not liveness).
+	lastRealPacketAt time.Time
+	lastRegion       uint32                      // current region id (26009); 0 = unknown
+	lastRegionName   string                      // resolved display name of lastRegion (for "from X" logging)
+	lastMission      string                      // latest mission code (22007 enter_<code>), e.g. mrd
+	lastMissionID    uint32                      // latest mission id (36000 kind-7 quest entry); resolves via dungeonNames
+	lastMissionName  string                      // mission display name carried by the same 36000 entry
+	lastBGM          string                      // currently playing BGM (43302); Boss_* means a boss fight
+	bossEntities     map[uint64]string           // live boss entity id -> boss name (race-id detection)
+	maxLifeSeen      map[uint64]float64          // entity id -> last published max life (0x7532)
+	downedEntities   map[uint64]bool             // boss ids whose life already crossed zero
+	captureStatus    *event.EventCaptureStatus   // last known capture status; nil until the watchdog computes one
+	snapshotNames    map[uint64]string           // entity id -> name from 0x5209 snapshots (survives cache eviction)
+	dynRegions       map[uint32]dynRegion        // dynamic region id -> static region it clones (0xA9A0)
+	statTables       map[uint64]packet.StatTable // entity id -> stat table (0x5209 base + 0x7530/2 deltas)
+	dgnLog           dungeonLog                  // per-run event file for whitelisted dungeons (own lock)
+	ownerId          uint64                      // local player's own entity id (0 = unknown)
+	ownerName        string                      // local player's own character name ("" = unknown)
+	preparingSkill   uint16                      // skillId from the last 0x6984; consumed and cleared by 0x698B
 	// Last published skill use, for collapsing the server's double-send of
 	// one cast (two combat packs 0-3ms apart) into a single event.
 	lastSkillUseBy uint64
@@ -227,6 +231,15 @@ func (t *eventPublisher) LastPacketAt() time.Time {
 	return t.lastPacketAt
 }
 
+// LastRealPacketAt is the zero Time until a genuine packet arrives, then
+// its time — unlike LastPacketAt, SwitchReader/the constructor never touch
+// it, so it's safe as a "capturing" liveness signal.
+func (t *eventPublisher) LastRealPacketAt() time.Time {
+	t.Lock()
+	defer t.Unlock()
+	return t.lastRealPacketAt
+}
+
 // PublishCaptureStatus stores the given status for new clients' initial
 // snapshot and broadcasts it live. Called by the watchdog on state change.
 func (t *eventPublisher) PublishCaptureStatus(s event.EventCaptureStatus) {
@@ -313,8 +326,10 @@ func (t *eventPublisher) loop() {
 			t.flushNow()
 
 		case p := <-t.packetCh:
+			now := time.Now()
 			t.Lock()
-			t.lastPacketAt = time.Now()
+			t.lastPacketAt = now
+			t.lastRealPacketAt = now
 			t.Unlock()
 
 			t.handlePacket(p)

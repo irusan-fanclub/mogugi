@@ -336,9 +336,12 @@ func startConnectionWatchdog(ctx context.Context, pub *eventPublisher) {
 	var lastStatus event.EventCaptureStatus
 	hasStatus := false
 	publishStatus := func(gameDetected bool) {
+		// LastRealPacketAt (not LastPacketAt) is the genuine liveness signal:
+		// SwitchReader stamps LastPacketAt on every rebuild for its own
+		// idle-retry grace period, which would otherwise read as "capturing".
 		lastPacketAtUnix := int64(0)
-		if installed {
-			lastPacketAtUnix = pub.LastPacketAt().Unix()
+		if real := pub.LastRealPacketAt(); !real.IsZero() {
+			lastPacketAtUnix = real.Unix()
 		}
 		status := deriveCaptureStatus(npcapOk, gameDetected, lastPacketAtUnix, time.Now())
 		if hasStatus && status == lastStatus {
