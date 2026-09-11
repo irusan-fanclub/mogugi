@@ -136,16 +136,23 @@ export default defineComponent({
             // pushes _conditionHistory in place — merge always builds a new
             // array, so downstream computeds still invalidate.
             //
-            // bardsongEvents is spread here (not just passed by reference) so
-            // this computed reads its index/length — required for it to
-            // invalidate when ActorManager pushes to the shallowReactive array.
+            // bardsongEvents/Pulses are spread here (not just passed by
+            // reference) so this computed reads their index/length — required
+            // for it to invalidate when ActorManager pushes to the
+            // shallowReactive arrays.
             return mergeConditionHistories([
                 { history: props.target?.conditionHistory ?? [] },
                 ...props.partyActors.map(a => ({
                     history: a.conditionHistory,
                     ccIds: PLAYER_SIDE_CC_IDS,
                 })),
-                { history: buildBardsongConditionHistory([...actorManager.value.bardsongEvents]) },
+                {
+                    history: buildBardsongConditionHistory(
+                        [...actorManager.value.bardsongEvents],
+                        [...actorManager.value.bardsongPulses],
+                        actorManager.value.ownerEntityId,
+                    ),
+                },
             ]);
         });
 

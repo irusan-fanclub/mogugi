@@ -29,6 +29,7 @@ const (
 	EventIdCaptureStatus
 	EventIdOwnerEquipment
 	EventIdOwnerStats
+	EventIdBardsongPulse
 )
 
 // System-level events use negative IDs so they can be filtered out
@@ -164,6 +165,18 @@ type EventBardsong struct {
 	Song      string
 	Bonuses   map[string]float64
 	IsEnd     bool
+}
+
+// EventBardsongPulse fires from the performer's 0x9093 kind-21 effect while
+// a bard song plays. Id is the performer; Targets lists the entities the song
+// reached on this pulse (each gets the buff for a fixed span), or is empty
+// with Stop set when the performer stops. The EventBardsong announcement
+// reaches the whole party even when the local player was out of range, so
+// this is the only per-entity signal.
+type EventBardsongPulse struct {
+	EventBase
+	Targets []string
+	Stop    bool
 }
 
 // EventSkillUse fires from the broadcast combat-action packet (0x7926) for

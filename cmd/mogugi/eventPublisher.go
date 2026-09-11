@@ -441,6 +441,7 @@ func (t *eventPublisher) handlePacket(p *packet.GamePacket) {
 
 	case packet.OpcodeEffect2:
 		t.handleSkillCast(p)
+		t.handleBardsongPulse(p)
 
 	case packet.OpcodeSkillPrepareStart:
 		t.handleSkillPrepareStart(p)
@@ -1689,6 +1690,46 @@ func (t *eventPublisher) handleSkillCast(p *packet.GamePacket) {
 			Id:      strconv.FormatUint(p.Id, 10),
 		},
 		SkillId: p.Msg[1].Data().(uint16),
+	})
+}
+
+// bardsongPulseKind is the 0x9093 variant a performer emits while singing:
+// (int 21, byte sub, long targets...). Sub 7 lists who the song reached on
+// this pulse, sub 0 is the performer stopping; sub 1 trails each pulse empty
+// (capture 20260910_164818, 03:05:49).
+const (
+	bardsongPulseKind    = 21
+	bardsongPulseSubHit  = 7
+	bardsongPulseSubStop = 0
+)
+
+func (t *eventPublisher) handleBardsongPulse(p *packet.GamePacket) {
+	if len(p.Msg) < 2 ||
+		p.Msg[0].Type() != packet.MessageElemTypeInt ||
+		p.Msg[1].Type() != packet.MessageElemTypeByte ||
+		p.Msg[0].Data().(uint32) != bardsongPulseKind {
+		return
+	}
+	sub := p.Msg[1].Data().(uint8)
+	if sub != bardsongPulseSubHit && sub != bardsongPulseSubStop {
+		return
+	}
+	targets := make([]string, 0, len(p.Msg)-2)
+	for _, e := range p.Msg[2:] {
+		if e.Type() != packet.MessageElemTypeLong {
+			return
+		}
+		targets = append(targets, strconv.FormatUint(e.Data().(uint64), 10))
+	}
+
+	t.publish(&event.EventBardsongPulse{
+		EventBase: event.EventBase{
+			EventId: event.EventIdBardsongPulse,
+			At:      p.At.Unix(),
+			Id:      strconv.FormatUint(p.Id, 10),
+		},
+		Targets: targets,
+		Stop:    sub == bardsongPulseSubStop,
 	})
 }
 

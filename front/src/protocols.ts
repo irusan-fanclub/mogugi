@@ -26,6 +26,7 @@ export const eventIdMaxLife = 20;
 export const eventIdCaptureStatus = 22;
 export const eventIdOwnerEquipment = 23;
 export const eventIdOwnerStats = 24;
+export const eventIdBardsongPulse = 25;
 
 export const eventIdMessageBox = -1;
 export const eventIdSessionReset = -2;
@@ -146,6 +147,14 @@ export type eventBardsong = eventBase & {
     Song: string;
     Bonuses: Record<string, number>;
     IsEnd: boolean;
+}
+
+/** One pulse of a playing bard song, keyed by the performer. Targets are the
+ *  entities the song reached this pulse; empty with Stop when it ends. */
+export type eventBardsongPulse = eventBase & {
+    EventId: 25;
+    Targets: string[];
+    Stop: boolean;
 }
 
 /** Fires from the broadcast combat-action packet (0x7926), damaging or not

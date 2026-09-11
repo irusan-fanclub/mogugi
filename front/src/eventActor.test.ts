@@ -344,6 +344,33 @@ describe('condition history', () => {
     });
 });
 
+describe('bardsongPulses storage', () => {
+    const pulse: protocols.eventBardsongPulse = {
+        EventId: protocols.eventIdBardsongPulse, At: 100, Id: '77', Targets: [PC_ID, '77'], Stop: false,
+    };
+
+    it('appends the raw pulse and empties it on clear() in place', () => {
+        const { mgr } = setup();
+        const arr = mgr.bardsongPulses;
+        mgr.onEvent(pulse);
+        expect(mgr.bardsongPulses).toEqual([pulse]);
+
+        mgr.clear();
+        expect(mgr.bardsongPulses).toHaveLength(0);
+        expect(mgr.bardsongPulses).toBe(arr);
+    });
+
+    // The lane needs "me" to read the target lists; the id is identity, not
+    // battle data, so a clear() between fights must not forget it.
+    it('remembers the local player id from the owner-character event across clear()', () => {
+        const { mgr } = setup();
+        mgr.onEvent({ EventId: protocols.eventIdOwnerCharacter, At: 1, Id: PC_ID, Name: 'me' } as protocols.eventOwnerCharacter);
+        expect(mgr.ownerEntityId).toBe(PC_ID);
+        mgr.clear();
+        expect(mgr.ownerEntityId).toBe(PC_ID);
+    });
+});
+
 describe('bardsongEvents storage', () => {
     function bardsong(at: number, isEnd: boolean): protocols.eventBardsong {
         return {

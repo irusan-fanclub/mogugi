@@ -1,4 +1,4 @@
-import type { eventBardsong } from '@/protocols';
+import type { eventBardsong, eventBardsongPulse } from '@/protocols';
 import type { EntityConditionState } from '@/eventActor';
 
 // Synthetic CCId, not a real one — real CCIds top out at 10138, so
@@ -10,26 +10,82 @@ import type { EntityConditionState } from '@/eventActor';
 // with SYNTHETIC_CC_ICONS's ccId — bardsongTrack.test.ts checks that instead.
 export const BARDSONG_CC_ID = 900206;
 
-// Folds eventBardsong start/end events into a synthetic CC history. The
-// buff is a single non-stacking state: a start turns it on (a repeated
-// start only refreshes — the game re-announces every re-shout and the
-// server sometimes double-sends), a single end turns it off. Depth
-// counting is wrong here: starts are not balanced by ends, and one stray
-// duplicate kept the lane on for the rest of the fight (coverage 100%).
-//
-// The end notice is the authoritative closer: a sustained performance
-// announces once and then goes silent for its whole (unbounded) duration,
-// so a short cap amputates long songs. BARDSONG_MAX_SEC is only a safety
-// net for the rare missed end notice (player dead or out of range when
-// the effect lapsed).
-//
-// Events are assumed already sorted by At (they are pushed in arrival order).
+// Seconds of buff one pulse grants. Every clean start→end pair across 60+
+// logs is 20/30/40/50/60s, and the end notice always lands exactly 20s after
+// the last pulse that listed the player.
+export const BARDSONG_PULSE_SEC = 20;
+
+// Safety net for the notice-only path (no pulses recorded): a sustained
+// performance announces once and goes silent, so only a long cap is safe.
 export const BARDSONG_MAX_SEC = 300;
 
-export function buildBardsongConditionHistory(events: eventBardsong[]): EntityConditionState[] {
+// Folds the song's events into a synthetic CC history for the local player.
+//
+// With pulses (logs written after the pulse packet was parsed): the lane is
+// on for BARDSONG_PULSE_SEC after each pulse that lists ownerId, and the end
+// notice may close it sooner. The announcement notice is ignored — it goes
+// to the whole party even when the player was out of range, which painted
+// whole performances on that never reached them.
+//
+// Without pulses (older logs) or with no owner id: the notice rules below.
+//
+// Both inputs are assumed sorted by At (they are pushed in arrival order).
+export function buildBardsongConditionHistory(
+    events: eventBardsong[], pulses: eventBardsongPulse[] = [], ownerId = '',
+): EntityConditionState[] {
+    if (pulses.length > 0 && ownerId) return fromPulses(events, pulses, ownerId);
+    return fromNotices(events);
+}
+
+function onState(at: number): EntityConditionState {
+    return {
+        At: at,
+        // Unlike a real EntityCondition.At (bumped on every re-enable),
+        // this At is fixed to when the run started, never refreshed.
+        List: [{ Id: '', At: at, CCId: BARDSONG_CC_ID, DisableAt: 0, AttackerId: '', Params: {} }],
+    };
+}
+
+function fromPulses(events: eventBardsong[], pulses: eventBardsongPulse[], ownerId: string): EntityConditionState[] {
+    type Step = { At: number; kind: 'end' | 'hit' };
+    const steps: Step[] = [];
+    for (const e of events) if (e.IsEnd) steps.push({ At: e.At, kind: 'end' });
+    for (const p of pulses) if (!p.Stop && p.Targets.includes(ownerId)) steps.push({ At: p.At, kind: 'hit' });
+    // An end and a fresh pulse in the same second can only be "expired,
+    // then re-applied", so the end sorts first and the run simply continues.
+    steps.sort((a, b) => a.At - b.At || (a.kind === 'end' ? -1 : 1) - (b.kind === 'end' ? -1 : 1));
+
+    const out: EntityConditionState[] = [];
+    let expiresAt = -1;   // <0: absent
+
+    const off = (at: number) => {
+        out.push({ At: at, List: [] });
+        expiresAt = -1;
+    };
+    for (const s of steps) {
+        if (expiresAt >= 0 && s.At >= expiresAt) off(expiresAt);
+        if (s.kind === 'end') {
+            if (expiresAt >= 0) off(s.At);
+            continue;
+        }
+        if (expiresAt < 0) {
+            const prev = out[out.length - 1];
+            if (prev && prev.At === s.At && prev.List.length === 0) out.pop();   // refresh, not a gap
+            else out.push(onState(s.At));
+        }
+        expiresAt = s.At + BARDSONG_PULSE_SEC;
+    }
+    if (expiresAt >= 0) off(expiresAt);   // live rebuilds replace this tail as pulses arrive
+    return out;
+}
+
+// The buff is a single non-stacking state: a start turns it on (a repeated
+// start only refreshes — the game re-announces every performance and the
+// server sometimes double-sends), a single end turns it off. Depth counting
+// is wrong here: starts are not balanced by ends.
+function fromNotices(events: eventBardsong[]): EntityConditionState[] {
     const out: EntityConditionState[] = [];
     let present = false;
-    let runStart = 0;
     let lastRefresh = 0;
 
     const off = (at: number) => {
@@ -48,13 +104,7 @@ export function buildBardsongConditionHistory(events: eventBardsong[]): EntityCo
         lastRefresh = e.At;
         if (!present) {
             present = true;
-            runStart = e.At;
-            out.push({
-                At: e.At,
-                // Unlike a real EntityCondition.At (bumped on every re-enable),
-                // this At is fixed to when the run started, never refreshed.
-                List: [{ Id: '', At: runStart, CCId: BARDSONG_CC_ID, DisableAt: 0, AttackerId: '', Params: {} }],
-            });
+            out.push(onState(e.At));
         }
     }
     if (present) {

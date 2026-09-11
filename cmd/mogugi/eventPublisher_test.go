@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -738,6 +739,65 @@ func TestHandleBankListStoresHashedAccount(t *testing.T) {
 	}
 }
 
+// bardsongPulsePacket builds the 0x9093 kind-21 variant a 聖詠者 performer
+// emits while singing: (int 21, byte sub, long targets...). Sub 7 lists who
+// the song reached this pulse, sub 0 is the performer stopping (capture
+// 20260910_164818, 03:05:49).
+func bardsongPulsePacket(performerId uint64, sub uint8, targets ...uint64) *packet.GamePacket {
+	msg := packet.Message{packet.NewMessageElemInt(21), packet.NewMessageElemByte(sub)}
+	for _, id := range targets {
+		msg = append(msg, packet.NewMessageElemLong(id))
+	}
+	return &packet.GamePacket{At: time.Now(), Op: packet.OpcodeEffect2, Id: performerId, Msg: msg}
+}
+
+func TestHandlePacketEmitsBardsongPulse(t *testing.T) {
+	p := newEventPublisherForTest(t)
+	p.handlePacket(bardsongPulsePacket(4503599629764211, 7, 4503599627733052, 4503599629764211, 999))
+
+	e := lastEventOfType[*event.EventBardsongPulse](t, p)
+	if e.Id != "4503599629764211" {
+		t.Errorf("Id = %q, want the performer", e.Id)
+	}
+	want := []string{"4503599627733052", "4503599629764211", "999"}
+	if !reflect.DeepEqual(e.Targets, want) {
+		t.Errorf("Targets = %v, want %v", e.Targets, want)
+	}
+	if e.Stop {
+		t.Error("Stop = true on a pulse")
+	}
+}
+
+func TestHandlePacketEmitsBardsongStop(t *testing.T) {
+	p := newEventPublisherForTest(t)
+	p.handlePacket(bardsongPulsePacket(4503599629764211, 0))
+
+	e := lastEventOfType[*event.EventBardsongPulse](t, p)
+	if !e.Stop || len(e.Targets) != 0 {
+		t.Errorf("got %+v, want Stop with no targets", e)
+	}
+}
+
+// Sub 1 trails every pulse and carries nothing; a stray Long where the
+// byte should be must not be read as a target list either.
+func TestHandlePacketIgnoresOtherKind21Shapes(t *testing.T) {
+	for name, pkt := range map[string]*packet.GamePacket{
+		"sub 1": bardsongPulsePacket(4503599629764211, 1),
+		"no sub byte": {At: time.Now(), Op: packet.OpcodeEffect2, Id: 1, Msg: packet.Message{
+			packet.NewMessageElemInt(21), packet.NewMessageElemLong(5)}},
+	} {
+		p := newEventPublisherForTest(t)
+		p.handlePacket(pkt)
+		p.Lock()
+		for _, ev := range p.pendingEvents {
+			if _, ok := ev.(*event.EventBardsongPulse); ok {
+				t.Errorf("%s: published %+v", name, ev)
+			}
+		}
+		p.Unlock()
+	}
+}
+
 // skillCastPacket builds a 0x9093 packet: (int kind, short skillId, short).
 // kind 806 is the skill-cast variant; every other kind on this opcode has a
 // different shape entirely (capture 1786105610).
@@ -870,12 +930,12 @@ func TestSnapshotEventsCarryConditionParams(t *testing.T) {
 func newEventPublisherForTest(t *testing.T) *eventPublisher {
 	t.Helper()
 	return &eventPublisher{
-		entityCache: make(entityCache),
-		bossEntities: make(map[uint64]string),
-		maxLifeSeen: make(map[uint64]float64),
+		entityCache:    make(entityCache),
+		bossEntities:   make(map[uint64]string),
+		maxLifeSeen:    make(map[uint64]float64),
 		downedEntities: make(map[uint64]bool),
-		lastSentAt:  time.Now(),
-		ownerId:     999,
+		lastSentAt:     time.Now(),
+		ownerId:        999,
 	}
 }
 
@@ -1450,10 +1510,10 @@ func TestHandleCombatActionMergesServerDoubleSend(t *testing.T) {
 		combatSub{EntityId: 42, SkillId: 0, HasHit: true})
 	dup.At = at(3)
 	p.handleCombatAction(dup)
-	cast(7, 59165, 200)  // past the window: a real re-cast
-	cast(8, 59165, 201)  // different attacker inside the window: kept
+	cast(7, 59165, 200) // past the window: a real re-cast
+	cast(8, 59165, 201) // different attacker inside the window: kept
 	cast(9, 54151, 300)
-	cast(9, 54151, 390)  // puppet swing spacing: kept
+	cast(9, 54151, 390) // puppet swing spacing: kept
 
 	n := 0
 	p.Lock()

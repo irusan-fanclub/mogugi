@@ -18,6 +18,11 @@ export class ActorManager {
     // shallowReactive so a push() here is what invalidates computeds that
     // read it — there is no per-entity owner to route this through.
     public bardsongEvents: protocols.eventBardsong[] = shallowReactive([]);
+    public bardsongPulses: protocols.eventBardsongPulse[] = shallowReactive([]);
+    // The local player's entity id, needed to read "me" out of pulse target
+    // lists. Identity rather than battle data, so clear() keeps it.
+    private _owner = shallowReactive({ id: '' });
+    public get ownerEntityId() { return this._owner.id; }
 
     public static pcRaceSet = new Set<number>([8001, 8002, 9001, 9002, 10001, 10002]);
 
@@ -136,9 +141,17 @@ export class ActorManager {
                 break;
 
             // Party-wide, not per-entity — the chart's bard-song lane is
-            // built from this list directly (see lib/bardsongTrack.ts).
+            // built from these lists directly (see lib/bardsongTrack.ts).
             case protocols.eventIdBardsong:
                 this.bardsongEvents.push(event as protocols.eventBardsong);
+                break;
+
+            case protocols.eventIdBardsongPulse:
+                this.bardsongPulses.push(event as protocols.eventBardsongPulse);
+                break;
+
+            case protocols.eventIdOwnerCharacter:
+                this._owner.id = event.Id;
                 break;
         }
     }
@@ -240,6 +253,7 @@ export class ActorManager {
         // object instance를 새로 만들면 귀찮아짐
         this.damages.length = 0;
         this.bardsongEvents.length = 0;
+        this.bardsongPulses.length = 0;
 
         for (const k in this.entityMap) {
             const v = this.entityMap[k];

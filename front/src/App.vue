@@ -235,7 +235,8 @@ export default defineComponent({
                 if (event.EventId === eventIdOwnerCharacter) {
                     const e = event as eventOwnerCharacter;
                     ownerName.value = e.Name;
-                    continue;
+                    // Falls through: the actor manager keeps the id for the
+                    // bard-song lane, as it does when a log file is loaded.
                 }
 
                 if (event.EventId === eventIdCaptureStatus) {
