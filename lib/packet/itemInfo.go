@@ -25,6 +25,9 @@ type EnchantEffect struct {
 
 // InventoryItem is one item extracted from the 0x5209 inventory.
 type InventoryItem struct {
+	// EID is the ItemEID (the Long that anchors the record); 0 when the
+	// anchor is missing. Stable across logins per iruneko itemformat.md.
+	EID       uint64
 	ItemID    uint32
 	Qty       uint32
 	Container string // main | equip | bag | pet_* | unknown
@@ -181,6 +184,10 @@ func parseOptionInfo(s string) (prefix, suffix uint32) {
 	}
 	return
 }
+
+// ContainerForPocket maps a pocket id to the container class used by
+// InventoryItem.Container.
+func ContainerForPocket(pocket uint32) string { return containerFromRecType(pocket) }
 
 // containerFromRecType maps the pocket id from Item.Info @0 to a container
 // class. It is not a small enum but a pocket/bag id: 2=main, small values=

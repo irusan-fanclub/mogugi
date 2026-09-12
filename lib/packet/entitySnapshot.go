@@ -78,6 +78,15 @@ func ParseEntitySnapshot(msg Message) (*EntitySnapshot, error) {
 	return snap, nil
 }
 
+// ParseItemRecordAt is parseItemAt for callers outside the package: one
+// ItemRecord anchored at msg[i] (0x5BD4 bodies start with one).
+func ParseItemRecordAt(msg Message, i int) (InventoryItem, int, bool) {
+	if i+2 >= len(msg) {
+		return InventoryItem{}, i, false
+	}
+	return parseItemAt(msg, i)
+}
+
 // parseItemAt parses one item at i when the Long -> Byte(2) -> Bin(>=80)
 // anchor matches there; returns the item, the index after the last element
 // consumed, and whether it matched. Shared by 0x5209/0x96CA/0x7212 walkers.
@@ -102,6 +111,7 @@ func parseItemAt(msg Message, i int) (InventoryItem, int, bool) {
 	if err != nil {
 		return InventoryItem{}, i, false
 	}
+	it.EID, _ = msg[i].Data().(uint64)
 	end := i + 2
 	// Enchants come from two sources: ext Bin(144)@i+3 holds enchants
 	// already applied to the equipment; OptionInfo string@i+4 holds

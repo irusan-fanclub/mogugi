@@ -67,6 +67,7 @@
         <v-tab value="applyDamageBySkill">傷害分析</v-tab>
         <v-tab value="entityList">角色紀錄</v-tab>
         <v-tab value="itemIndex">物品索引</v-tab>
+        <v-tab value="equipAnalysis">裝備分析</v-tab>
         <v-tab value="battleRecords">戰鬥紀錄</v-tab>
         <v-tab value="about">About</v-tab>
     </v-tabs>
@@ -82,6 +83,10 @@
 
         <v-tabs-window-item value="itemIndex">
             <item-index />
+        </v-tabs-window-item>
+
+        <v-tabs-window-item value="equipAnalysis">
+            <equip-analysis />
         </v-tabs-window-item>
 
         <v-tabs-window-item value="battleRecords">
@@ -129,12 +134,13 @@ import { defineComponent, onMounted, inject, provide, ref } from "vue";
 
 import { useDialogStack } from '@/lib/useDialogStack';
 import { SocketClient } from '@/lib/socketClient';
-import { eventBase, eventIdMessageBox, eventIdSessionReset, eventIdOwnerCharacter, eventIdCaptureStatus, eventMessageBox, eventSessionReset, eventOwnerCharacter, eventCaptureStatus } from "./protocols";
-import { clearTimeRange, captureStatus } from '@/store';
+import { eventBase, eventIdMessageBox, eventIdSessionReset, eventIdOwnerCharacter, eventIdCaptureStatus, eventIdOwnerEquipment, eventIdOwnerStats, eventMessageBox, eventSessionReset, eventOwnerCharacter, eventCaptureStatus, eventOwnerEquipment, eventOwnerStats } from "./protocols";
+import { clearTimeRange, captureStatus, ownerEquipment, ownerStats } from '@/store';
 
 import ApplyDamageBySkillComponent from '@/components/applyDamageBySkill.vue';
 import EntityListComponent from "./components/entityList.vue";
 import ItemIndexComponent from "./components/itemIndex.vue";
+import EquipAnalysisComponent from "./components/equipAnalysis.vue";
 import BattleRecordsComponent from "./components/battleRecords.vue";
 import ConfigDialogComponent from "./components/configDialog.vue";
 import FloatingWindowComponent from "./components/subComponents/floatingWindow.vue";
@@ -147,6 +153,7 @@ export default defineComponent({
         ApplyDamageBySkill: ApplyDamageBySkillComponent,
         EntityList: EntityListComponent,
         ItemIndex: ItemIndexComponent,
+        EquipAnalysis: EquipAnalysisComponent,
         BattleRecords: BattleRecordsComponent,
         ConfigDialog: ConfigDialogComponent,
         FloatingWindow: FloatingWindowComponent,
@@ -247,12 +254,24 @@ export default defineComponent({
                     continue;
                 }
 
+                if (event.EventId === eventIdOwnerEquipment) {
+                    ownerEquipment.value = (event as eventOwnerEquipment).Items;
+                    continue;
+                }
+
+                if (event.EventId === eventIdOwnerStats) {
+                    ownerStats.value = (event as eventOwnerStats).Panel;
+                    continue;
+                }
+
                 if (event.EventId === eventIdSessionReset) {
                     const e = event as eventSessionReset;
                     resetSnackbarText.value = e.Reason === 'channel_switch'
                         ? '偵測到換線'
                         : '偵測到連線異常';
                     resetSnackbar.value = true;
+                    ownerEquipment.value = [];
+                    ownerStats.value = null;
                     continue;
                 }
 

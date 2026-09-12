@@ -2,6 +2,7 @@ import { ref, shallowRef, computed } from 'vue';
 import { MabiDB } from '@/mabidb';
 import { ActorManager } from '@/eventActor';
 import { DamageCollectorManager } from '@/actionCollector';
+import type { ownerEquipmentItem, ownerPanel } from '@/protocols';
 
 export const loadingCount = ref(0);
 export const isLoading = computed(() => loadingCount.value > 0);
@@ -55,6 +56,11 @@ export interface CaptureStatus {
     lastPacketAt: number;
 }
 export const captureStatus = ref<CaptureStatus | null>(null);
+
+// Equipment-analysis tab: the local character's worn set and stat panel, fed over the
+// socket (App.vue). Empty/null until the first 0x5209 snapshot.
+export const ownerEquipment = ref<ownerEquipmentItem[]>([]);
+export const ownerStats = ref<ownerPanel | null>(null);
 
 export const timeRangeMin = ref<number | null>(null);
 export const timeRangeMax = ref<number | null>(null);

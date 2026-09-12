@@ -42,23 +42,27 @@ type eventPublisher struct {
 	// loop()'s packet path, never by the constructor or SwitchReader (which
 	// both stamp lastPacketAt for the idle-retry grace period, not liveness).
 	lastRealPacketAt time.Time
-	lastRegion       uint32                      // current region id (26009); 0 = unknown
-	lastRegionName   string                      // resolved display name of lastRegion (for "from X" logging)
-	lastMission      string                      // latest mission code (22007 enter_<code>), e.g. mrd
-	lastMissionID    uint32                      // latest mission id (36000 kind-7 quest entry); resolves via dungeonNames
-	lastMissionName  string                      // mission display name carried by the same 36000 entry
-	lastBGM          string                      // currently playing BGM (43302); Boss_* means a boss fight
-	bossEntities     map[uint64]string           // live boss entity id -> boss name (race-id detection)
-	maxLifeSeen      map[uint64]float64          // entity id -> last published max life (0x7532)
-	downedEntities   map[uint64]bool             // boss ids whose life already crossed zero
-	captureStatus    *event.EventCaptureStatus   // last known capture status; nil until the watchdog computes one
-	snapshotNames    map[uint64]string           // entity id -> name from 0x5209 snapshots (survives cache eviction)
-	dynRegions       map[uint32]dynRegion        // dynamic region id -> static region it clones (0xA9A0)
-	statTables       map[uint64]packet.StatTable // entity id -> stat table (0x5209 base + 0x7530/2 deltas)
-	dgnLog           dungeonLog                  // per-run event file for whitelisted dungeons (own lock)
-	ownerId          uint64                      // local player's own entity id (0 = unknown)
-	ownerName        string                      // local player's own character name ("" = unknown)
-	preparingSkill   uint16                      // skillId from the last 0x6984; consumed and cleared by 0x698B
+	lastRegion       uint32                          // current region id (26009); 0 = unknown
+	lastRegionName   string                          // resolved display name of lastRegion (for "from X" logging)
+	lastMission      string                          // latest mission code (22007 enter_<code>), e.g. mrd
+	lastMissionID    uint32                          // latest mission id (36000 kind-7 quest entry); resolves via dungeonNames
+	lastMissionName  string                          // mission display name carried by the same 36000 entry
+	lastBGM          string                          // currently playing BGM (43302); Boss_* means a boss fight
+	bossEntities     map[uint64]string               // live boss entity id -> boss name (race-id detection)
+	maxLifeSeen      map[uint64]float64              // entity id -> last published max life (0x7532)
+	downedEntities   map[uint64]bool                 // boss ids whose life already crossed zero
+	captureStatus    *event.EventCaptureStatus       // last known capture status; nil until the watchdog computes one
+	snapshotNames    map[uint64]string               // entity id -> name from 0x5209 snapshots (survives cache eviction)
+	dynRegions       map[uint32]dynRegion            // dynamic region id -> static region it clones (0xA9A0)
+	statTables       map[uint64]packet.StatTable     // entity id -> stat table (0x5209 base + 0x7530/2 deltas)
+	dgnLog           dungeonLog                      // per-run event file for whitelisted dungeons (own lock)
+	ownerId          uint64                          // local player's own entity id (0 = unknown)
+	ownerName        string                          // local player's own character name ("" = unknown)
+	ownerItems       map[uint64]packet.InventoryItem // local character's items by ItemEID (0x5209 + equip changes); nil until a snapshot
+	lastOwnerPanel   *packet.Panel                   // last EventOwnerStats payload, for dedupe
+	lastOwnerStatsAt int64                           // unix-second of lastOwnerPanel's publish, for the current-value throttle
+	lastOwnerEquip   []event.EquipmentItem           // last EventOwnerEquipment.Items published, for dedupe
+	preparingSkill   uint16                          // skillId from the last 0x6984; consumed and cleared by 0x698B
 	// Last published skill use, for collapsing the server's double-send of
 	// one cast (two combat packs 0-3ms apart) into a single event.
 	lastSkillUseBy uint64
@@ -201,6 +205,13 @@ drainLoop:
 	// Connection restarted; the dungeon log is void (where it cut off is
 	// self-evident in the file).
 	t.dgnLog.Close()
+
+	t.Lock()
+	t.ownerItems = nil
+	t.lastOwnerPanel = nil
+	t.lastOwnerStatsAt = 0
+	t.lastOwnerEquip = nil
+	t.Unlock()
 
 	logger.Printf("SessionReset: reason=%s", reason)
 	t.publish(&event.EventSessionReset{
@@ -373,6 +384,12 @@ func (t *eventPublisher) handlePacket(p *packet.GamePacket) {
 	case packet.OpcodeUnequipment:
 		t.handleUnequipment(p)
 
+	case packet.OpcodeItemMove:
+		t.handleOwnerItemMove(p)
+
+	case packet.OpcodeItemAdd, packet.OpcodeItemRecordSingle:
+		t.handleOwnerItemRecord(p)
+
 	case packet.OpcodeSetFinisher:
 		t.handleSetFinisher(p)
 
@@ -462,6 +479,19 @@ func (t *eventPublisher) handleChannelCharacterInfo(p *packet.GamePacket) {
 	// block, so checking it unconditionally here is safe).
 	if snap.Name != "" && isOwnCharacterId(snap.Id) {
 		t.setOwnerCharacter(snap.Id, snap.Name)
+		t.Lock()
+		stats := t.ownerStatsIfChangedLocked(p.At.Unix())
+		t.Unlock()
+		if stats != nil {
+			t.publish(stats)
+		}
+		// An empty snapshot keeps the previous set, like the item store does.
+		if len(snap.Items) > 0 {
+			t.Lock()
+			t.setOwnerItemsLocked(snap.Items)
+			t.Unlock()
+			t.publishOwnerEquipment(p.At.Unix())
+		}
 	}
 	if !shouldStoreSnapshot(snap) {
 		return
@@ -627,12 +657,21 @@ func isOwnCharacterId(id uint64) bool {
 
 // setOwnerCharacter records the local player's id/name and publishes
 // EventOwnerCharacter on change. Repeat calls with the same values are a
-// no-op (dedupe).
+// no-op (dedupe). On an id change, the previous character's cached panel
+// and worn set are cleared and an empty worn set is published so a client
+// does not keep showing gear that belongs to the old character.
 func (t *eventPublisher) setOwnerCharacter(id uint64, name string) {
 	t.Lock()
 	if t.ownerId == id && t.ownerName == name {
 		t.Unlock()
 		return
+	}
+	idChanged := t.ownerId != id
+	if idChanged {
+		t.ownerItems = nil // a different character: its items are gone
+		t.lastOwnerPanel = nil
+		t.lastOwnerStatsAt = 0
+		t.lastOwnerEquip = nil
 	}
 	t.ownerId = id
 	t.ownerName = name
@@ -646,6 +685,10 @@ func (t *eventPublisher) setOwnerCharacter(id uint64, name string) {
 		},
 		Name: name,
 	})
+
+	if idChanged {
+		t.publishOwnerEquipment(time.Now().Unix())
+	}
 }
 
 // shouldStoreSnapshot filters entities that must never enter the item store:
@@ -1321,7 +1364,14 @@ func (t *eventPublisher) handleStatTable(p *packet.GamePacket) {
 		t.statTables[id] = cur
 	}
 	cur.Merge(st)
+	var stats *event.EventOwnerStats
+	if id == t.ownerId {
+		stats = t.ownerStatsIfChangedLocked(p.At.Unix())
+	}
 	t.Unlock()
+	if stats != nil {
+		t.publish(stats)
+	}
 }
 
 // panelOf returns the character-window values derived from an entity's stat
@@ -1771,6 +1821,11 @@ func (t *eventPublisher) snapshotEvents(playersOnly bool) []event.IEvent {
 	}
 	ownerId, ownerName := t.ownerId, t.ownerName
 	capStatus := t.captureStatus
+	var ownerEquip *event.EventOwnerEquipment
+	if len(t.ownerItems) > 0 {
+		ownerEquip = t.ownerEquipmentEventLocked(time.Now().Unix())
+	}
+	ownerStats := t.ownerStatsLocked(time.Now().Unix())
 	t.Unlock()
 
 	if ownerName != "" {
@@ -1782,6 +1837,13 @@ func (t *eventPublisher) snapshotEvents(playersOnly bool) []event.IEvent {
 			},
 			Name: ownerName,
 		})
+	}
+
+	if ownerEquip != nil {
+		initial = append(initial, ownerEquip)
+	}
+	if ownerStats != nil {
+		initial = append(initial, ownerStats)
 	}
 
 	// Seed a late-attaching client with the current capture status; live

@@ -1,5 +1,7 @@
 package event
 
+import "github.com/irusan-fanclub/mogugi/lib/packet"
+
 type EventId int16
 
 const (
@@ -25,6 +27,8 @@ const (
 	EventIdMaxLife
 	EventIdEntityDown
 	EventIdCaptureStatus
+	EventIdOwnerEquipment
+	EventIdOwnerStats
 )
 
 // System-level events use negative IDs so they can be filtered out
@@ -225,4 +229,27 @@ type EventCaptureStatus struct {
 	GameDetected bool
 	Capturing    bool
 	LastPacketAt int64
+}
+
+// EquipmentItem is one worn item of the local character. Item holds the
+// cmd/mogugi IndexItem (same JSON as /api/item-index); typed any because
+// lib/event cannot import cmd/mogugi.
+type EquipmentItem struct {
+	Pocket uint32 `json:"pocket"`
+	EID    string `json:"eid"`
+	Item   any    `json:"item"`
+}
+
+// EventOwnerEquipment carries the local character's whole worn set. Sent
+// on snapshot, on every equip change, and in a new client's initial batch.
+type EventOwnerEquipment struct {
+	EventBase
+	Items []EquipmentItem
+}
+
+// EventOwnerStats carries the local character's derived stat panel; the
+// publisher only sends it when a value actually changed.
+type EventOwnerStats struct {
+	EventBase
+	Panel packet.Panel
 }

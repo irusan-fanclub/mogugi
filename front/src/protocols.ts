@@ -1,3 +1,5 @@
+import type { IndexItem } from '@/lib/itemIndex';
+
 export type eventId = number;
 
 export const eventIdEntityAppear = 1;
@@ -22,6 +24,8 @@ export const eventIdSkillStop = 19;
 export const eventIdMaxLife = 20;
 // eventIdEntityDown = 21 exists on the backend but has no frontend handler.
 export const eventIdCaptureStatus = 22;
+export const eventIdOwnerEquipment = 23;
+export const eventIdOwnerStats = 24;
 
 export const eventIdMessageBox = -1;
 export const eventIdSessionReset = -2;
@@ -179,6 +183,36 @@ export type eventCaptureStatus = eventBase & {
     GameDetected: boolean;
     Capturing: boolean;
     LastPacketAt: number;
+}
+
+/** One worn item of the local character; item is the /api/item-index shape. */
+export type ownerEquipmentItem = { pocket: number; eid: string; item: IndexItem };
+
+/** The local character's whole worn set; replaces, never patches. */
+export type eventOwnerEquipment = eventBase & {
+    EventId: 23;
+    Items: ownerEquipmentItem[];
+}
+
+/** packet.Panel: what the wire determines of the character window. */
+export type ownerPanel = {
+    combatPower: number;
+    life: number; lifeMax: number; lifeMaxMod: number;
+    mana: number; manaMax: number; manaMaxMod: number;
+    stamina: number; staminaMax: number; staminaMaxMod: number;
+    level: number; abilityPoints: number;
+    str: number; dex: number; int: number; will: number; luck: number;
+    strMod: number; dexMod: number; intMod: number; willMod: number; luckMod: number;
+    dualWield: boolean;
+    attackMin: number; attackMax: number; offAttackMin: number; offAttackMax: number;
+    injuryMin: number; injuryMax: number; critical: number; balance: number;
+    magicAttackMod: number; defenseMod: number; protectionMod: number;
+    magicDefenseMod: number; magicProtectionMod: number;
+}
+
+export type eventOwnerStats = eventBase & {
+    EventId: 24;
+    Panel: ownerPanel;
 }
 
 export type eventMessageBox = eventBase & {

@@ -1,0 +1,295 @@
+<template>
+    <v-sheet class="pa-3">
+        <!-- Slot grid -->
+        <v-alert v-if="!ownerEquipment.length" type="info" variant="tonal" density="compact" class="mb-3">
+            尚未收到角色快照,換頻後會出現。
+        </v-alert>
+        <!-- Board mirrors the in-game 裝備 window: side column, 3x4 main grid, echo stones below -->
+        <div class="eq-board">
+            <div class="eq-side">
+                <equip-slot v-for="s in sideSlots" :key="s.pocket" :label="s.label" :entry="s.entry" />
+            </div>
+            <div class="eq-main">
+                <equip-slot v-for="s in mainSlots" :key="s.area" :style="{ gridArea: s.area }"
+                    :label="s.label" :entry="s.entry" :tall="s.tall" :set="s.set"
+                    @select-set="v => selectSet(s.area, v)" />
+            </div>
+        </div>
+        <div class="eq-echo">
+            <span class="eq-echo-label">回音石</span>
+            <equip-slot v-for="s in echoSlots" :key="s.pocket" :label="s.label" :entry="s.entry" />
+        </div>
+
+        <!-- Stat panel -->
+        <div class="text-subtitle-2 mt-4 mb-1">角色數值</div>
+        <v-alert v-if="!ownerStats" type="info" variant="tonal" density="compact">尚未收到角色數值。</v-alert>
+        <template v-else>
+            <v-alert v-if="!ownerStats.level" type="warning" variant="tonal" density="compact" class="mb-2">
+                基礎值未知(未收到快照),下列數值只反映啟動後的變化。
+            </v-alert>
+            <v-table density="compact" class="eq-panel">
+                <tbody>
+                    <tr v-for="r in panelRows" :key="r.label">
+                        <td class="eq-panel-label">{{ r.label }}</td>
+                        <td>{{ r.value }}</td>
+                    </tr>
+                </tbody>
+            </v-table>
+        </template>
+
+        <!-- Per-item contributions -->
+        <div class="text-subtitle-2 mt-4 mb-1">逐件貢獻</div>
+        <div class="eq-hint mb-1">差額不為零是正常的:細工、遺物、威光、回音石、才能、技能與 buff 尚未計入。</div>
+        <div class="eq-scroll">
+            <v-table density="compact" class="eq-contrib">
+                <thead>
+                    <tr>
+                        <th>數值</th>
+                        <th v-for="c in wornColumns" :key="c.pocket" :title="c.name">{{ c.label }}</th>
+                        <th>合計</th>
+                        <th>伺服器</th>
+                        <th>差額</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr v-for="row in contribRows" :key="row.key">
+                        <td class="eq-panel-label">{{ row.label }}</td>
+                        <td v-for="c in wornColumns" :key="c.pocket">{{ fmt(c.contribution.stats[row.key]) }}</td>
+                        <td>{{ fmt(row.sum) }}</td>
+                        <td>
+                            <template v-if="row.server !== null">
+                                {{ fmt(row.server) }}<span v-if="row.isTotal" class="eq-hint">(總值)</span>
+                            </template>
+                        </td>
+                        <td :class="{ 'eq-diff': row.diff !== null && row.diff !== 0 }">{{ row.diff === null ? '' : fmt(row.diff) }}</td>
+                    </tr>
+                </tbody>
+            </v-table>
+        </div>
+        <div v-if="skippedSummary" class="eq-hint mt-1">未計入:{{ skippedSummary }}</div>
+        <div v-if="unmappedSummary" class="eq-hint">未對照效果碼:{{ unmappedSummary }}</div>
+    </v-sheet>
+</template>
+
+<script lang="ts">
+import { defineComponent, inject, computed, reactive, ref, watch, type Ref, type ComputedRef } from 'vue';
+import { ownerEquipment, ownerStats } from '@/store';
+import type { EnchantInfo, ItemUpgrade, ManualForm, MetalwareAbility } from '@/store';
+import type { MabiDB } from '@/mabidb';
+import type { IndexItem, Holder } from '@/lib/itemIndex';
+import { buildTip, displayName, isRelicPocket, type TooltipDeps } from '@/lib/itemTooltip';
+import {
+    EQUIP_SLOTS, STAT_ORDER, STAT_LABELS, contributionsOf, sumContributions, panelValue,
+    type Contribution, type StatKey, type SlotEntry, type WeaponSet,
+} from '@/lib/equipStats';
+import EquipSlot from './subComponents/equipSlot.vue';
+
+// Main-grid cells by CSS grid area; the two weapon areas resolve their
+// pocket through the I/II toggle (I = 10/13, II = 11/14).
+type WeaponArea = 'wl' | 'wr';
+const WEAPON_POCKETS: Record<WeaponArea, Record<WeaponSet, number>> = {
+    wl: { I: 10, II: 11 }, wr: { I: 13, II: 14 },
+};
+const MAIN_AREAS: { area: string; pocket?: number; tall?: boolean }[] = [
+    { area: 'head', pocket: 8 }, { area: 'accl', pocket: 16 }, { area: 'accr', pocket: 17 },
+    { area: 'wl', tall: true }, { area: 'body', pocket: 5, tall: true }, { area: 'wr', tall: true },
+    { area: 'hand', pocket: 6 }, { area: 'foot', pocket: 7 }, { area: 'robe', pocket: 9 },
+];
+const SIDE_POCKETS = [32, 33, 34, 35, 51, 54];
+const ECHO_POCKETS = [62, 63, 64];
+
+export default defineComponent({
+    components: { EquipSlot },
+    setup() {
+        const itemNameMap = inject('itemNameMap') as Ref<Record<number, string>>;
+        const enchantNameMap = inject('enchantNameMap') as Ref<Record<number, string>>;
+        const enchantInfoMap = inject('enchantInfoMap') as Ref<Record<number, EnchantInfo>>;
+        const metalwareMap = inject('metalwareMap') as Ref<Record<number, MetalwareAbility>>;
+        const manualFormMap = inject('manualFormMap') as Ref<Record<number, ManualForm>>;
+        const itemUpgradeMap = inject('itemUpgradeMap') as Ref<Record<number, ItemUpgrade>>;
+        const db = inject('db') as ComputedRef<MabiDB>;
+        const itemDescMap = ref<Record<number, string>>({});
+
+        // itemNameMap values are "name id"; strip the trailing id.
+        const itemName = (id: number): string => {
+            const label = itemNameMap.value[id];
+            return label ? label.replace(/\s*\d+$/, '') : `Item ${id}`;
+        };
+        const deps = (): TooltipDeps => ({
+            enchantNameMap: enchantNameMap.value,
+            enchantInfoMap: enchantInfoMap.value,
+            metalwareMap: metalwareMap.value,
+            manualFormMap: manualFormMap.value,
+            itemUpgradeMap: itemUpgradeMap.value,
+            itemDescMap: itemDescMap.value,
+            itemName,
+        });
+
+        // Relic pockets (32-35) carry their fixed effect text in the item's
+        // description only; fetch it lazily whenever the relic set changes.
+        watch(ownerEquipment, async (items) => {
+            try {
+                const ids = [...new Set(items.filter(e => isRelicPocket(e.pocket)).map(e => e.item.id))];
+                itemDescMap.value = ids.length ? await db.value.getItemDescriptions(ids) : {};
+            } catch (e) {
+                console.error('equipAnalysis: relic description fetch failed', e);
+            }
+        }, { immediate: true });
+        // buildTip/displayName take a Holder; the worn set has no entity, so
+        // fill the two names with the local character marker.
+        const asHolder = (it: IndexItem): Holder => ({ ...it, entity: '', master: '' });
+
+        // Accessories (16/17) share group 'armor' with real armour slots for
+        // layout, so they must be told apart by pocket, not by group.
+        const ACCESSORY_POCKETS = new Set([16, 17]);
+
+        // enchantBrief: prefix then suffix enchant names, '' when the item has none.
+        const enchantBrief = (it: IndexItem): string => {
+            const label = (id?: number) => id ? (enchantNameMap.value[id] ?? `${id}`) : undefined;
+            return [label(it.enchantPrefix), label(it.enchantSuffix)].filter((s): s is string => !!s).join(' / ');
+        };
+
+        const brief = (it: IndexItem, pocket: number): string => {
+            const slot = EQUIP_SLOTS.find(s => s.pocket === pocket);
+            if (slot?.group === 'weapon') {
+                return `攻擊 ${it.attackMin ?? 0}~${it.attackMax ?? 0} 平衡 ${it.balance ?? 0} 暴擊 ${it.critical ?? 0}`;
+            }
+            if (ACCESSORY_POCKETS.has(pocket) || slot?.group === 'other') {
+                return enchantBrief(it);
+            }
+            if (slot?.group === 'armor') {
+                return `防禦 ${it.defense ?? 0} 保護 ${it.protection ?? 0}`;
+            }
+            return '';
+        };
+
+        const entryByPocket = computed(() => {
+            const d = deps();
+            const m = new Map<number, SlotEntry>();
+            for (const e of ownerEquipment.value) {
+                const h = asHolder(e.item);
+                m.set(e.pocket, { item: e.item, name: displayName(h, d), brief: brief(e.item, e.pocket), tip: buildTip(h, d) });
+            }
+            return m;
+        });
+
+        const slotLabel = (pocket: number): string => EQUIP_SLOTS.find(s => s.pocket === pocket)?.label ?? `#${pocket}`;
+        const cell = (pocket: number) => ({ pocket, label: slotLabel(pocket), entry: entryByPocket.value.get(pocket) });
+
+        // Which weapon set each weapon area shows; display only, the
+        // contribution table always counts set I.
+        const weaponSet = reactive<Record<WeaponArea, WeaponSet>>({ wl: 'I', wr: 'I' });
+        const isWeaponArea = (area: string): area is WeaponArea => area === 'wl' || area === 'wr';
+        const selectSet = (area: string, v: WeaponSet) => {
+            if (isWeaponArea(area)) weaponSet[area] = v;
+        };
+
+        const sideSlots = computed(() => SIDE_POCKETS.map(cell));
+        const echoSlots = computed(() => ECHO_POCKETS.map(cell));
+        const mainSlots = computed(() => MAIN_AREAS.map(a => {
+            const set = isWeaponArea(a.area) ? weaponSet[a.area] : undefined;
+            const pocket = a.pocket ?? WEAPON_POCKETS[a.area as WeaponArea][set ?? 'I'];
+            return { area: a.area, tall: !!a.tall, set, ...cell(pocket) };
+        }));
+
+        const n = (v: number) => Number.isInteger(v) ? String(v) : v.toFixed(2);
+        const panelRows = computed(() => {
+            const p = ownerStats.value;
+            if (!p) return [];
+            const rows = [
+                { label: '等級', value: n(p.level) },
+                { label: '戰鬥力', value: n(p.combatPower) },
+                { label: 'AP', value: n(p.abilityPoints) },
+                { label: '生命力', value: `${n(p.life)} / ${n(p.lifeMax)}` },
+                { label: '魔力', value: `${n(p.mana)} / ${n(p.manaMax)}` },
+                { label: '體力', value: `${n(p.stamina)} / ${n(p.staminaMax)}` },
+                { label: '力量', value: `${n(p.str)} + ${n(p.strMod)}` },
+                { label: '敏捷', value: `${n(p.dex)} + ${n(p.dexMod)}` },
+                { label: '智力', value: `${n(p.int)} + ${n(p.intMod)}` },
+                { label: '意志', value: `${n(p.will)} + ${n(p.willMod)}` },
+                { label: '幸運', value: `${n(p.luck)} + ${n(p.luckMod)}` },
+                { label: p.dualWield ? '攻擊力(右手)' : '攻擊力', value: `${n(p.attackMin)} ~ ${n(p.attackMax)}` },
+            ];
+            if (p.dualWield) rows.push({ label: '攻擊力(左手)', value: `${n(p.offAttackMin)} ~ ${n(p.offAttackMax)}` });
+            rows.push(
+                { label: '負傷率', value: `${n(p.injuryMin)} ~ ${n(p.injuryMax)}` },
+                { label: '暴擊率', value: n(p.critical) },
+                { label: '平衡性', value: n(p.balance) },
+                { label: '防禦力(裝備)', value: n(p.defenseMod) },
+                { label: '保護(裝備)', value: n(p.protectionMod) },
+                { label: '魔法攻擊力(裝備)', value: n(p.magicAttackMod) },
+                { label: '魔法防禦力(裝備)', value: n(p.magicDefenseMod) },
+                { label: '魔法保護(裝備)', value: n(p.magicProtectionMod) },
+            );
+            return rows;
+        });
+
+        const wornColumns = computed(() => {
+            const out: { pocket: number; label: string; name: string; contribution: Contribution }[] = [];
+            for (const s of EQUIP_SLOTS) {
+                const e = entryByPocket.value.get(s.pocket);
+                if (e) out.push({ pocket: s.pocket, label: s.label, name: e.name, contribution: contributionsOf(e.item, s.pocket) });
+            }
+            return out;
+        });
+
+        const contribRows = computed(() => {
+            const sums = sumContributions(wornColumns.value.map(c => c.contribution));
+            const p = ownerStats.value;
+            return STAT_ORDER.map((key: StatKey) => {
+                const sum = sums[key] ?? 0;
+                const pv = p ? panelValue(p, key) : null;
+                return {
+                    key, label: STAT_LABELS[key], sum,
+                    server: pv ? pv.value : null,
+                    isTotal: pv ? pv.isTotal : false,
+                    diff: pv ? pv.value - sum : null,
+                };
+            });
+        });
+
+        const fmt = (v: number | undefined): string => (v == null || v === 0) ? '' : n(v);
+
+        const skippedSummary = computed(() => {
+            const t = { conditional: 0, metalware: 0, relic: 0 };
+            for (const c of wornColumns.value) {
+                t.conditional += c.contribution.skipped.conditional;
+                t.metalware += c.contribution.skipped.metalware;
+                t.relic += c.contribution.skipped.relic;
+            }
+            const parts: string[] = [];
+            if (t.metalware) parts.push(`細工 ${t.metalware} 項`);
+            if (t.relic) parts.push(`遺物效果 ${t.relic} 項`);
+            if (t.conditional) parts.push(`條件效果 ${t.conditional} 項`);
+            return parts.join(',');
+        });
+        const unmappedSummary = computed(() =>
+            wornColumns.value.flatMap(c => c.contribution.unmapped.map(u => `#${u.code}:${u.value}`)).join(' '));
+
+        return {
+            ownerEquipment, ownerStats, sideSlots, mainSlots, echoSlots, selectSet, panelRows,
+            wornColumns, contribRows, fmt, skippedSummary, unmappedSummary,
+        };
+    },
+});
+</script>
+
+<style scoped>
+.eq-board { display: flex; gap: 12px; align-items: flex-start; }
+.eq-side { display: flex; flex-direction: column; gap: 6px; }
+.eq-main {
+    display: grid;
+    grid-template-columns: repeat(3, 128px);
+    grid-template-areas: "head accl accr" "wl body wr" "hand foot robe";
+    gap: 6px;
+}
+.eq-echo { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
+.eq-echo-label { font-size: 0.8rem; color: #999; width: 48px; }
+.eq-panel { max-width: 420px; }
+.eq-panel-label { color: #999; white-space: nowrap; }
+.eq-scroll { overflow-x: auto; }
+.eq-contrib th, .eq-contrib td { white-space: nowrap; text-align: right; }
+.eq-contrib th:first-child, .eq-contrib td:first-child { text-align: left; }
+.eq-diff { color: #ef5350; font-weight: bold; }
+.eq-hint { font-size: 0.75rem; color: #999; }
+</style>

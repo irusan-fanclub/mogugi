@@ -399,3 +399,57 @@ func TestParseEntitySnapshot_IdAndRaceAbsent(t *testing.T) {
 		t.Errorf("Id=%d RaceId=%d want 0/0", snap.Id, snap.RaceId)
 	}
 }
+
+func TestParseItemAt_EID(t *testing.T) {
+	// buildItemEntry anchors the record with Long 0x1234.
+	msg := Message{}
+	msg = append(msg, buildItemEntry(40026, 2)...)
+	it, _, ok := parseItemAt(msg, 0)
+	if !ok {
+		t.Fatal("parseItemAt did not match")
+	}
+	if it.EID != 0x1234 {
+		t.Fatalf("EID=%#x want 0x1234", it.EID)
+	}
+}
+
+// TestParseItemRecordAt_OwnerLastElement covers the 26-element 0x59E0 shape
+// (2026-09-05 research): ExtraEffect/QuestEID/ExtraList push OwnerCEID past
+// a fixed offset, but ParseItemRecordAt only walks the itemformat prefix.
+func TestParseItemRecordAt_OwnerLastElement(t *testing.T) {
+	info := make([]byte, 80)
+	le.PutUint32(info[0:], 10) // pocket 10 = main hand
+	le.PutUint32(info[4:], 40745)
+	msg := Message{
+		NewMessageElemLong(22518902892828238),
+		NewMessageElemByte(2),
+		NewMessageElemBin(info),
+		NewMessageElemBin(make([]byte, 144)),
+		NewMessageElemString("LP:1:1;"),
+		NewMessageElemString("ATTMIN:2:16;"),
+		NewMessageElemByte(12), // ExtraEffectCount
+	}
+	for i := 0; i < 12; i++ {
+		msg = append(msg, NewMessageElemBin(make([]byte, 40)))
+	}
+	msg = append(msg,
+		NewMessageElemLong(0), // QuestEID (0 -> no QuestDescriptor)
+		NewMessageElemInt(1),  // ExtraListCount L
+		NewMessageElemInt(37), // ExtraList[0].a
+		NewMessageElemInt(50), // ExtraList[0].b
+		NewMessageElemByte(0),
+		NewMessageElemByte(0),
+		NewMessageElemLong(4503599630022047), // OwnerCEID, last element
+	)
+	if len(msg) != 26 {
+		t.Fatalf("test setup: len(msg)=%d want 26", len(msg))
+	}
+
+	it, _, ok := ParseItemRecordAt(msg, 0)
+	if !ok {
+		t.Fatal("ParseItemRecordAt failed on 26-element body")
+	}
+	if it.ItemID != 40745 || it.Pocket != 10 || it.EID != 22518902892828238 {
+		t.Fatalf("item=%+v", it)
+	}
+}

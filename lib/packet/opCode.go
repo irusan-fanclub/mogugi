@@ -21,8 +21,11 @@ const (
 	OpcodeEntitiesAppear           OpCode = 21300 // 0x5334
 	OpcodeEntitiesDisappear        OpCode = 21301 // 0x5335
 	OpcodeIsNowDead                OpCode = 21500 // 0x53fc
+	OpcodeItemMove                 OpCode = 23006 // 0x59de owner item move: (Long eid, Int from, Int to, Byte, Byte x, Byte y); pocket 1 = cursor
+	OpcodeItemAdd                  OpCode = 23008 // 0x59e0 one full ItemRecord entering the owner inventory (set switches, new items); Bin80@0 = new pocket
 	OpcodeEquipmentChanged         OpCode = 23014 // 0x59e6
 	OpcodeUnequipment              OpCode = 23015 // 0x59e7
+	OpcodeItemRecordSingle         OpCode = 23508 // 0x5bd4 resend of one ItemRecord (same body as 0x59e0; pocket may be stale)
 	OpcodeItemDurabilityUpdate     OpCode = 23509 // 0x5bd5
 	OpcodeMissionState             OpCode = 22007 // (byte, long, string "enter_<code>", string) — mission enter, precedes the dynamic-region 26009
 	OpcodeMissionStart             OpCode = 45004 // (int missionId, int) — broadcast at dynamic-instance start, 2ms before 26009; id resolves via DungeonGuide. Not seen since the 2026-07-23 game update; 36000 kind-7 carries the id now

@@ -42,63 +42,7 @@
                     <template #activator="{ props }">
                         <span v-bind="props" class="item-name-hover">{{ item.item }}</span>
                     </template>
-                    <div class="item-tip">
-                        <div class="tip-title">{{ item.item }}</div>
-                        <template v-if="item.tip.imprint">
-                            <div class="tip-section">等級</div>
-                            <div class="tip-line tip-roll">{{ item.tip.imprint }}</div>
-                        </template>
-                        <template v-if="item.tip.props.length">
-                            <div class="tip-section">道具屬性</div>
-                            <div v-for="(l, i) in item.tip.props" :key="`p${i}`" class="tip-line">{{ l }}</div>
-                        </template>
-                        <template v-if="item.tip.bless.length">
-                            <div class="tip-section">聖水效果</div>
-                            <div v-for="(l, i) in item.tip.bless" :key="`b${i}`" class="tip-line tip-mw">{{ l }}</div>
-                        </template>
-                        <template v-if="item.tip.relic.length || item.tip.relicDesc">
-                            <div class="tip-section">遺物效果</div>
-                            <div v-for="(l, i) in item.tip.relic" :key="`r${i}`" class="tip-line tip-mw">{{ l }}</div>
-                            <div v-if="item.tip.relicDesc" class="tip-line tip-desc">{{ item.tip.relicDesc }}</div>
-                        </template>
-                        <template v-if="item.tip.magicCircle.length">
-                            <div class="tip-section">魔法陣效果</div>
-                            <div v-for="(l, i) in item.tip.magicCircle" :key="`mc${i}`" class="tip-line tip-mw">{{ l }}</div>
-                        </template>
-                        <template v-if="item.tip.enchants.length">
-                            <div class="tip-section">魔力賦予</div>
-                            <template v-for="(e, i) in item.tip.enchants" :key="`e${i}`">
-                                <div class="tip-line">
-                                    [{{ e.slot }}] {{ e.name }}<span v-if="e.rank" class="tip-rank">（等級 {{ e.rank }}）</span>
-                                </div>
-                                <div v-if="e.desc" class="tip-line tip-desc">{{ e.desc }}</div>
-                            </template>
-                        </template>
-                        <template v-if="item.tip.upgrades.length || item.tip.special">
-                            <div class="tip-section">改造</div>
-                            <div v-for="(u, i) in item.tip.upgrades" :key="`u${i}`" class="tip-line tip-mw">{{ u }}</div>
-                            <div v-if="item.tip.special" class="tip-line tip-roll">{{ item.tip.special }}</div>
-                        </template>
-                        <template v-if="item.tip.energy">
-                            <div class="tip-section">聚能</div>
-                            <div class="tip-line tip-mw">{{ item.tip.energy }}</div>
-                        </template>
-                        <template v-if="item.tip.metalware.length">
-                            <div class="tip-section">細緻工匠</div>
-                            <template v-for="(m, i) in item.tip.metalware" :key="`m${i}`">
-                                <div class="tip-line tip-mw">{{ m.name }} ({{ m.level }}/{{ m.max }}等級)</div>
-                                <div v-if="m.value != null" class="tip-line tip-desc">L {{ m.value }}</div>
-                            </template>
-                        </template>
-                        <template v-for="(g, gi) in item.tip.colorGroups" :key="`g${gi}`">
-                            <div class="tip-section">{{ g.label }}</div>
-                            <div v-for="(c, i) in g.colors" :key="`c${gi}-${i}`" class="tip-line">
-                                <span class="tip-swatch" :style="{ background: `#${c}` }" />
-                                部位 {{ 'ABCDEF'[i] }}
-                                <span class="tip-desc" style="padding-left:6px">#{{ c.toUpperCase() }}</span>
-                            </div>
-                        </template>
-                    </div>
+                    <item-tip :title="item.item" :tip="item.tip" />
                 </v-tooltip>
                 <span v-else>{{ item.item }}</span>
                 <v-icon class="idx-exclude" icon="mdi-minus-circle-outline" size="x-small"
@@ -135,8 +79,10 @@ import {
 } from '@/lib/itemTooltip';
 import type { EnchantInfo, ItemUpgrade, ManualForm, MetalwareAbility } from '@/store';
 import { buildCsv, downloadCsv, sortRows, type SortSpec } from '@/lib/csvExport';
+import ItemTip from './subComponents/itemTip.vue';
 
 export default defineComponent({
+    components: { ItemTip },
     setup() {
         const itemNameMap = inject('itemNameMap') as Ref<Record<number, string>>;
         const enchantNameMap = inject('enchantNameMap') as Ref<Record<number, string>>;
@@ -322,6 +268,7 @@ export default defineComponent({
                 master: h.master,
                 storage: storageText(h),
                 container: containerText(h),
+                pocket: h.pocket ?? '',
                 qty: h.qty,
                 pos: `(${h.x},${h.y})`,
                 metalware: metalwareText(h),
@@ -338,7 +285,7 @@ export default defineComponent({
             return v == null ? '' : String(v);
         };
 
-        // 欄位顯示開關：勾選狀態存 localStorage；細工欄預設隱藏。
+        // 欄位顯示開關：勾選狀態存 localStorage；細工、背包編號欄預設隱藏。
         const allHeaders = [
             { title: '物品', key: 'item' },
             { title: '物品ID', key: 'itemId' },
@@ -348,11 +295,12 @@ export default defineComponent({
             { title: 'Owner', key: 'master' },
             { title: '存放處', key: 'storage' },
             { title: '背包', key: 'container' },
+            { title: '背包編號', key: 'pocket' },
             { title: '數量', key: 'qty' },
             { title: '座標', key: 'pos' },
         ];
         const COLS_STORAGE_KEY = 'itemIndexCols.v3';
-        const defaultCols = allHeaders.map(h => h.key).filter(k => k !== 'metalware');
+        const defaultCols = allHeaders.map(h => h.key).filter(k => k !== 'metalware' && k !== 'pocket');
         const loadCols = (): string[] => {
             try {
                 const raw = localStorage.getItem(COLS_STORAGE_KEY);
@@ -397,71 +345,9 @@ export default defineComponent({
 </script>
 
 <style>
-/* 遊戲風 tooltip：深色面板 + 橘色區塊標頭。 */
-.item-tip-content {
-    background: rgba(12, 12, 14, 0.96) !important;
-    border: 1px solid #555;
-    padding: 0 !important;
-    max-width: 380px;
-}
-
-.item-tip {
-    padding: 8px 12px;
-    font-size: 0.85rem;
-    color: #ddd;
-}
-
-.item-tip .tip-title {
-    text-align: center;
-    color: #fff;
-    font-weight: bold;
-    margin-bottom: 6px;
-}
-
-.item-tip .tip-section {
-    display: inline-block;
-    background: #7a4a00;
-    color: #ffd27f;
-    font-weight: bold;
-    padding: 0 8px;
-    border-radius: 2px;
-    margin: 6px 0 3px;
-}
-
-.item-tip .tip-line {
-    line-height: 1.5;
-}
-
-.item-tip .tip-rank {
-    color: #8fd0ff;
-}
-
-.item-tip .tip-mw {
-    color: #8fd0ff;
-}
-
-.item-tip .tip-desc {
-    color: #aaa;
-    padding-left: 10px;
-    white-space: pre-line;
-}
-
-.item-tip .tip-roll {
-    color: #ffe08a;
-    padding-left: 10px;
-}
-
 .item-name-hover {
     cursor: help;
     border-bottom: 1px dotted #777;
-}
-
-.item-tip .tip-swatch {
-    display: inline-block;
-    width: 10px;
-    height: 10px;
-    border: 1px solid #666;
-    margin-right: 4px;
 }
 
 /* Exclude button: hidden until the cell is hovered. */

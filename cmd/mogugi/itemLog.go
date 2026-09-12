@@ -65,6 +65,31 @@ type IndexItem struct {
 	Metadata      string               `json:"metadata,omitempty"` // raw MetaData1 KV
 }
 
+// indexItemFromInventory converts a parsed item to the /api/item-index JSON
+// shape without touching the store. Routing through the CSV encoders keeps
+// nil/empty handling identical to ReadIndex.
+func indexItemFromInventory(it packet.InventoryItem) IndexItem {
+	return IndexItem{
+		ID: it.ItemID, Qty: it.Qty,
+		Storage: "inventory", Container: it.Container,
+		X: it.PosX, Y: it.PosY,
+		EnchantPrefix: it.EnchantPrefix, EnchantSuffix: it.EnchantSuffix,
+		Durability: it.Durability, DurabilityMax: it.DurabilityMax,
+		Defense: it.Defense, Protection: it.Protection,
+		AttackMin: it.AttackMin, AttackMax: it.AttackMax,
+		InjuryMin: it.InjuryMin, InjuryMax: it.InjuryMax,
+		Balance: it.Balance, Critical: it.Critical,
+		BagItemID: it.BagItemID, Pocket: it.Pocket,
+		Colors:        decodeColors(encodeColors(it.Colors)),
+		Metalware:     decodeMetalware(encodeMetalware(it.Metalware)),
+		PrefixEffects: decodeEffects(encodeEffects(it.PrefixEffects)),
+		SuffixEffects: decodeEffects(encodeEffects(it.SuffixEffects)),
+		BlessEffects:  decodeEffects(encodeEffects(it.BlessEffects)),
+		RelicEffects:  decodeEffects(encodeEffects(it.RelicEffects)),
+		Metadata:      it.Metadata,
+	}
+}
+
 // encodeMetalware / decodeMetalware store metalware in one CSV column as
 // "id:lv|id:lv".
 func encodeMetalware(list []packet.MetalwareEntry) string {

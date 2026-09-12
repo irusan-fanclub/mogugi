@@ -138,30 +138,51 @@ func (t StatTable) Merge(delta StatTable) {
 // 傷害 range are NOT here: the client derives those from level, skills and
 // arcana, and the packets carry only the parts below.
 type Panel struct {
-	CombatPower   float64
-	Life, LifeMax float64
-	Mana, ManaMax float64
+	CombatPower float64 `json:"combatPower"`
+	Life        float64 `json:"life"`
+	LifeMax     float64 `json:"lifeMax"`
+	LifeMaxMod  float64 `json:"lifeMaxMod"`
+	Mana        float64 `json:"mana"`
+	ManaMax     float64 `json:"manaMax"`
+	ManaMaxMod  float64 `json:"manaMaxMod"`
 
-	Stamina, StaminaMax  float64
-	Level, AbilityPoints float64
+	Stamina       float64 `json:"stamina"`
+	StaminaMax    float64 `json:"staminaMax"`
+	StaminaMaxMod float64 `json:"staminaMaxMod"`
+	Level         float64 `json:"level"`
+	AbilityPoints float64 `json:"abilityPoints"`
 
 	// Base values — what the character window shows in parentheses.
-	Str, Dex, Int, Will, Luck float64
+	Str  float64 `json:"str"`
+	Dex  float64 `json:"dex"`
+	Int  float64 `json:"int"`
+	Will float64 `json:"will"`
+	Luck float64 `json:"luck"`
 	// Equipment/buff part of the same stats. The window's total is larger
 	// still (arcana and talents are added client-side).
-	StrMod, DexMod, IntMod, WillMod, LuckMod float64
+	StrMod  float64 `json:"strMod"`
+	DexMod  float64 `json:"dexMod"`
+	IntMod  float64 `json:"intMod"`
+	WillMod float64 `json:"willMod"`
+	LuckMod float64 `json:"luckMod"`
 
 	// Weapon numbers. With two weapons equipped the 109 block is empty and
 	// each hand reports separately; AttackMin/Max is then the right hand.
-	DualWield                  bool
-	AttackMin, AttackMax       float64
-	OffAttackMin, OffAttackMax float64
-	InjuryMin, InjuryMax       float64
-	Critical, Balance          float64
+	DualWield    bool    `json:"dualWield"`
+	AttackMin    float64 `json:"attackMin"`
+	AttackMax    float64 `json:"attackMax"`
+	OffAttackMin float64 `json:"offAttackMin"`
+	OffAttackMax float64 `json:"offAttackMax"`
+	InjuryMin    float64 `json:"injuryMin"`
+	InjuryMax    float64 `json:"injuryMax"`
+	Critical     float64 `json:"critical"`
+	Balance      float64 `json:"balance"`
 
-	MagicAttackMod                      float64
-	DefenseMod, ProtectionMod           float64
-	MagicDefenseMod, MagicProtectionMod float64
+	MagicAttackMod     float64 `json:"magicAttackMod"`
+	DefenseMod         float64 `json:"defenseMod"`
+	ProtectionMod      float64 `json:"protectionMod"`
+	MagicDefenseMod    float64 `json:"magicDefenseMod"`
+	MagicProtectionMod float64 `json:"magicProtectionMod"`
 }
 
 // Panel derives the character-window values from the stat table.
@@ -170,10 +191,13 @@ func (t StatTable) Panel() Panel {
 		CombatPower:   t[StatCombatPower],
 		Life:          t[StatLife],
 		LifeMax:       t[StatLifeMaxBase] + t[StatLifeMaxMod],
+		LifeMaxMod:    t[StatLifeMaxMod],
 		Mana:          t[StatMana],
 		ManaMax:       t[StatManaMaxBase] + t[StatManaMaxMod],
+		ManaMaxMod:    t[StatManaMaxMod],
 		Stamina:       t[StatStamina],
 		StaminaMax:    t[StatStaminaMaxBse] + t[StatStaminaMaxMod],
+		StaminaMaxMod: t[StatStaminaMaxMod],
 		Level:         t[StatLevel],
 		AbilityPoints: t[StatAbilityPoints],
 

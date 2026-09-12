@@ -489,20 +489,22 @@ func TestSetOwnerCharacter(t *testing.T) {
 	// lastSentAt fresh so publish() doesn't auto-flush pendingEvents away.
 	p := &eventPublisher{entityCache: make(entityCache), lastSentAt: time.Now()}
 
+	// An id change also publishes an empty EventOwnerEquipment (Task B), so
+	// the first call yields 2 pending events, not 1.
 	p.setOwnerCharacter(1<<52|5, "測試角色")
 	p.Lock()
 	n := len(p.pendingEvents)
 	p.Unlock()
-	if n != 1 {
-		t.Fatalf("pendingEvents after first call = %d, want 1", n)
+	if n != 2 {
+		t.Fatalf("pendingEvents after first call = %d, want 2 (character + empty equipment)", n)
 	}
 
 	p.setOwnerCharacter(1<<52|5, "測試角色")
 	p.Lock()
 	n = len(p.pendingEvents)
 	p.Unlock()
-	if n != 1 {
-		t.Fatalf("pendingEvents after repeat call = %d, want 1 (deduped)", n)
+	if n != 2 {
+		t.Fatalf("pendingEvents after repeat call = %d, want 2 (deduped)", n)
 	}
 
 	found := false
