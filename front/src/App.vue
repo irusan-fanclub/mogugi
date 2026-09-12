@@ -43,16 +43,9 @@
             <v-tooltip>
                 <template v-slot:activator="{ props }">
                     <v-btn @click="forceRefresh" v-bind="props" color="secondary" size="small"
-                        prepend-icon="mdi-refresh-circle" class="ml-1">Force Refresh</v-btn>
+                        prepend-icon="mdi-refresh-circle" class="ml-1 mr-4">Force Refresh</v-btn>
                 </template>
                 強制刷新 UI
-            </v-tooltip>
-            <v-tooltip>
-                <template v-slot:activator="{ props }">
-                    <v-btn @click="configOpen = true" v-bind="props" size="small" prepend-icon="mdi-cog"
-                        class="ml-1 mr-4">Settings</v-btn>
-                </template>
-                設定
             </v-tooltip></v-sheet>
     </v-sheet>
 
@@ -69,6 +62,7 @@
         <v-tab value="itemIndex">物品索引</v-tab>
         <v-tab value="equipAnalysis">裝備分析</v-tab>
         <v-tab value="battleRecords">戰鬥紀錄</v-tab>
+        <v-tab value="settings">設定</v-tab>
         <v-tab value="about">About</v-tab>
     </v-tabs>
 
@@ -93,12 +87,14 @@
             <battle-records />
         </v-tabs-window-item>
 
+        <v-tabs-window-item value="settings">
+            <settings-tab />
+        </v-tabs-window-item>
+
         <v-tabs-window-item value="about">
             <about :socket-connected="socketConnected" />
         </v-tabs-window-item>
     </v-tabs-window>
-
-    <config-dialog v-model="configOpen" />
 
     <v-dialog v-model="msgBoxOpen" max-width="500" persistent>
         <v-card>
@@ -142,7 +138,7 @@ import EntityListComponent from "./components/entityList.vue";
 import ItemIndexComponent from "./components/itemIndex.vue";
 import EquipAnalysisComponent from "./components/equipAnalysis.vue";
 import BattleRecordsComponent from "./components/battleRecords.vue";
-import ConfigDialogComponent from "./components/configDialog.vue";
+import SettingsTabComponent from "./components/settingsTab.vue";
 import FloatingWindowComponent from "./components/subComponents/floatingWindow.vue";
 import LicenseGateComponent from "./components/licenseGate.vue";
 import AboutComponent from "./components/about.vue";
@@ -155,7 +151,7 @@ export default defineComponent({
         ItemIndex: ItemIndexComponent,
         EquipAnalysis: EquipAnalysisComponent,
         BattleRecords: BattleRecordsComponent,
-        ConfigDialog: ConfigDialogComponent,
+        SettingsTab: SettingsTabComponent,
         FloatingWindow: FloatingWindowComponent,
         LicenseGate: LicenseGateComponent,
         About: AboutComponent,
@@ -184,7 +180,6 @@ export default defineComponent({
         const timeRangeMax = inject('timeRangeMax');
 
         const socketConnected = ref(false);
-        const configOpen = ref(false);
         const msgBoxOpen = ref(false);
         const msgBoxText = ref('');
         const resetSnackbar = ref(false);
@@ -554,8 +549,6 @@ export default defineComponent({
             tab,
             dialogStack,
 
-            configOpen,
-
             hasTimeRange,
             timeRangeMin,
             timeRangeMax,
@@ -568,6 +561,12 @@ export default defineComponent({
 </script>
 
 <style>
+/* Smaller inset switches: Vuetify's default track is 52x32 with a 24px thumb. */
+.v-switch--inset .v-switch__track { height: 20px; min-width: 36px; font-size: 0.6rem; }
+.v-switch--inset .v-switch__thumb { height: 16px; width: 16px; }
+.v-locale--is-ltr .v-switch--inset .v-selection-control__input { transform: translateX(-8px); }
+.v-locale--is-ltr .v-switch--inset .v-selection-control--dirty .v-selection-control__input { transform: translateX(8px); }
+
 /* Compact rows for tabs 1/2/3 attacker/group lists. Vuetify defaults to
    48px min-height which is too airy for our dense data tables. */
 .v-expansion-panel-title {

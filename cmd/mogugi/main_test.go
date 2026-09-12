@@ -11,7 +11,7 @@ func TestUsageTextCoversFlagsAndModes(t *testing.T) {
 	u := usageText()
 	for _, want := range []string{
 		"--no-pcap", "--no-browser", "--realtime",
-		"file", "list", "itemcsv", "--help",
+		"file", "list", "itemcsv", "--help", "mogugi-config.toml", "自動切換 port",
 	} {
 		if !strings.Contains(u, want) {
 			t.Errorf("usage text lacks %q", want)

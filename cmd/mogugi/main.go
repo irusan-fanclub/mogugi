@@ -6,11 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -25,10 +24,10 @@ import (
 	"golang.org/x/net/websocket"
 )
 
-const (
-	port    = 8030
-	_logDir = "logs"
-)
+const _logDir = "logs"
+
+// port is the HTTP listen port; loaded from mogugi-config.toml at start.
+var port = 8030
 
 //go:embed static
 var staticFiles embed.FS
@@ -62,6 +61,10 @@ func usageText() string {
   --no-pcap                   不輸出 logs/packet_capture_*.pcapng
   --no-browser                啟動時不自動開啟瀏覽器
   -h, --help                  顯示本說明
+
+設定檔:
+  <mogugi.exe 所在目錄>\mogugi-config.toml
+  保存 pcapng、自動開啟瀏覽器、網頁 port、自動切換 port;也可在網頁的「設定」分頁修改
 `, Version)
 }
 
@@ -71,6 +74,20 @@ func main() {
 		logger.Println("LogInit failed:", err)
 	}
 	logger.Printf("log file: %s", logFilePath)
+
+	// Config first: the flags below only override this run's values.
+	cfgPath := appConfigPath()
+	cfg, loadErr, created := loadAppConfig(cfgPath)
+	appCfg, appCfgLoadError = cfg, loadErr
+	port, noPcapFile, noBrowser, autoPort = cfg.Port, !cfg.SavePcapng, !cfg.AutoOpenBrowser, cfg.AutoPort
+	switch {
+	case created:
+		logger.Printf("config: wrote defaults to %s", cfgPath)
+	case loadErr != "":
+		logger.Printf("config: %s (%s)", loadErr, cfgPath)
+	default:
+		logger.Printf("config: %s", cfgPath)
+	}
 
 	if db, err := openItemStore(filepath.Join(itemsLogDirPath, "items.db")); err != nil {
 		itemLogger.Printf("open item store failed: %v", err)
@@ -90,8 +107,10 @@ func main() {
 		switch a {
 		case "--no-pcap":
 			noPcapFile = true
+			appCfgOverrides["savePcapng"] = "--no-pcap"
 		case "--no-browser":
 			noBrowser = true
+			appCfgOverrides["autoOpenBrowser"] = "--no-browser"
 		case "-h", "--help", "help":
 			fmt.Print(usageText())
 			return
@@ -124,7 +143,9 @@ func main() {
 				fileName = a
 			}
 		}
-		runFile(ctx, fileName, realtime)
+		if !runFile(ctx, fileName, realtime) {
+			return
+		}
 	case "itemcsv":
 		outDir := "items_log_export"
 		if len(rest) > 1 {
@@ -133,7 +154,9 @@ func main() {
 		exportItemCSV(outDir)
 		return
 	default:
-		runLive(ctx)
+		if !runLive(ctx) {
+			return
+		}
 	}
 
 	<-ctx.Done()
@@ -145,11 +168,16 @@ func main() {
 var onLicenseActivated func()
 
 // runLive: HTTP/WS server up immediately. TCP scanning (the watchdog) is
-// held back until the license is active — either already, or via the
-// activate endpoint — so we don't touch the network before activation.
-func runLive(ctx context.Context) {
+// held back until the license is active. Port is bound before any side
+// effect; see bindPort.
+func runLive(ctx context.Context) bool {
 	pub := newEventPublisher(ctx, nil)
 	currentPub = pub
+	registerRoutes(websocketHandler(pub))
+	ln, ok := bindPort(true)
+	if !ok {
+		return false
+	}
 	go runPacketWriter(ctx, pub)
 
 	var once sync.Once
@@ -164,11 +192,13 @@ func runLive(ctx context.Context) {
 	} else {
 		logger.Println("live mode: waiting for license activation")
 	}
-	serve(pub)
+	serveOn(ln)
+	return true
 }
 
-// runFile: replay a capture from disk. No watchdog.
-func runFile(ctx context.Context, fileName string, realtime bool) {
+// runFile: replay a capture from disk. No watchdog. Port is bound before
+// any side effect; see bindPort.
+func runFile(ctx context.Context, fileName string, realtime bool) bool {
 	logger.Println("file replay mode:", fileName, "realtime:", realtime)
 
 	r, err := packet.NewGameServerPacketReader(&packet.GameServerPacketReaderOpt{
@@ -182,8 +212,14 @@ func runFile(ctx context.Context, fileName string, realtime bool) {
 
 	pub := newEventPublisher(ctx, r)
 	currentPub = pub
+	registerRoutes(websocketHandler(pub))
+	ln, ok := bindPort(false)
+	if !ok {
+		return false
+	}
 	go runPacketWriter(ctx, pub)
-	serve(pub)
+	serveOn(ln)
+	return true
 }
 
 // noPcapFile skips writing logs/packet_capture_*.pcapng; noBrowser skips
@@ -191,14 +227,53 @@ func runFile(ctx context.Context, fileName string, realtime bool) {
 var (
 	noPcapFile bool
 	noBrowser  bool
+	autoPort   bool // pick the first free port in 8030-8040 and refuse to start twice
 )
 
-func serve(pub *eventPublisher) {
-	startWebsocketServer(websocketHandler(pub))
-
-	if runtime.GOOS == "windows" && !noBrowser {
-		go exec.Command("explorer", fmt.Sprintf("http://127.0.0.1:%v", port)).Run()
+// bindPort binds the first free candidate port. With refuseIfMogugi it instead
+// opens the browser to an already running mogugi and returns false; replay passes
+// false (a live meter beside it is normal). Runs before any side effect (writers).
+func bindPort(refuseIfMogugi bool) (net.Listener, bool) {
+	if autoPort && (port < autoPortMin || port > autoPortMax) {
+		logger.Printf("設定的 port %d 未使用:自動切換 port 已開啟(%d 到 %d)", port, autoPortMin, autoPortMax)
 	}
+	var running instanceInfo
+	isMogugi := func(int) bool { return false }
+	if refuseIfMogugi {
+		isMogugi = func(p int) bool {
+			info, ok := probeMogugi(p, 500*time.Millisecond)
+			if ok {
+				running = info
+			}
+			return ok
+		}
+	}
+	ln, actual, out := listenFirstFree(candidatePorts(port, autoPort), tcpListen, isMogugi)
+	if out != nil {
+		if out.AlreadyRunning {
+			url := fmt.Sprintf("http://127.0.0.1:%d", out.Port)
+			logger.Printf("mogugi 已在 %s 執行中(PID %d,版本 %s),不再開第二個(如需同時開兩個,請關閉自動切換 port 並指定不同的 port)", url, running.PID, running.Version)
+			openBrowserAndWait(url)
+			return nil, false
+		}
+		if autoPort {
+			logger.Fatalf("port %d 到 %d 都無法使用(被其他程式占用或系統保留),請關閉占用的程式,或在 %s 關閉自動切換並指定 port:%v", autoPortMin, autoPortMax, appConfigPath(), out.Err)
+		}
+		logger.Fatalf("port %d 無法使用(可能已被其他程式占用),請修改 %s 裡的 port 後重新啟動:%v", out.Port, appConfigPath(), out.Err)
+	}
+	port = actual
+	return ln, true
+}
+
+// serveOn starts serving an already-bound listener, then opens the browser.
+func serveOn(ln net.Listener) {
+	logger.Printf("Server listening on port %d", port)
+	go func() {
+		if err := http.Serve(ln, nil); err != nil {
+			logger.Fatalf("HTTP server stopped: %v", err)
+		}
+	}()
+	openBrowser(fmt.Sprintf("http://127.0.0.1:%d", port))
 }
 
 func listNics() {
@@ -279,7 +354,7 @@ func drainIncoming(ws *websocket.Conn, wsCtx context.Context, cancel context.Can
 	}
 }
 
-func startWebsocketServer(newClientCb func(*websocket.Conn)) {
+func registerRoutes(newClientCb func(*websocket.Conn)) {
 	http.Handle("/ws", requireLicense(websocket.Handler(newClientCb)))
 	http.Handle("/api/packet_log", requireLicense(http.HandlerFunc(httpHandlerPacketLog)))
 	http.Handle("/api/item-index", requireLicense(http.HandlerFunc(httpHandlerItemIndex)))
@@ -288,9 +363,11 @@ func startWebsocketServer(newClientCb func(*websocket.Conn)) {
 	http.Handle("/api/battles/reveal", requireLicense(http.HandlerFunc(httpHandlerBattleReveal)))
 	http.Handle("/api/battles/note", requireLicense(http.HandlerFunc(httpHandlerBattleNote)))
 	http.Handle("/api/battles/delete", requireLicense(http.HandlerFunc(httpHandlerBattleDelete)))
+	http.Handle("/api/config", requireLicense(http.HandlerFunc(httpHandlerConfig)))
 	http.HandleFunc("/api/license/status", httpHandlerLicenseStatus)
 	http.HandleFunc("/api/license/oauth/start", httpHandlerLicenseOAuthStart)
 	http.HandleFunc("/api/status", httpHandlerStatus)
+	http.HandleFunc("/api/instance", httpHandlerInstance)
 
 	var staticFS = fs.FS(staticFiles)
 	htmlContent, err := fs.Sub(staticFS, "static")
@@ -299,17 +376,6 @@ func startWebsocketServer(newClientCb func(*websocket.Conn)) {
 	}
 
 	http.Handle("/", http.FileServer(http.FS(htmlContent)))
-
-	logger.Printf("Server listening on port %d", port)
-
-	go func() {
-		err := http.ListenAndServe(fmt.Sprintf("127.0.0.1:%d", port), nil)
-		if err != nil {
-			logger.Fatalf("ListenAndServe failed: %v", err)
-		}
-	}()
-
-	<-time.After(1 * time.Second)
 }
 
 // startConnectionWatchdog polls Client.exe TCP connections every 500ms and

@@ -25,6 +25,8 @@
         </span>
         <v-switch :model-value="bossOnlyTarget" @update:model-value="v => setBossOnlyTarget(!!v)"
             label="只顯示BOSS" color="primary" density="compact" hide-details />
+        <v-btn icon="mdi-cog" size="small" variant="text" density="comfortable" title="傷害分析設定"
+            @click="settingsOpen = true" />
     </v-sheet>
 
     <!-- DPS + effect (target debuffs, player-side buffs) unified chart with shared X axis -->
@@ -32,90 +34,6 @@
         <v-sheet class="d-flex align-center px-3 py-1" style="font-size: 0.8em; color: #888; background: #1a1a1a;">
             <span style="white-space: nowrap;">DPS (per {{ DPS_WINDOW_SEC }}s) &amp; Effect Timeline</span>
             <v-spacer />
-            <v-menu :close-on-content-click="false">
-                <template v-slot:activator="{ props: menuProps }">
-                    <v-btn v-bind="menuProps" icon="mdi-cog" size="x-small" variant="text" density="compact" />
-                </template>
-                <v-card width="320" style="background: #1e1e1e;">
-                    <!-- Enabled list (draggable) -->
-                    <v-card-subtitle class="px-3 pt-3 pb-1 d-flex align-center" style="font-size: 0.75em;">
-                        <span>Enabled (drag to reorder)</span>
-                        <v-spacer />
-                        <v-btn variant="text" size="x-small" density="compact" prepend-icon="mdi-restore"
-                            @click="resetTrackedCCs">Reset</v-btn>
-                    </v-card-subtitle>
-                    <div style="max-height: 240px; overflow-y: auto;">
-                        <div v-for="(ccId, idx) in trackedCCIdList" :key="ccId"
-                            class="d-flex align-center px-3 py-1"
-                            :draggable="ccId !== PINNED_CC"
-                            :style="{
-                                cursor: ccId === PINNED_CC ? 'default' : 'grab',
-                                opacity: ccId === PINNED_CC ? 0.6 : (dragIdx === idx ? 0.4 : 1),
-                                background: dragIdx === idx ? '#333' : 'transparent',
-                                userSelect: 'none',
-                            }"
-                            @dragstart="onDragStart(idx)"
-                            @dragover="onDragOver($event, idx)"
-                            @dragend="onDragEnd">
-                            <v-icon v-if="ccId === PINNED_CC" icon="mdi-lock" size="x-small" class="mr-1" style="opacity:0.4" />
-                            <v-icon v-else icon="mdi-drag-horizontal-variant" size="x-small" class="mr-1" style="opacity:0.4" />
-                            <img width="16" height="16" class="mr-2"
-                                :src="ccIconUrl(region, ccId)"
-                                style="border-radius:2px;" />
-                            <span style="font-size: 0.82em; flex: 1;">{{ ccName(condNameMap, ccId) }} {{ ccId }}</span>
-                            <v-btn icon size="x-small" variant="text" density="compact" class="mr-1"
-                                :title="chartHiddenCCIds.has(ccId) ? 'Coverage only — click to show on chart' : 'Chart + coverage — click to hide from chart'"
-                                @click.stop="toggleChartMode(ccId)">
-                                <v-icon icon="mdi-chart-timeline-variant" size="small"
-                                    :style="{ opacity: chartHiddenCCIds.has(ccId) ? 0.3 : 1 }" />
-                            </v-btn>
-                            <!-- Party-side lanes (覺醒/戰吼) drag like the rest but
-                                 cannot be removed — the eye hides them instead. -->
-                            <v-btn v-if="PLAYER_SIDE_CC_IDS.includes(ccId)" icon size="x-small" variant="text"
-                                density="compact"
-                                :title="hiddenTrackIds.has(ccTrackId(ccId)) ? '隊伍 Buff:已隱藏 — 點擊顯示' : '隊伍 Buff:顯示中 — 點擊隱藏'"
-                                @click.stop="togglePlayerSideTrack(ccId)">
-                                <v-icon :icon="hiddenTrackIds.has(ccTrackId(ccId)) ? 'mdi-eye-off' : 'mdi-eye'" size="small"
-                                    :style="{ opacity: hiddenTrackIds.has(ccTrackId(ccId)) ? 0.35 : 1 }" />
-                            </v-btn>
-                            <v-btn v-else-if="ccId !== PINNED_CC" icon="mdi-close" size="x-small" variant="text"
-                                density="compact" @click.stop="removeCC(ccId)" />
-                        </div>
-                    </div>
-                    <!-- Add new -->
-                    <v-divider class="my-1" />
-                    <v-card-subtitle class="px-3 pt-1 pb-1 d-flex align-center" style="font-size: 0.75em;">
-                        <span>Add condition</span>
-                        <v-spacer />
-                        <span style="margin-right: 10px;">只顯示出現過</span>
-                        <v-switch :model-value="showSeenOnly" density="compact" hide-details class="seen-switch"
-                            color="primary" style="flex: none;" @update:model-value="showSeenOnly = !!$event" />
-                    </v-card-subtitle>
-                    <div class="px-3 pb-2">
-                        <v-text-field v-model="addCCSearch" density="compact" variant="outlined"
-                            hide-details placeholder="Search CC..." clearable
-                            style="font-size: 0.82em;" />
-                    </div>
-                    <div style="max-height: 160px; overflow-y: auto;">
-                        <div v-for="ccId in availableCCs" :key="ccId"
-                            class="d-flex align-center px-3 py-1"
-                            style="cursor: pointer;"
-                            @click="addCC(ccId)">
-                            <v-icon icon="mdi-plus" size="x-small" class="mr-1" style="opacity:0.5" />
-                            <img width="16" height="16" class="mr-2"
-                                :src="ccIconUrl(region, ccId)"
-                                style="border-radius:2px;" />
-                            <span style="font-size: 0.82em;">{{ ccName(condNameMap, ccId) }} {{ ccId }}</span>
-                        </div>
-                        <div v-if="availableCCsOverflow > 0" class="px-3 py-1 text-medium-emphasis" style="font-size: 0.75em;">
-                            還有 {{ availableCCsOverflow }} 筆,請用搜尋縮小範圍
-                        </div>
-                        <div v-if="availableCCs.length === 0" class="px-3 py-2 text-medium-emphasis" style="font-size: 0.8em;">
-                            No more conditions to add
-                        </div>
-                    </div>
-                </v-card>
-            </v-menu>
         </v-sheet>
         <dps-debuff-chart
             :entities="dpsChartEntities"
@@ -133,66 +51,6 @@
         <alias-toolbar :real-names="pcRealNames" :arcana-hidden="allArcanaHidden"
             @toggle-arcana="toggleAllArcanaHidden" />
         <v-spacer />
-        <v-menu :close-on-content-click="false">
-            <template v-slot:activator="{ props: mp }">
-                <v-btn v-bind="mp" icon="mdi-cog" size="x-small" variant="text" density="compact" />
-            </template>
-            <v-card width="280" style="background: #1e1e1e;">
-                <v-card-subtitle class="px-3 pt-3 pb-2 d-flex align-center" style="font-size: 0.75em;">
-                    <span>技能圖表設定</span>
-                    <v-spacer />
-                    <v-btn variant="text" size="x-small" density="compact" prepend-icon="mdi-restore"
-                        @click="resetSkillSettings">Reset</v-btn>
-                </v-card-subtitle>
-
-                <div class="setting-row">
-                    <div class="setting-row__label">
-                        <div>技能列數</div>
-                        <div class="setting-row__hint">0 表示不限制</div>
-                    </div>
-                    <v-text-field :model-value="skillRowLimit" type="number" min="0"
-                        density="compact" variant="outlined" hide-details single-line
-                        style="max-width: 76px;"
-                        @update:model-value="setSkillRowLimit(Number($event))" />
-                </div>
-
-                <div class="setting-row">
-                    <div class="setting-row__label">
-                        <div>顯示寵物技能</div>
-                        <div class="setting-row__hint">人偶一律計入,不受影響</div>
-                    </div>
-                    <v-switch :model-value="showPetSkills" density="compact" hide-details
-                        color="primary" class="flex-grow-0"
-                        @update:model-value="setShowPetSkills(!!$event)" />
-                </div>
-
-                <v-divider />
-                <v-card-subtitle class="px-3 pt-2 pb-1" style="font-size: 0.75em;">
-                    欄位(拖曳排序)
-                </v-card-subtitle>
-                <div style="max-height: 240px; overflow-y: auto;">
-                    <div v-for="(c, idx) in orderedDetailColumns" :key="c.key"
-                        class="d-flex align-center px-3 col-drag-row" draggable="true"
-                        :style="{
-                            cursor: 'grab',
-                            opacity: colDragIdx === idx ? 0.4 : 1,
-                            background: colDragIdx === idx ? '#333' : 'transparent',
-                            userSelect: 'none',
-                        }"
-                        @dragstart="onColDragStart(idx)"
-                        @dragover="onColDragOver($event, idx)"
-                        @dragend="onColDragEnd">
-                        <v-icon size="14" class="mr-1" style="opacity: 0.4;">mdi-drag-horizontal-variant</v-icon>
-                        <v-checkbox-btn :model-value="!hiddenSkillColumns.has(c.key)" density="compact"
-                            @click.stop="toggleSkillColumn(c.key)" />
-                        <span style="font-size: 0.85em;">{{ c.label }}</span>
-                    </div>
-                </div>
-                <div class="px-3 py-2" style="font-size: 0.7em; opacity: 0.55;">
-                    命中次數、總傷害、DPS、佔比一律顯示。
-                </div>
-            </v-card>
-        </v-menu>
     </v-sheet>
 
     <div ref="listEl">
@@ -292,6 +150,166 @@
     </v-expansion-panels>
     </div>
 
+    <!-- All damage-analysis preferences in one place; the two chart cogs moved here. -->
+    <v-dialog v-model="settingsOpen" max-width="760" scrollable>
+        <v-card style="background: #1e1e1e;">
+            <v-card-title class="d-flex align-center">
+                <v-icon icon="mdi-cog" class="mr-2" />傷害分析設定
+                <v-spacer />
+                <v-btn icon="mdi-close" size="small" variant="text" @click="settingsOpen = false" />
+            </v-card-title>
+            <v-tabs v-model="settingsTab" density="compact" color="primary">
+                <v-tab value="dps">DPS 圖表</v-tab>
+                <v-tab value="skill">技能圖表</v-tab>
+                <v-tab value="cc">CC 與目標</v-tab>
+            </v-tabs>
+            <v-divider />
+            <v-card-text class="pa-0" style="min-height: 480px;">
+                <v-tabs-window v-model="settingsTab">
+                    <v-tabs-window-item value="dps">
+                        <!-- Enabled list (draggable) -->
+                        <v-card-subtitle class="px-3 pt-3 pb-1 d-flex align-center" style="font-size: 0.75em;">
+                            <span>Enabled (drag to reorder)</span>
+                            <v-spacer />
+                            <v-btn variant="text" size="x-small" density="compact" prepend-icon="mdi-restore"
+                                @click="resetTrackedCCs">Reset</v-btn>
+                        </v-card-subtitle>
+                        <div style="max-height: 320px; overflow-y: auto;">
+                            <div v-for="(ccId, idx) in trackedCCIdList" :key="ccId"
+                                class="d-flex align-center px-3 py-1"
+                                :draggable="ccId !== PINNED_CC"
+                                :style="{
+                                    cursor: ccId === PINNED_CC ? 'default' : 'grab',
+                                    opacity: ccId === PINNED_CC ? 0.6 : (dragIdx === idx ? 0.4 : 1),
+                                    background: dragIdx === idx ? '#333' : 'transparent',
+                                    userSelect: 'none',
+                                }"
+                                @dragstart="onDragStart(idx)"
+                                @dragover="onDragOver($event, idx)"
+                                @dragend="onDragEnd">
+                                <v-icon v-if="ccId === PINNED_CC" icon="mdi-lock" size="x-small" class="mr-1" style="opacity:0.4" />
+                                <v-icon v-else icon="mdi-drag-horizontal-variant" size="x-small" class="mr-1" style="opacity:0.4" />
+                                <img width="16" height="16" class="mr-2"
+                                    :src="ccIconUrl(region, ccId)"
+                                    style="border-radius:2px;" />
+                                <span style="font-size: 0.82em; flex: 1;">{{ ccName(condNameMap, ccId) }} {{ ccId }}</span>
+                                <v-btn icon size="x-small" variant="text" density="compact" class="mr-1"
+                                    :title="chartHiddenCCIds.has(ccId) ? 'Coverage only — click to show on chart' : 'Chart + coverage — click to hide from chart'"
+                                    @click.stop="toggleChartMode(ccId)">
+                                    <v-icon icon="mdi-chart-timeline-variant" size="small"
+                                        :style="{ opacity: chartHiddenCCIds.has(ccId) ? 0.3 : 1 }" />
+                                </v-btn>
+                                <!-- Party-side lanes (覺醒/戰吼) drag like the rest but
+                                     cannot be removed — the eye hides them instead. -->
+                                <v-btn v-if="PLAYER_SIDE_CC_IDS.includes(ccId)" icon size="x-small" variant="text"
+                                    density="compact"
+                                    :title="hiddenTrackIds.has(ccTrackId(ccId)) ? '隊伍 Buff:已隱藏 — 點擊顯示' : '隊伍 Buff:顯示中 — 點擊隱藏'"
+                                    @click.stop="togglePlayerSideTrack(ccId)">
+                                    <v-icon :icon="hiddenTrackIds.has(ccTrackId(ccId)) ? 'mdi-eye-off' : 'mdi-eye'" size="small"
+                                        :style="{ opacity: hiddenTrackIds.has(ccTrackId(ccId)) ? 0.35 : 1 }" />
+                                </v-btn>
+                                <v-btn v-else-if="ccId !== PINNED_CC" icon="mdi-close" size="x-small" variant="text"
+                                    density="compact" @click.stop="removeCC(ccId)" />
+                            </div>
+                        </div>
+                        <!-- Add new -->
+                        <v-divider class="my-1" />
+                        <v-card-subtitle class="px-3 pt-1 pb-1 d-flex align-center" style="font-size: 0.75em;">
+                            <span>Add condition</span>
+                            <v-spacer />
+                            <span style="margin-right: 10px;">只顯示出現過</span>
+                            <v-switch :model-value="showSeenOnly" density="compact" hide-details class="seen-switch"
+                                color="primary" style="flex: none;" @update:model-value="showSeenOnly = !!$event" />
+                        </v-card-subtitle>
+                        <div class="px-3 pb-2">
+                            <v-text-field v-model="addCCSearch" density="compact" variant="outlined"
+                                hide-details placeholder="Search CC..." clearable
+                                style="font-size: 0.82em;" />
+                        </div>
+                        <div style="max-height: 220px; overflow-y: auto;">
+                            <div v-for="ccId in availableCCs" :key="ccId"
+                                class="d-flex align-center px-3 py-1"
+                                style="cursor: pointer;"
+                                @click="addCC(ccId)">
+                                <v-icon icon="mdi-plus" size="x-small" class="mr-1" style="opacity:0.5" />
+                                <img width="16" height="16" class="mr-2"
+                                    :src="ccIconUrl(region, ccId)"
+                                    style="border-radius:2px;" />
+                                <span style="font-size: 0.82em;">{{ ccName(condNameMap, ccId) }} {{ ccId }}</span>
+                            </div>
+                            <div v-if="availableCCsOverflow > 0" class="px-3 py-1 text-medium-emphasis" style="font-size: 0.75em;">
+                                還有 {{ availableCCsOverflow }} 筆,請用搜尋縮小範圍
+                            </div>
+                            <div v-if="availableCCs.length === 0" class="px-3 py-2 text-medium-emphasis" style="font-size: 0.8em;">
+                                No more conditions to add
+                            </div>
+                        </div>
+                    </v-tabs-window-item>
+                    <v-tabs-window-item value="skill">
+                        <v-card-subtitle class="px-3 pt-3 pb-2 d-flex align-center" style="font-size: 0.75em;">
+                            <span>技能圖表設定</span>
+                            <v-spacer />
+                            <v-btn variant="text" size="x-small" density="compact" prepend-icon="mdi-restore"
+                                @click="resetSkillSettings">Reset</v-btn>
+                        </v-card-subtitle>
+
+                        <div class="setting-row">
+                            <div class="setting-row__label">
+                                <div>技能列數</div>
+                                <div class="setting-row__hint">0 表示不限制</div>
+                            </div>
+                            <v-text-field :model-value="skillRowLimit" type="number" min="0"
+                                density="compact" variant="outlined" hide-details single-line
+                                style="max-width: 76px;"
+                                @update:model-value="setSkillRowLimit(Number($event))" />
+                        </div>
+
+                        <div class="setting-row">
+                            <div class="setting-row__label">
+                                <div>顯示寵物技能</div>
+                                <div class="setting-row__hint">人偶一律計入,不受影響</div>
+                            </div>
+                            <v-switch :model-value="showPetSkills" density="compact" hide-details
+                                color="primary" class="flex-grow-0"
+                                @update:model-value="setShowPetSkills(!!$event)" />
+                        </div>
+
+                        <v-divider />
+                        <v-card-subtitle class="px-3 pt-2 pb-1" style="font-size: 0.75em;">
+                            欄位(拖曳排序)
+                        </v-card-subtitle>
+                        <div style="max-height: 320px; overflow-y: auto;">
+                            <div v-for="(c, idx) in orderedDetailColumns" :key="c.key"
+                                class="d-flex align-center px-3 col-drag-row" draggable="true"
+                                :style="{
+                                    cursor: 'grab',
+                                    opacity: colDragIdx === idx ? 0.4 : 1,
+                                    background: colDragIdx === idx ? '#333' : 'transparent',
+                                    userSelect: 'none',
+                                }"
+                                @dragstart="onColDragStart(idx)"
+                                @dragover="onColDragOver($event, idx)"
+                                @dragend="onColDragEnd">
+                                <v-icon size="14" class="mr-1" style="opacity: 0.4;">mdi-drag-horizontal-variant</v-icon>
+                                <v-checkbox-btn :model-value="!hiddenSkillColumns.has(c.key)" density="compact"
+                                    @click.stop="toggleSkillColumn(c.key)" />
+                                <span style="font-size: 0.85em;">{{ c.label }}</span>
+                            </div>
+                        </div>
+                        <div class="px-3 py-2" style="font-size: 0.7em; opacity: 0.55;">
+                            命中次數、總傷害、DPS、佔比一律顯示。
+                        </div>
+                    </v-tabs-window-item>
+                    <v-tabs-window-item value="cc">
+                        <div class="px-3 py-3">
+                            <ui-settings />
+                        </div>
+                    </v-tabs-window-item>
+                </v-tabs-window>
+            </v-card-text>
+        </v-card>
+    </v-dialog>
+
     <v-snackbar v-model="shotSnackbar" :timeout="2500" color="info" location="bottom right">
         {{ shotMessage }}
     </v-snackbar>
@@ -329,6 +347,7 @@ import DpsDebuffChart from '@/components/subComponents/dpsDebuffChart.vue';
 import EntityAliasName from '@/components/subComponents/entityAliasName.vue';
 import AliasToolbar from '@/components/subComponents/aliasToolbar.vue';
 import BuffIndicator from '@/components/subComponents/buffIndicator.vue';
+import UiSettings from '@/components/subComponents/uiSettings.vue';
 
 export default defineComponent({
     components: {
@@ -336,6 +355,7 @@ export default defineComponent({
         EntityAliasName,
         AliasToolbar,
         BuffIndicator,
+        UiSettings,
     },
     setup() {
         const isLoading = inject('isLoading');
@@ -1245,7 +1265,13 @@ export default defineComponent({
         const availableCCsOverflow = computed(() =>
             Math.max(0, availableCCsAll.value.length - ADD_LIST_MAX_ROWS));
 
+        // Damage-analysis settings dialog (opened from the cog in the first row).
+        const settingsOpen = ref(false);
+        const settingsTab = ref<'dps' | 'skill' | 'cc'>('dps');
+
         return {
+            settingsOpen,
+            settingsTab,
             isLoading,
             region,
             rootEl,

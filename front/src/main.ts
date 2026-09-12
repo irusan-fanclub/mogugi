@@ -18,6 +18,10 @@ const vuetify = createVuetify({
     theme: {
         defaultTheme: 'dark',
     },
+    // Material 3 style toggles everywhere (thumb inside a pill track).
+    defaults: {
+        VSwitch: { inset: true },
+    },
 });
 
 const app = createApp(App);
