@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -114,5 +115,34 @@ func TestAuthBaseURLOverride(t *testing.T) {
 	t.Setenv("MOGUGI_AUTH_BASE_URL", "  ")
 	if got := authBaseURL(); got != defaultAuthBaseURL {
 		t.Fatalf("blank override should fall back, got %q", got)
+	}
+}
+
+func TestOAuthOldCleanupPreservesReplacement(t *testing.T) {
+	var flow oauthFlow
+	a, cancelA := context.WithCancel(context.Background())
+	defer cancelA()
+	idA := flow.replace(cancelA)
+	b, cancelB := context.WithCancel(context.Background())
+	defer cancelB()
+	idB := flow.replace(cancelB)
+	if a.Err() == nil {
+		t.Fatal("replacement did not cancel the old flow")
+	}
+	flow.clear(idA)
+	if b.Err() != nil {
+		t.Fatal("old cleanup cancelled the current flow")
+	}
+	c, cancelC := context.WithCancel(context.Background())
+	defer cancelC()
+	idC := flow.replace(cancelC)
+	if b.Err() == nil {
+		t.Fatal("old cleanup lost the replacement cancel function")
+	}
+	flow.clear(idB)
+	flow.clear(idC)
+	flow.replace(func() {})
+	if c.Err() != nil {
+		t.Fatal("completed flow was cancelled by a later replacement")
 	}
 }

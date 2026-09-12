@@ -65,25 +65,30 @@ func authBaseURL() string {
 // the previous — the user pressing the button twice means they want a new
 // attempt, not two listeners racing to activate.
 type oauthFlow struct {
-	mu     sync.Mutex
-	cancel context.CancelFunc
+	mu         sync.Mutex
+	cancel     context.CancelFunc
+	generation uint64
 }
 
 var currentOAuth oauthFlow
 
-func (f *oauthFlow) replace(cancel context.CancelFunc) {
+func (f *oauthFlow) replace(cancel context.CancelFunc) uint64 {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.cancel != nil {
 		f.cancel()
 	}
 	f.cancel = cancel
+	f.generation++
+	return f.generation
 }
 
-func (f *oauthFlow) clear() {
+func (f *oauthFlow) clear(generation uint64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.cancel = nil
+	if f.generation == generation {
+		f.cancel = nil
+	}
 }
 
 func newState() (string, error) {
@@ -116,8 +121,8 @@ func httpHandlerLicenseOAuthStart(w http.ResponseWriter, _ *http.Request) {
 
 	redirectURI := fmt.Sprintf("http://127.0.0.1:%d/callback", port)
 	ctx, cancel := context.WithTimeout(context.Background(), oauthWindow)
-	currentOAuth.replace(cancel)
-	go serveCallback(ctx, cancel, listener, state, redirectURI)
+	generation := currentOAuth.replace(cancel)
+	go serveCallback(ctx, cancel, listener, state, redirectURI, generation)
 
 	q := url.Values{
 		"client_id":     {oauthClientID},
@@ -145,9 +150,9 @@ func listenCallback() (net.Listener, int, error) {
 // serveCallback runs the temporary listener. It closes on the first callback
 // or when the window expires, whichever comes first.
 func serveCallback(ctx context.Context, cancel context.CancelFunc,
-	listener net.Listener, state, redirectURI string) {
+	listener net.Listener, state, redirectURI string, generation uint64) {
 	defer cancel()
-	defer currentOAuth.clear()
+	defer currentOAuth.clear(generation)
 
 	mux := http.NewServeMux()
 	// Anything on the machine can reach a loopback port, so the path is

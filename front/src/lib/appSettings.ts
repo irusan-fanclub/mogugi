@@ -31,7 +31,7 @@ export function isDirty(a: AppConfig, b: AppConfig): boolean {
 // effectHints: one line per field that changed, saying when it takes effect.
 export function effectHints(saved: AppConfig, previous: AppConfig): string[] {
     const out: string[] = [];
-    if (saved.savePcapng !== previous.savePcapng) out.push('保存封包原始紀錄:下次重新接上遊戲連線或重啟後生效');
+    if (saved.savePcapng !== previous.savePcapng) out.push('保存封包原始紀錄:重新啟動 mogugi 後生效');
     if (saved.autoOpenBrowser !== previous.autoOpenBrowser) out.push('自動開啟瀏覽器:下次啟動生效');
     if (saved.autoPort !== previous.autoPort) out.push('自動切換 port:下次啟動生效');
     if (!saved.autoPort && saved.port !== previous.port) out.push(`port:重啟後請改開 http://127.0.0.1:${saved.port}`);

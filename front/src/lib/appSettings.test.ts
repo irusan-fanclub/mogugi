@@ -29,7 +29,7 @@ describe('isDirty', () => {
 
 describe('effectHints', () => {
     it('lists one hint per changed field', () => {
-        expect(effectHints({ ...base, savePcapng: false }, base)).toEqual(['保存封包原始紀錄:下次重新接上遊戲連線或重啟後生效']);
+        expect(effectHints({ ...base, savePcapng: false }, base)).toEqual(['保存封包原始紀錄:重新啟動 mogugi 後生效']);
         expect(effectHints({ ...base, autoOpenBrowser: false }, base)).toEqual(['自動開啟瀏覽器:下次啟動生效']);
         expect(effectHints({ ...base, port: 8035 }, base)).toEqual(['port:重啟後請改開 http://127.0.0.1:8035']);
         expect(effectHints(base, base)).toEqual([]);

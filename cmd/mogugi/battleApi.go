@@ -59,9 +59,16 @@ func httpHandlerBattleReveal(w http.ResponseWriter, r *http.Request) {
 // recycleFile sends the file to the Windows recycle bin; a variable so
 // tests can stub the shell call.
 var recycleFile = func(path string) error {
-	script := `Add-Type -AssemblyName Microsoft.VisualBasic; ` +
-		`[Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile('` + path + `','OnlyErrorDialogs','SendToRecycleBin')`
-	return exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", script).Run()
+	return recycleCommand(path).Run()
+}
+
+// Pass the path as data so quotes and PowerShell expressions stay literal.
+func recycleCommand(path string) *exec.Cmd {
+	const script = "$ErrorActionPreference = 'Stop'; Add-Type -AssemblyName Microsoft.VisualBasic; " +
+		"[Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($env:MOGUGI_RECYCLE_PATH,'OnlyErrorDialogs','SendToRecycleBin')"
+	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", script)
+	cmd.Env = append(os.Environ(), "MOGUGI_RECYCLE_PATH="+path)
+	return cmd
 }
 
 // httpHandlerBattleDelete moves one record to the recycle bin and drops its

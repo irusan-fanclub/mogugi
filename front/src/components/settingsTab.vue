@@ -19,7 +19,7 @@
             <template v-if="draft">
                 <v-switch v-model="draft.savePcapng" color="primary" density="compact"
                     :disabled="!!overrides.savePcapng" label="保存封包原始紀錄(pcapng)"
-                    hint="pcapng 檔可用於其他家 DPS Meter 還原;會隨時間變大。下次重新接上遊戲連線或重啟後生效。"
+                    hint="pcapng 檔可用於其他家 DPS Meter 還原;會隨時間變大。重新啟動 mogugi 後生效。"
                     persistent-hint />
                 <div v-if="overrides.savePcapng" class="text-caption text-warning mb-2">{{ overrideNote(overrides.savePcapng) }}</div>
 

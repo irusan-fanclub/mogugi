@@ -10,7 +10,7 @@ import (
 
 // Runtime config state. appCfg mirrors the file (what the settings tab
 // edits); the effective values live in port/noPcapFile/noBrowser/autoPort
-// and are derived once at start, so edits only apply on the next start/reconnect.
+// and are derived once at start, so edits only apply on the next start.
 //
 // main() assigns these before the HTTP server starts, so that initial
 // write needs no lock; every access after that goes through appCfgMu.

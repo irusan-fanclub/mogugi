@@ -4,6 +4,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -66,5 +67,35 @@ func TestBattleRevealValidatesAndLaunches(t *testing.T) {
 	httpHandlerBattleReveal(rr, httptest.NewRequest("POST", "/api/battles/reveal?file=nope.ndjson", nil))
 	if rr.Code != 404 {
 		t.Fatalf("missing file must 404, got %d", rr.Code)
+	}
+}
+
+func TestRecycleCommandKeepsPathOutOfScript(t *testing.T) {
+	t.Setenv("MOGUGI_RECYCLE_PATH", "stale")
+	paths := []string{
+		"C:/測試資料/O'Brien/run.ndjson",
+		"C:/logs/'); Write-Output INJECTED; #.ndjson",
+		"C:/logs/$(Write-Output INJECTED).ndjson",
+	}
+	var script string
+	for _, path := range paths {
+		cmd := recycleCommand(path)
+		got := cmd.Args[len(cmd.Args)-1]
+		if script != "" && script != got {
+			t.Fatal("path changed the executable script")
+		}
+		script = got
+		if strings.Contains(got, path) {
+			t.Fatal("path was interpolated into script")
+		}
+		value := ""
+		for _, env := range cmd.Environ() {
+			if strings.HasPrefix(env, "MOGUGI_RECYCLE_PATH=") {
+				value = strings.TrimPrefix(env, "MOGUGI_RECYCLE_PATH=")
+			}
+		}
+		if value != path {
+			t.Fatalf("path changed: got %q, want %q", value, path)
+		}
 	}
 }
