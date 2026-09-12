@@ -1,73 +1,86 @@
 <template>
     <v-sheet class="pa-3">
+        <div class="eq-toolbar">
+            <v-switch v-model="autoFetch" label="自動更新" color="primary" density="compact" hide-details />
+            <v-btn size="small" variant="tonal" :disabled="autoFetch" @click="refresh">重新整理</v-btn>
+            <span class="eq-hint">關閉自動更新後,換裝不會反映到這頁,按重新整理才取得目前裝備。</span>
+        </div>
         <!-- Slot grid -->
-        <v-alert v-if="!ownerEquipment.length" type="info" variant="tonal" density="compact" class="mb-3">
+        <v-alert v-if="!equipment.length" type="info" variant="tonal" density="compact" class="mb-3">
             尚未收到角色快照,換頻後會出現。
         </v-alert>
-        <!-- Board mirrors the in-game 裝備 window: side column, 3x4 main grid, echo stones below -->
+        <!-- Board: relics + 星塵 left, 3x3 main grid, 威光 + echo stones right; side cells are squares sized so each column matches the grid height -->
         <div class="eq-board">
-            <div class="eq-side">
-                <equip-slot v-for="s in sideSlots" :key="s.pocket" :label="s.label" :entry="s.entry" />
+            <div class="eq-col" :style="{ '--eq-n': leftSlots.length }">
+                <equip-slot v-for="s in leftSlots" :key="s.pocket" :label="s.label" :entry="s.entry" />
             </div>
             <div class="eq-main">
                 <equip-slot v-for="s in mainSlots" :key="s.area" :style="{ gridArea: s.area }"
                     :label="s.label" :entry="s.entry" :tall="s.tall" :set="s.set"
                     @select-set="v => selectSet(s.area, v)" />
             </div>
-        </div>
-        <div class="eq-echo">
-            <span class="eq-echo-label">回音石</span>
-            <equip-slot v-for="s in echoSlots" :key="s.pocket" :label="s.label" :entry="s.entry" />
+            <div class="eq-col" :style="{ '--eq-n': rightSlots.length }">
+                <equip-slot v-for="s in rightSlots" :key="s.pocket" :label="s.label" :entry="s.entry" />
+            </div>
         </div>
 
-        <!-- Stat panel -->
-        <div class="text-subtitle-2 mt-4 mb-1">角色數值</div>
-        <v-alert v-if="!ownerStats" type="info" variant="tonal" density="compact">尚未收到角色數值。</v-alert>
-        <template v-else>
-            <v-alert v-if="!ownerStats.level" type="warning" variant="tonal" density="compact" class="mb-2">
-                基礎值未知(未收到快照),下列數值只反映啟動後的變化。
-            </v-alert>
-            <v-table density="compact" class="eq-panel">
-                <tbody>
-                    <tr v-for="r in panelRows" :key="r.label">
-                        <td class="eq-panel-label">{{ r.label }}</td>
-                        <td>{{ r.value }}</td>
-                    </tr>
-                </tbody>
-            </v-table>
+        <!-- Analysis selector: 素質 (stat panel + contributions), 音樂分析, placeholders -->
+        <div class="eq-view mt-4">
+            <v-select label="分析" :items="VIEWS" v-model="view" density="compact" variant="outlined" hide-details class="eq-view-select" />
+        </div>
+
+        <template v-if="view === 'stats'">
+            <!-- Stat panel -->
+            <div class="text-subtitle-2 mt-4 mb-1">角色數值</div>
+            <v-alert v-if="!stats" type="info" variant="tonal" density="compact">尚未收到角色數值。</v-alert>
+            <template v-else>
+                <v-alert v-if="!stats.level" type="warning" variant="tonal" density="compact" class="mb-2">
+                    基礎值未知(未收到快照),下列數值只反映啟動後的變化。
+                </v-alert>
+                <v-table density="compact" class="eq-panel">
+                    <tbody>
+                        <tr v-for="r in panelRows" :key="r.label">
+                            <td class="eq-panel-label">{{ r.label }}</td>
+                            <td>{{ r.value }}</td>
+                        </tr>
+                    </tbody>
+                </v-table>
+            </template>
+
+            <!-- Per-item contributions -->
+            <div class="text-subtitle-2 mt-4 mb-1">逐件貢獻</div>
+            <div class="eq-hint mb-1">差額不為零是正常的:細工、遺物、威光、回音石、才能、技能與 buff 尚未計入。</div>
+            <div class="eq-scroll">
+                <v-table density="compact" class="eq-contrib">
+                    <thead>
+                        <tr>
+                            <th>數值</th>
+                            <th v-for="c in wornColumns" :key="c.pocket" :title="c.name">{{ c.label }}</th>
+                            <th>合計</th>
+                            <th>伺服器</th>
+                            <th>差額</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="row in contribRows" :key="row.key">
+                            <td class="eq-panel-label">{{ row.label }}</td>
+                            <td v-for="c in wornColumns" :key="c.pocket">{{ fmt(c.contribution.stats[row.key]) }}</td>
+                            <td>{{ fmt(row.sum) }}</td>
+                            <td>
+                                <template v-if="row.server !== null">
+                                    {{ fmt(row.server) }}<span v-if="row.isTotal" class="eq-hint">(總值)</span>
+                                </template>
+                            </td>
+                            <td :class="{ 'eq-diff': row.diff !== null && row.diff !== 0 }">{{ row.diff === null ? '' : fmt(row.diff) }}</td>
+                        </tr>
+                    </tbody>
+                </v-table>
+            </div>
+            <div v-if="skippedSummary" class="eq-hint mt-1">未計入:{{ skippedSummary }}</div>
+            <div v-if="unmappedSummary" class="eq-hint">未對照效果碼:{{ unmappedSummary }}</div>
         </template>
-
-        <!-- Per-item contributions -->
-        <div class="text-subtitle-2 mt-4 mb-1">逐件貢獻</div>
-        <div class="eq-hint mb-1">差額不為零是正常的:細工、遺物、威光、回音石、才能、技能與 buff 尚未計入。</div>
-        <div class="eq-scroll">
-            <v-table density="compact" class="eq-contrib">
-                <thead>
-                    <tr>
-                        <th>數值</th>
-                        <th v-for="c in wornColumns" :key="c.pocket" :title="c.name">{{ c.label }}</th>
-                        <th>合計</th>
-                        <th>伺服器</th>
-                        <th>差額</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr v-for="row in contribRows" :key="row.key">
-                        <td class="eq-panel-label">{{ row.label }}</td>
-                        <td v-for="c in wornColumns" :key="c.pocket">{{ fmt(c.contribution.stats[row.key]) }}</td>
-                        <td>{{ fmt(row.sum) }}</td>
-                        <td>
-                            <template v-if="row.server !== null">
-                                {{ fmt(row.server) }}<span v-if="row.isTotal" class="eq-hint">(總值)</span>
-                            </template>
-                        </td>
-                        <td :class="{ 'eq-diff': row.diff !== null && row.diff !== 0 }">{{ row.diff === null ? '' : fmt(row.diff) }}</td>
-                    </tr>
-                </tbody>
-            </v-table>
-        </div>
-        <div v-if="skippedSummary" class="eq-hint mt-1">未計入:{{ skippedSummary }}</div>
-        <div v-if="unmappedSummary" class="eq-hint">未對照效果碼:{{ unmappedSummary }}</div>
+        <music-analysis v-else-if="view === 'music'" :items="equipment" :instrument-pocket="instrumentPocket" class="mt-3" />
+        <v-alert v-else type="info" variant="tonal" density="compact" class="mt-3">施工中,下一版提供。</v-alert>
     </v-sheet>
 </template>
 
@@ -83,6 +96,7 @@ import {
     type Contribution, type StatKey, type SlotEntry, type WeaponSet,
 } from '@/lib/equipStats';
 import EquipSlot from './subComponents/equipSlot.vue';
+import MusicAnalysis from './subComponents/musicAnalysis.vue';
 
 // Main-grid cells by CSS grid area; the two weapon areas resolve their
 // pocket through the I/II toggle (I = 10/13, II = 11/14).
@@ -95,11 +109,24 @@ const MAIN_AREAS: { area: string; pocket?: number; tall?: boolean }[] = [
     { area: 'wl', tall: true }, { area: 'body', pocket: 5, tall: true }, { area: 'wr', tall: true },
     { area: 'hand', pocket: 6 }, { area: 'foot', pocket: 7 }, { area: 'robe', pocket: 9 },
 ];
-const SIDE_POCKETS = [32, 33, 34, 35, 51, 54];
-const ECHO_POCKETS = [62, 63, 64];
+const LEFT_POCKETS = [32, 33, 34, 35, 54];
+const RIGHT_POCKETS = [51, 62, 63, 64];
+
+const VIEWS = [
+    { title: '素質', value: 'stats' }, { title: '音樂分析(施工中)', value: 'music' },
+    { title: '元素騎士(施工中)', value: 'elemental' }, { title: '幻變槍手(施工中)', value: 'gunner' },
+];
+const VIEW_KEY = 'mogugi.equipAnalysis.view';
+const loadView = (): string => {
+    try { return localStorage.getItem(VIEW_KEY) ?? 'stats'; } catch { return 'stats'; }
+};
+const AUTO_FETCH_KEY = 'mogugi.equipAnalysis.autoFetch';
+const loadAutoFetch = (): boolean => {
+    try { return localStorage.getItem(AUTO_FETCH_KEY) !== '0'; } catch { return true; }
+};
 
 export default defineComponent({
-    components: { EquipSlot },
+    components: { EquipSlot, MusicAnalysis },
     setup() {
         const itemNameMap = inject('itemNameMap') as Ref<Record<number, string>>;
         const enchantNameMap = inject('enchantNameMap') as Ref<Record<number, string>>;
@@ -109,6 +136,22 @@ export default defineComponent({
         const itemUpgradeMap = inject('itemUpgradeMap') as Ref<Record<number, ItemUpgrade>>;
         const db = inject('db') as ComputedRef<MabiDB>;
         const itemDescMap = ref<Record<number, string>>({});
+
+        // When auto-update is off, the page freezes on the last refresh
+        // instead of tracking the live owner store.
+        const autoFetch = ref(loadAutoFetch());
+        const frozenEquipment = ref<typeof ownerEquipment.value>([]);
+        const frozenStats = ref<typeof ownerStats.value>(null);
+        const refresh = () => {
+            frozenEquipment.value = ownerEquipment.value.slice();
+            frozenStats.value = ownerStats.value;
+        };
+        const equipment = computed(() => autoFetch.value ? ownerEquipment.value : frozenEquipment.value);
+        const stats = computed(() => autoFetch.value ? ownerStats.value : frozenStats.value);
+        watch(autoFetch, (on, wasOn) => {
+            if (wasOn && !on) refresh();
+            try { localStorage.setItem(AUTO_FETCH_KEY, on ? '1' : '0'); } catch { /* ignore */ }
+        });
 
         // itemNameMap values are "name id"; strip the trailing id.
         const itemName = (id: number): string => {
@@ -127,7 +170,7 @@ export default defineComponent({
 
         // Relic pockets (32-35) carry their fixed effect text in the item's
         // description only; fetch it lazily whenever the relic set changes.
-        watch(ownerEquipment, async (items) => {
+        watch(equipment, async (items) => {
             try {
                 const ids = [...new Set(items.filter(e => isRelicPocket(e.pocket)).map(e => e.item.id))];
                 itemDescMap.value = ids.length ? await db.value.getItemDescriptions(ids) : {};
@@ -166,7 +209,7 @@ export default defineComponent({
         const entryByPocket = computed(() => {
             const d = deps();
             const m = new Map<number, SlotEntry>();
-            for (const e of ownerEquipment.value) {
+            for (const e of equipment.value) {
                 const h = asHolder(e.item);
                 m.set(e.pocket, { item: e.item, name: displayName(h, d), brief: brief(e.item, e.pocket), tip: buildTip(h, d) });
             }
@@ -184,8 +227,13 @@ export default defineComponent({
             if (isWeaponArea(area)) weaponSet[area] = v;
         };
 
-        const sideSlots = computed(() => SIDE_POCKETS.map(cell));
-        const echoSlots = computed(() => ECHO_POCKETS.map(cell));
+        const view = ref(loadView());
+        watch(view, v => { try { localStorage.setItem(VIEW_KEY, v); } catch { /* ignore */ } });
+        // The music view reads the instrument from the weapon set shown on the board.
+        const instrumentPocket = computed(() => WEAPON_POCKETS.wl[weaponSet.wl]);
+
+        const leftSlots = computed(() => LEFT_POCKETS.map(cell));
+        const rightSlots = computed(() => RIGHT_POCKETS.map(cell));
         const mainSlots = computed(() => MAIN_AREAS.map(a => {
             const set = isWeaponArea(a.area) ? weaponSet[a.area] : undefined;
             const pocket = a.pocket ?? WEAPON_POCKETS[a.area as WeaponArea][set ?? 'I'];
@@ -194,7 +242,7 @@ export default defineComponent({
 
         const n = (v: number) => Number.isInteger(v) ? String(v) : v.toFixed(2);
         const panelRows = computed(() => {
-            const p = ownerStats.value;
+            const p = stats.value;
             if (!p) return [];
             const rows = [
                 { label: '等級', value: n(p.level) },
@@ -235,7 +283,7 @@ export default defineComponent({
 
         const contribRows = computed(() => {
             const sums = sumContributions(wornColumns.value.map(c => c.contribution));
-            const p = ownerStats.value;
+            const p = stats.value;
             return STAT_ORDER.map((key: StatKey) => {
                 const sum = sums[key] ?? 0;
                 const pv = p ? panelValue(p, key) : null;
@@ -267,24 +315,39 @@ export default defineComponent({
             wornColumns.value.flatMap(c => c.contribution.unmapped.map(u => `#${u.code}:${u.value}`)).join(' '));
 
         return {
-            ownerEquipment, ownerStats, sideSlots, mainSlots, echoSlots, selectSet, panelRows,
+            autoFetch, refresh, equipment, stats, leftSlots, rightSlots, mainSlots, selectSet, panelRows,
             wornColumns, contribRows, fmt, skippedSummary, unmappedSummary,
+            VIEWS, view, instrumentPocket,
         };
     },
 });
 </script>
 
 <style scoped>
-.eq-board { display: flex; gap: 12px; align-items: flex-start; }
-.eq-side { display: flex; flex-direction: column; gap: 6px; }
+.eq-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+/* Row heights mirror equipSlot's min-heights (120/200); --eq-h is the grid's total height. */
+.eq-board {
+    --eq-gap: 6px; --eq-h: calc(120px * 2 + 200px + var(--eq-gap) * 2);
+    display: flex; gap: 12px; align-items: flex-start;
+}
+.eq-col { display: flex; flex-direction: column; gap: var(--eq-gap); }
+/* Square cells: side = (grid height - gaps) / cell count; the blank icon box is dropped to fit. */
+.eq-col :deep(.eq-slot) {
+    --eq-side: calc((var(--eq-h) - (var(--eq-n) - 1) * var(--eq-gap)) / var(--eq-n));
+    width: var(--eq-side); height: var(--eq-side); min-height: 0;
+    display: flex; flex-direction: column; overflow: hidden;
+}
+.eq-col :deep(.eq-icon) { display: none; }
+.eq-col :deep(.eq-name) { margin-top: auto; }
+.eq-col :deep(.eq-brief) { margin-bottom: auto; }
+.eq-col :deep(.eq-none) { margin: auto 0; padding-top: 0; }
 .eq-main {
     display: grid;
     grid-template-columns: repeat(3, 128px);
+    grid-template-rows: 120px 200px 120px;
     grid-template-areas: "head accl accr" "wl body wr" "hand foot robe";
-    gap: 6px;
+    gap: var(--eq-gap);
 }
-.eq-echo { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
-.eq-echo-label { font-size: 0.8rem; color: #999; width: 48px; }
 .eq-panel { max-width: 420px; }
 .eq-panel-label { color: #999; white-space: nowrap; }
 .eq-scroll { overflow-x: auto; }
@@ -292,4 +355,5 @@ export default defineComponent({
 .eq-contrib th:first-child, .eq-contrib td:first-child { text-align: left; }
 .eq-diff { color: #ef5350; font-weight: bold; }
 .eq-hint { font-size: 0.75rem; color: #999; }
+.eq-view-select { max-width: 260px; }
 </style>
