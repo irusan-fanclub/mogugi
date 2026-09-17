@@ -537,6 +537,7 @@ export default defineComponent({
         // Header and data both iterate this list, so a column cannot appear in
         // one and not the other — the failure that put them out of step before.
         const DETAIL_COLUMNS = [
+            { key: 'hitsPerMin', label: '每分鐘命中數', width: 88 },
             { key: 'castCount', label: '施放次數', width: 68 },
             { key: 'critCount', label: '爆擊次數', width: 68 },
             { key: 'normalCount', label: '非爆次數', width: 68 },
@@ -560,7 +561,12 @@ export default defineComponent({
             const saved = skillColumnOrder.value;
             const known = new Map(DETAIL_COLUMNS.map(c => [c.key, c]));
             const out = saved.map(k => known.get(k)).filter((c): c is typeof DETAIL_COLUMNS[0] => !!c);
-            for (const c of DETAIL_COLUMNS) if (!saved.includes(c.key)) out.push(c);
+            // An unsaved column lands after its declared predecessor, not at the end.
+            DETAIL_COLUMNS.forEach((c, i) => {
+                if (saved.includes(c.key)) return;
+                const prev = i > 0 ? out.findIndex(o => o.key === DETAIL_COLUMNS[i - 1].key) : -1;
+                out.splice(prev + 1, 0, c);
+            });
             return out;
         });
 
@@ -606,6 +612,8 @@ export default defineComponent({
             // lookup per row. A puppet casts its own skill ids under its own
             // entity, so a puppeteer's rows can read lower than reality.
             const minAt = timeRangeMin.value, maxAt = timeRangeMax.value;
+            // Same span as the duration shown on the player's row.
+            const span = v.damages.length >= 2 ? v.damages[v.damages.length - 1].At - v.damages[0].At : 0;
             const casts = new Map<number, number>();
             for (const u of v.actor.skillUses) {
                 if (minAt !== null && maxAt !== null && (u.At < minAt || u.At > maxAt)) continue;
@@ -641,6 +649,7 @@ export default defineComponent({
                         crit: crit,
                         details: {
                             critRate: `${(100 * crit.rate).toFixed(1)}%`,
+                            hitsPerMin: span > 0 ? (count * 60 / span).toFixed(1) : '-',
                             // '-' rather than 0: casts we never saw (pre-attach,
                             // or a puppet's own ids) must not read as "zero casts".
                             castCount: casts.get(skillId) ? String(casts.get(skillId)) : '-',

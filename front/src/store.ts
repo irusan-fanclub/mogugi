@@ -84,21 +84,27 @@ export interface AppConfig {
     hiddenTrackIds: string[];
     hiddenSkillColumns: string[];
     skillColumnOrder: string[];
+    seenSkillColumns: string[];
     skillRowLimit: number;
     showPetSkills: boolean;
     autoSelectBoss: boolean;
     bossOnlyTarget: boolean;
 }
 
+// Hidden-by-default columns added after users already saved a hidden list;
+// a saved config that predates one gets it hidden on load.
+const LATER_HIDDEN_SKILL_COLUMNS = ['hitsPerMin'];
+
 const defaultConfig: AppConfig = {
     hiddenCCIds: [],
     hiddenTrackIds: [],
     // Shown by default: 命中次數 (fixed), 爆擊次數, 爆擊率, 爆擊平均, 非爆平均, 最高.
     hiddenSkillColumns: [
-        'castCount', 'normalCount', 'avg', 'min', 'critMin', 'critMax',
+        'hitsPerMin', 'castCount', 'normalCount', 'avg', 'min', 'critMin', 'critMax',
         'normalMin', 'normalMax', 'critSummary', 'normalSummary',
     ],
     skillColumnOrder: [],
+    seenSkillColumns: LATER_HIDDEN_SKILL_COLUMNS,
     skillRowLimit: 0,
     showPetSkills: false,
     autoSelectBoss: true,
@@ -108,7 +114,13 @@ const defaultConfig: AppConfig = {
 function loadConfig(): AppConfig {
     try {
         const raw = localStorage.getItem(CONFIG_STORAGE_KEY);
-        if (raw) return { ...defaultConfig, ...JSON.parse(raw) };
+        if (raw) {
+            const saved = JSON.parse(raw);
+            const seen: string[] = saved.seenSkillColumns ?? [];
+            const hidden: string[] = saved.hiddenSkillColumns ?? defaultConfig.hiddenSkillColumns;
+            const unseen = LATER_HIDDEN_SKILL_COLUMNS.filter(k => !seen.includes(k));
+            return { ...defaultConfig, ...saved, hiddenSkillColumns: [...hidden, ...unseen] };
+        }
     } catch { /* ignore */ }
     return { ...defaultConfig };
 }
@@ -119,6 +131,7 @@ function saveConfig() {
         hiddenTrackIds: [...hiddenTrackIds.value],
         hiddenSkillColumns: [...hiddenSkillColumns.value],
         skillColumnOrder: [...skillColumnOrder.value],
+        seenSkillColumns: LATER_HIDDEN_SKILL_COLUMNS,
         skillRowLimit: skillRowLimit.value,
         showPetSkills: showPetSkills.value,
         autoSelectBoss: autoSelectBoss.value,
