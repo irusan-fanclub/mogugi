@@ -739,8 +739,8 @@ func TestHandleBankListStoresHashedAccount(t *testing.T) {
 	}
 }
 
-// bardsongPulsePacket builds the 0x9093 kind-21 variant a 聖詠者 performer
-// emits while singing: (int 21, byte sub, long targets...). Sub 7 lists who
+// bardsongPulsePacket builds the 0x9093 kind-21 variant a performer of any
+// class emits while singing: (int 21, byte sub, long targets...). Sub 7 lists who
 // the song reached this pulse, sub 0 is the performer stopping (capture
 // 20260910_164818, 03:05:49).
 func bardsongPulsePacket(performerId uint64, sub uint8, targets ...uint64) *packet.GamePacket {
