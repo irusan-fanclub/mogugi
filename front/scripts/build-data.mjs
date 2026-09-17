@@ -14,7 +14,7 @@ import Database from 'better-sqlite3';
 const BUILD_VERSION = 7;
 
 const REGION = 'tw';
-const VER = 'v166';
+const VER = 'v168';
 const TAG = `${REGION}-${VER}`;
 const REPO = 'irusan-fanclub/mabitsequal-builds';
 const ASSET = `mabi_${REGION}_${VER}.sqlite`;
@@ -24,6 +24,9 @@ const FRONT = path.resolve(import.meta.dirname, '..');
 const CACHE_DIR = path.join(FRONT, '.cache', 'mabitsequal');
 const FULL_SQLITE = path.join(CACHE_DIR, ASSET);
 const META_PATH = path.join(FRONT, '.cache', 'build-data-meta.json');
+
+// Set to a local mabitsequal build (e.g. an unpublished version) to skip gh.
+const LOCAL_SQLITE = process.env.MABITSEQUAL_SQLITE;
 
 const PUBLIC = path.join(FRONT, 'public');
 const OUT_DB = path.join(PUBLIC, 'db', `mabi_${REGION}.sqlite`);
@@ -111,6 +114,12 @@ function ghDownload(asset, destDir) {
 }
 
 async function ensureSourceSqlite() {
+    if (LOCAL_SQLITE) {
+        const sha = await sha256File(LOCAL_SQLITE);
+        console.log(`[build-data] using local ${LOCAL_SQLITE} (sha=${sha.slice(0, 12)}).`);
+        return { sha, path: LOCAL_SQLITE, fetched: false };
+    }
+
     const meta = await loadMeta();
 
     await fs.mkdir(CACHE_DIR, { recursive: true });
@@ -119,7 +128,7 @@ async function ensureSourceSqlite() {
     const upstreamSha = (await fs.readFile(shaPath, 'utf8')).trim().split(/\s+/)[0];
 
     if (meta.upstreamSha === upstreamSha && await exists(FULL_SQLITE)) {
-        return { sha: upstreamSha, fetched: false };
+        return { sha: upstreamSha, path: FULL_SQLITE, fetched: false };
     }
 
     console.log(`[build-data] fetching ${ASSET} (sha=${upstreamSha.slice(0, 12)})...`);
@@ -129,7 +138,7 @@ async function ensureSourceSqlite() {
         throw new Error(`sha mismatch: expected ${upstreamSha}, got ${localSha}`);
     }
     console.log(`[build-data] verified ${ASSET}.`);
-    return { sha: upstreamSha, fetched: true };
+    return { sha: upstreamSha, path: FULL_SQLITE, fetched: true };
 }
 
 async function extractIcons(src) {
@@ -230,7 +239,7 @@ async function buildLeanDb(src) {
 }
 
 async function main() {
-    const { sha } = await ensureSourceSqlite();
+    const { sha, path: srcPath } = await ensureSourceSqlite();
     // Hash this script into the key too, so a schema/extraction change that
     // forgets to bump BUILD_VERSION still invalidates the cached outputs.
     const scriptSha = (await sha256File(new URL(import.meta.url))).slice(0, 12);
@@ -247,7 +256,7 @@ async function main() {
         return;
     }
 
-    const src = new Database(FULL_SQLITE, { readonly: true });
+    const src = new Database(srcPath, { readonly: true });
     try {
         await extractIcons(src);
         await buildLeanDb(src);
