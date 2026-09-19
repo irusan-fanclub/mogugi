@@ -1597,6 +1597,8 @@ var bossRaces = map[uint32]string{
 	5225: "布倫塔納斯", 7602: "布倫塔納斯",
 	5218: "雷楠的米勒", 7603: "雷楠的米勒",
 	7615: "雷楠的米勒:悔恨",
+	// 喀輪巴斯深淵 boss (tw168 race; 193369/193402/193432 are its NPC forms)
+	193810: "佩洛姆",
 	// 實戰課程-木頭人: the names grade defense/protection (mimicking those
 	// bosses), not HP — all five share the same life pool.
 	4856: "和浣熊一樣虛弱的木頭人",

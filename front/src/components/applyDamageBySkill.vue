@@ -329,7 +329,7 @@ import { useDialogStack } from '@/lib/useDialogStack';
 import { filterByTimeRange, computeGroupedStats } from '@/lib/timeRangeFilter';
 import highcharts from 'highcharts';
 
-import { autoSelectBoss, BOSS_RACE_IDS, bossOnlyTarget, setBossOnlyTarget } from '@/store';
+import { autoSelectBoss, isBossRace, bossOnlyTarget, setBossOnlyTarget } from '@/store';
 import { deriveMusicBuffCell, type MusicBuffCell } from '@/lib/musicBuff';
 import { computeCritStats, type CritStats } from '@/lib/critStats';
 import { deriveArcana, arcanaIconUrl, arcanaTitle } from '@/lib/arcana';
@@ -746,7 +746,7 @@ export default defineComponent({
         const targetItemTitle = ([id, dmg]: [string, number]) => {
             if (!id) return `all ${humanReadableNumber(dmg || 0)}`;
             const actor = actorOf(id);
-            if (actor && BOSS_RACE_IDS.has(actor.raceId)) {
+            if (actor && isBossRace(actor.raceId)) {
                 return bossTargetLabel(actor.appearAt, actor.raceId,
                     raceNameMap.value[actor.raceId], actor.maxLife);
             }
@@ -784,7 +784,7 @@ export default defineComponent({
         const bossFilter = (list: [string, number][]) => {
             let out = list.filter(([id]) => !id || !isTargetHidden(id));
             if (bossOnlyTarget.value) {
-                out = out.filter(([id]) => !id || BOSS_RACE_IDS.has(actorOf(id)?.raceId ?? -1));
+                out = out.filter(([id]) => !id || isBossRace(actorOf(id)?.raceId ?? -1));
             }
             return out;
         };
@@ -822,7 +822,7 @@ export default defineComponent({
             for (const id of keys) {
                 if (seenBossIds.has(id)) continue;
                 const actor = actorManager.value.entityMap[id];
-                if (!actor || !BOSS_RACE_IDS.has(actor.raceId)) continue;
+                if (!actor || !isBossRace(actor.raceId)) continue;
                 seenBossIds.add(id);
                 targetId.value = id;
             }
@@ -948,11 +948,11 @@ export default defineComponent({
         // most recently appeared boss on the field.
         const titleBossActor = () => {
             const sel = selectedTarget.value;
-            if (sel && BOSS_RACE_IDS.has(sel.raceId)) return sel;
+            if (sel && isBossRace(sel.raceId)) return sel;
             let best: EntityActor | null = null;
             for (const id in actorManager.value.entityMap) {
                 const a = actorManager.value.entityMap[id];
-                if (!BOSS_RACE_IDS.has(a.raceId)) continue;
+                if (!isBossRace(a.raceId)) continue;
                 if (!best || (a.appearAt ?? 0) > (best.appearAt ?? 0)) best = a;
             }
             return best;
@@ -1115,7 +1115,7 @@ export default defineComponent({
         // known maxLife. Prefers targetIdList's time-filtered total.
         const bossDamageProgress = computed(() => {
             const t = selectedTarget.value;
-            if (!t || !t.maxLife || !BOSS_RACE_IDS.has(t.raceId)) return null;
+            if (!t || !t.maxLife || !isBossRace(t.raceId)) return null;
             const entry = targetIdList.value.find(([id]) => id === targetId.value);
             const dealt = entry ? entry[1] : t.totalTakeDamage;
             return `造成傷害 ${formatThousands(dealt)} / ${formatThousands(t.maxLife)}`;

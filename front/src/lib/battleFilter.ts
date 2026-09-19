@@ -197,6 +197,8 @@ export function distinctOptions<T>(list: T[], pick: (v: T) => string): string[] 
 // so this is a presentation-only lookup.
 export const DUNGEON_NAMES: Record<string, string> = {
     brileith: '布里萊赫',
+    brileith_practice: '布里萊赫練習模式',
+    crombas_abyss: '喀輪巴斯深淵',
     training: '實戰課程-木頭人',
 };
 

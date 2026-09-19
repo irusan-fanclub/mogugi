@@ -106,6 +106,8 @@ describe('formatStartedAt', () => {
 describe('dungeonDisplayName', () => {
     it('maps a known code to its display name', () => {
         expect(dungeonDisplayName('brileith')).toBe('布里萊赫');
+        expect(dungeonDisplayName('brileith_practice')).toBe('布里萊赫練習模式');
+        expect(dungeonDisplayName('crombas_abyss')).toBe('喀輪巴斯深淵');
     });
 
     it('falls back to the raw code for an unmapped dungeon', () => {

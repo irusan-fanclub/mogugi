@@ -74,7 +74,7 @@ import {
     type IndexEntity, type Holder, type ExcludeColumn, type ExcludeEntry,
 } from '@/lib/itemIndex';
 import {
-    buildTip, displayName as buildDisplayName, isRelicPocket, POCKET_NAMES, effectColumnText,
+    buildTip, displayName as buildDisplayName, isRelicPocket, pocketName, effectColumnText,
     type TooltipDeps,
 } from '@/lib/itemTooltip';
 import type { EnchantInfo, ItemUpgrade, ManualForm, MetalwareAbility } from '@/store';
@@ -126,7 +126,8 @@ export default defineComponent({
         const containerText = (h: Holder): string => {
             if (h.bagName) return h.bagName;
             if (h.bagItemId) return itemName(h.bagItemId);
-            if (h.pocket && POCKET_NAMES[h.pocket]) return POCKET_NAMES[h.pocket];
+            const tab = pocketName(h.pocket ?? 0);
+            if (tab) return tab;
             if (h.container === 'quest') return '任務';
             if (h.container === 'bag') return `未知空間#${h.pocket ?? '?'}`;
             return h.container;

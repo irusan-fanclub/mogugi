@@ -3,6 +3,7 @@ import { MabiDB } from '@/mabidb';
 import { ActorManager } from '@/eventActor';
 import { DamageCollectorManager } from '@/actionCollector';
 import type { ownerEquipmentItem, ownerPanel } from '@/protocols';
+import { effectiveBossRaces, addBossRace, removeBossRace, hasBossRaceOverrides, type BossRaceOverrides } from '@/lib/bossRaces';
 
 export const loadingCount = ref(0);
 export const isLoading = computed(() => loadingCount.value > 0);
@@ -89,6 +90,9 @@ export interface AppConfig {
     showPetSkills: boolean;
     autoSelectBoss: boolean;
     bossOnlyTarget: boolean;
+    // User edits to the built-in boss race list (see lib/bossRaces.ts).
+    bossRaceAdded: number[];
+    bossRaceRemoved: number[];
 }
 
 // Hidden-by-default columns added after users already saved a hidden list;
@@ -109,6 +113,8 @@ const defaultConfig: AppConfig = {
     showPetSkills: false,
     autoSelectBoss: true,
     bossOnlyTarget: false,
+    bossRaceAdded: [],
+    bossRaceRemoved: [],
 };
 
 function loadConfig(): AppConfig {
@@ -136,6 +142,8 @@ function saveConfig() {
         showPetSkills: showPetSkills.value,
         autoSelectBoss: autoSelectBoss.value,
         bossOnlyTarget: bossOnlyTarget.value,
+        bossRaceAdded: [...bossRaceOverrides.value.added],
+        bossRaceRemoved: [...bossRaceOverrides.value.removed],
     };
     localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(data));
 }
@@ -223,7 +231,34 @@ export function unhideTrack(id: string) {
 
 // Auto-select boss target in tab 3.
 export const autoSelectBoss = ref(_config.autoSelectBoss);
-export const BOSS_RACE_IDS = new Set([4856, 4857, 4858, 4859, 4860, 7600, 7601, 7602, 7603, 7160, 7615]);
+// Boss race set = built-in list (lib/bossRaces.ts) plus/minus the user's
+// edits from the settings dialog; a saved list that is not an array is
+// treated as empty.
+const numList = (v: unknown): number[] => Array.isArray(v) ? v.filter(x => Number.isInteger(x) && x > 0) : [];
+export const bossRaceOverrides = ref<BossRaceOverrides>({
+    added: numList(_config.bossRaceAdded), removed: numList(_config.bossRaceRemoved),
+});
+export const bossRaceIds = computed(() => effectiveBossRaces(bossRaceOverrides.value));
+export const bossRacesChanged = computed(() => hasBossRaceOverrides(bossRaceOverrides.value));
+
+export function isBossRace(raceId: number): boolean {
+    return bossRaceIds.value.has(raceId);
+}
+
+export function addBossRaceId(id: number) {
+    bossRaceOverrides.value = addBossRace(bossRaceOverrides.value, id);
+    saveConfig();
+}
+
+export function removeBossRaceId(id: number) {
+    bossRaceOverrides.value = removeBossRace(bossRaceOverrides.value, id);
+    saveConfig();
+}
+
+export function resetBossRaces() {
+    bossRaceOverrides.value = { added: [], removed: [] };
+    saveConfig();
+}
 
 export function setAutoSelectBoss(v: boolean) {
     autoSelectBoss.value = v;

@@ -1,6 +1,7 @@
 // itemTooltip.test.ts — buildTip 純函式的單元測試（vitest）。
 import { describe, it, expect } from 'vitest';
 import {
+    pocketName,
     buildTip, formatRelicEffect, formatMagicCircleAbility, effectColumnText, type TooltipDeps,
 } from './itemTooltip';
 import type { Holder } from './itemIndex';
@@ -236,5 +237,30 @@ describe('effectColumnText', () => {
             relicEffects: [{ code: 2558, value: 30 }],
         });
         expect(effectColumnText(h, {})).toBe('');
+    });
+});
+
+describe('pocketName', () => {
+    it('names the fixed system pockets after iruneko pocket-id.csv', () => {
+        expect(pocketName(5)).toBe('主裝備－衣服');
+        expect(pocketName(32)).toBe('遺物欄位1');
+        expect(pocketName(61)).toBe('點數物品欄');
+        expect(pocketName(66)).toBe('地下城物品裝備欄');
+        expect(pocketName(307)).toBe('塔爾汀農場倉庫');
+        expect(pocketName(3000)).toBe('迅速切換裝備工具欄');
+    });
+
+    it('derives the 20 extra-equipment sets a-t from the pocket number', () => {
+        expect(pocketName(2000)).toBe('額外裝備欄a－衣服');
+        expect(pocketName(2008)).toBe('額外裝備欄a－右邊飾品');
+        expect(pocketName(2009)).toBe('額外裝備欄b－衣服');
+        expect(pocketName(2179)).toBe('額外裝備欄t－右邊飾品');
+        expect(pocketName(2180)).toBeUndefined();
+    });
+
+    it('leaves sub-bag contents (100-299) and unknown pockets unnamed', () => {
+        expect(pocketName(100)).toBeUndefined();
+        expect(pocketName(5200)).toBeUndefined();
+        expect(pocketName(0)).toBeUndefined();
     });
 });

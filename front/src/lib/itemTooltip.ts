@@ -88,20 +88,36 @@ export function isRelicPocket(pocket?: number): boolean {
 }
 
 // 已確認的系統 pocket 名稱（無對應包包物品，靠實測命名）。
-export const POCKET_NAMES: Record<number, string> = {
-    32: '遺物欄位1',  // 穆利亞斯的遺物 實測
-    33: '遺物欄位2',
-    34: '遺物欄位3',
-    35: '遺物欄位4',
-    49: '專用物品欄', // 亞多利爾的號角 實測
-    51: '威光欄位',
-    53: 'VIP物品欄',  // 卡絲妮亞硬幣 實測（尊榮生活VIP服務物品欄）
-    54: '星塵欄位',
-    56: '釣魚桶',     // 亞布內亞鯉魚 實測（固定 pocket，桶自身 @12=0）
-    61: '點數包包',   // 三劍客的護手禮劍放置架 實測
-    65: '貨幣保管箱',
-    72: '擴張物品欄', // 冬季可愛大提琴 實測（也放各種背包）
+// Pocket id -> tab name, after iruneko knowledge/itemrecord/pocket-id.csv.
+// Sub-bag contents (100-299) are named by their bag item instead.
+const POCKET_NAMES: Record<number, string> = {
+    1: '游標／手上', 2: '普通物品欄', 3: '外觀－臉型', 4: '外觀－髮型',
+    5: '主裝備－衣服', 6: '主裝備－手部', 7: '主裝備－腳部', 8: '主裝備－頭部', 9: '主裝備－長袍',
+    10: '主裝備－主手', 11: '主裝備－背後主手', 13: '主裝備－副手', 14: '主裝備－背後副手',
+    16: '主裝備－左邊飾品', 17: '主裝備－右邊飾品',
+    23: '任務欄', 24: '失物招領中心', 31: '塔拉拍賣得標存放處',
+    32: '遺物欄位1', 33: '遺物欄位2', 34: '遺物欄位3', 35: '遺物欄位4',
+    41: '連續技能卡存放處',
+    43: '時裝欄－身體', 44: '時裝欄－手部', 45: '時裝欄－腳部', 46: '時裝欄－頭部', 47: '時裝欄－長袍', 48: '時裝欄－臉部裝飾',
+    49: '專用物品欄', 51: '威光欄位', 53: 'VIP物品欄', 54: '星塵欄位', 56: '釣魚桶',
+    61: '點數物品欄', 62: '回音石欄位1', 63: '回音石欄位2', 64: '回音石欄位3', 65: '貨幣保管箱',
+    66: '地下城物品裝備欄', 72: '擴張物品欄', 81: '農場石存放處', 83: '拍賣品', 85: '恢復物品欄', 88: '月光島倉庫',
+    90: '時裝欄－尾巴', 91: '時裝欄－左邊飾品', 92: '時裝欄－右邊飾品',
+    307: '塔爾汀農場倉庫', 3000: '迅速切換裝備工具欄',
 };
+
+// 額外裝備欄 a-t: 20 sets x 9 slots from pocket 2000 (2000 = a－衣服).
+const EXTRA_SET_SLOTS = ['衣服', '手部', '腳部', '頭部', '長袍', '主手', '副手', '左邊飾品', '右邊飾品'];
+const EXTRA_SET_FIRST = 2000, EXTRA_SET_COUNT = 20;
+
+export function pocketName(pocket: number): string | undefined {
+    const i = pocket - EXTRA_SET_FIRST;
+    if (i >= 0 && i < EXTRA_SET_COUNT * EXTRA_SET_SLOTS.length) {
+        const set = String.fromCharCode(97 + Math.floor(i / EXTRA_SET_SLOTS.length));
+        return `額外裝備欄${set}－${EXTRA_SET_SLOTS[i % EXTRA_SET_SLOTS.length]}`;
+    }
+    return POCKET_NAMES[pocket];
+}
 
 // TooltipDeps：buildTip / displayName 所需的名稱對照表與 helper（純值，非反應式）。
 export interface TooltipDeps {

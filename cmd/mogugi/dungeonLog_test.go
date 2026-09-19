@@ -678,3 +678,54 @@ func TestDungeonLogSkipsCaptureStatus(t *testing.T) {
 		t.Fatalf("EventIdCaptureStatus must not be written to the dungeon log: %s", b)
 	}
 }
+
+// 喀輪巴斯深淵 (mission 718000) and 布里萊赫練習模式 (717002) are recorded
+// like the dungeons before them; the practice run reuses the MRD stages.
+func TestDungeonCodesWhitelistAbyssAndPractice(t *testing.T) {
+	if dungeonCodes[718000] != "crombas_abyss" {
+		t.Fatalf("718000 -> %q, want crombas_abyss", dungeonCodes[718000])
+	}
+	if dungeonCodes[717002] != "brileith_practice" {
+		t.Fatalf("717002 -> %q, want brileith_practice", dungeonCodes[717002])
+	}
+}
+
+// 喀輪巴斯深淵: one fight against 佩洛姆 (193810). The abyss adds (幻影,
+// 供給裝置, 結界) take damage too but are not stages and do not count.
+func TestDungeonLogSummaryCromBasAbyss(t *testing.T) {
+	dir := t.TempDir()
+	dungeonLogDirPath = dir
+
+	var d dungeonLog
+	if err := d.Open("crombas_abyss", "NTD_dungeon", "地域磨菇", time.Unix(1786800000, 0), 718000, "", nil); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	d.Write([]event.IEvent{
+		mkAppear("900", 193810, "b", "", 1000),
+		mkAppear("901", 193815, "d", "", 1000), // 黑暗爾格供給裝置
+		mkAppear("100", 10001, "毛毛", "", 1000),
+		mkDamage("100", "900", 59023, 500, 1000),
+		mkDamage("100", "901", 59023, 100, 1050),
+		mkDamage("100", "900", 59023, 500, 1120),
+		&event.EventEntityDown{EventBase: event.EventBase{EventId: event.EventIdEntityDown, At: 1120, Id: "900"}},
+	})
+	d.Close()
+
+	var sum dungeonLogSummary
+	if err := json.Unmarshal(lastLine(t, dir), &sum); err != nil {
+		t.Fatal(err)
+	}
+	if len(sum.Fights) != 1 {
+		t.Fatalf("want 1 fight, got %+v", sum)
+	}
+	f := sum.Fights[0]
+	if f.Stage != "佩洛姆" || f.BossRace != 193810 || f.BossName != "佩洛姆" || f.DurationSec != 120 {
+		t.Fatalf("abyss fight wrong: %+v", f)
+	}
+	if f.Cleared == nil || !*f.Cleared {
+		t.Fatalf("abyss fight must carry a cleared verdict: %+v", f)
+	}
+	if len(f.Players) != 1 || f.Players[0].Damage != 1000 {
+		t.Fatalf("damage must count only the boss: %+v", f.Players)
+	}
+}

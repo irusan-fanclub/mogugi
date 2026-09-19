@@ -20,11 +20,13 @@ import (
 // so tests can override it.
 var dungeonLogDirPath = filepath.Join(_logDir, "dungeons")
 
-// dungeonCodes: whitelisted dungeon missionId -> filename code. Currently
-// only 布里萊赫 (Brileith); extend the whitelist as needed.
+// dungeonCodes: whitelisted dungeon missionId -> filename code (the code
+// is also the battle-records dungeon key, see front DUNGEON_NAMES).
 var dungeonCodes = map[uint32]string{
 	717000: "brileith",
-	730017: "training", // 實戰課程-木頭人
+	717002: "brileith_practice", // 布里萊赫練習模式: same MRD stages and bosses
+	718000: "crombas_abyss",     // 喀輪巴斯深淵
+	730017: "training",          // 實戰課程-木頭人
 }
 
 // dungeonLog, on entering a whitelisted dungeon, tees the event stream to
@@ -178,6 +180,9 @@ var stageDefs = []stageDef{
 	// 雷楠的米勒:悔恨 — appears inside the brileith mission (717000)
 	// on the MRD_3S base, so the existing whitelist already records it.
 	{"悔恨", []uint32{7615}},
+	// 喀輪巴斯深淵 (718000): the adds (幻影 193811-193813, 供給裝置 193815,
+	// 結界 193814) are not stages; only the boss counts.
+	{"佩洛姆", []uint32{193810}},
 }
 
 // battlePlayer is one party member in a fight summary.
