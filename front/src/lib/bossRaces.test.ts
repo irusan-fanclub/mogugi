@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     DEFAULT_BOSS_RACE_IDS, effectiveBossRaces, addBossRace, removeBossRace, hasBossRaceOverrides,
+    matchesRaceQuery, parseRaceIdInput,
     type BossRaceOverrides,
 } from './bossRaces';
 
@@ -65,5 +66,40 @@ describe('hasBossRaceOverrides', () => {
         expect(hasBossRaceOverrides(none)).toBe(false);
         expect(hasBossRaceOverrides({ added: [1], removed: [] })).toBe(true);
         expect(hasBossRaceOverrides({ added: [], removed: [7601] })).toBe(true);
+    });
+});
+
+describe('built-in list hygiene', () => {
+    it('no longer carries the unnamed placeholder 7160', () => {
+        expect(effectiveBossRaces(none).has(7160)).toBe(false);
+    });
+});
+
+describe('matchesRaceQuery', () => {
+    it('matches a Chinese fragment of the display name', () => {
+        expect(matchesRaceQuery('佩洛姆 193810', 193810, '佩洛')).toBe(true);
+        expect(matchesRaceQuery('雷楠的米勒 7603', 7603, '米勒')).toBe(true);
+        expect(matchesRaceQuery('佩洛姆 193810', 193810, '米勒')).toBe(false);
+    });
+
+    it('matches a RaceID by prefix, so typing digits narrows the list', () => {
+        expect(matchesRaceQuery('佩洛姆 193810', 193810, '1938')).toBe(true);
+        expect(matchesRaceQuery('佩洛姆 193810', 193810, '193810')).toBe(true);
+        expect(matchesRaceQuery('佩洛姆 193810', 193810, '3810')).toBe(false);
+    });
+
+    it('ignores case and surrounding spaces, and an empty query matches everything', () => {
+        expect(matchesRaceQuery('Vertrag 7601', 7601, ' vert ')).toBe(true);
+        expect(matchesRaceQuery('佩洛姆 193810', 193810, '')).toBe(true);
+    });
+});
+
+describe('parseRaceIdInput', () => {
+    it('accepts a bare positive integer and rejects anything else', () => {
+        expect(parseRaceIdInput(' 193810 ')).toBe(193810);
+        expect(parseRaceIdInput('佩洛姆')).toBeNull();
+        expect(parseRaceIdInput('12.5')).toBeNull();
+        expect(parseRaceIdInput('0')).toBeNull();
+        expect(parseRaceIdInput('')).toBeNull();
     });
 });

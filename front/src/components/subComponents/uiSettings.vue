@@ -37,9 +37,11 @@
             </v-list-item>
         </v-list>
         <div class="d-flex align-center ga-2 mt-1">
-            <v-text-field v-model="newBossRaceId" label="RaceID" type="number" density="compact" hide-details
-                style="max-width: 160px" @keyup.enter="addNewBossRace" />
-            <v-btn size="small" variant="tonal" @click="addNewBossRace">新增</v-btn>
+            <v-autocomplete v-model="pickedRace" v-model:search="raceSearch" :items="raceItems"
+                :custom-filter="raceFilter" item-title="title" item-value="value"
+                label="搜尋種族(中文或 RaceID)" density="compact" hide-details clearable auto-select-first
+                no-data-text="找不到符合的種族;打 RaceID 按 Enter 可直接加入" style="max-width: 360px"
+                @update:model-value="onRacePicked" @keydown.enter="onRaceEnter" />
             <v-btn v-if="bossRacesChanged" size="small" variant="text" @click="resetBossRaces">恢復預設</v-btn>
         </div>
     </div>
@@ -51,6 +53,7 @@ import {
     condNameMap, raceNameMap, hiddenCCIds, removeHiddenCC, autoSelectBoss, setAutoSelectBoss,
     bossRaceIds, bossRacesChanged, addBossRaceId, removeBossRaceId, resetBossRaces,
 } from '@/store';
+import { matchesRaceQuery, parseRaceIdInput } from '@/lib/bossRaces';
 
 // Browser-side (localStorage) preferences, shown in the damage-analysis settings dialog.
 export default defineComponent({
@@ -61,16 +64,33 @@ export default defineComponent({
             set: (v: boolean) => setAutoSelectBoss(v),
         });
         const bossRaceList = computed(() => [...bossRaceIds.value].sort((a, b) => a - b));
-        // The number field yields a string; a blank or bad value becomes 0,
-        // which addBossRaceId ignores.
-        const newBossRaceId = ref('');
-        const addNewBossRace = () => {
-            addBossRaceId(Number(newBossRaceId.value));
-            newBossRaceId.value = '';
+
+        // Race picker: every race the bundled table knows (title already
+        // carries the id, e.g. "佩洛姆 193810"); filtered by name or id prefix.
+        const raceItems = computed(() =>
+            Object.entries(raceNameMap.value).map(([id, title]) => ({ value: Number(id), title })));
+        const raceFilter = (value: string, query: string, item?: { raw?: { title: string; value: number } }) =>
+            matchesRaceQuery(item?.raw?.title ?? value, item?.raw?.value ?? 0, query);
+        const pickedRace = ref<number | null>(null);
+        const raceSearch = ref('');
+        const onRacePicked = (v: number | null) => {
+            if (v == null) return;
+            addBossRaceId(v);
+            pickedRace.value = null;
+            raceSearch.value = '';
+        };
+        // Enter on a bare number that matched nothing adds it as-is, so a
+        // race missing from the table can still be listed.
+        const onRaceEnter = () => {
+            const id = parseRaceIdInput(raceSearch.value);
+            if (id == null || raceNameMap.value[id]) return;
+            addBossRaceId(id);
+            raceSearch.value = '';
         };
         return {
             condNameMap, raceNameMap, hiddenCCList, removeHiddenCC, autoSelectBossModel,
-            bossRaceList, bossRacesChanged, newBossRaceId, addNewBossRace, removeBossRaceId, resetBossRaces,
+            bossRaceList, bossRacesChanged, removeBossRaceId, resetBossRaces,
+            raceItems, raceFilter, pickedRace, raceSearch, onRacePicked, onRaceEnter,
         };
     },
 });

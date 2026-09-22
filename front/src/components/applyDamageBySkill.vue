@@ -164,7 +164,7 @@
                 <v-tab value="cc">CC 與目標</v-tab>
             </v-tabs>
             <v-divider />
-            <v-card-text class="pa-0" style="min-height: 480px;">
+            <v-card-text class="pa-0" style="min-height: min(480px, 55vh);">
                 <v-tabs-window v-model="settingsTab">
                     <v-tabs-window-item value="dps">
                         <!-- Enabled list (draggable) -->
