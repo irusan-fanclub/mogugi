@@ -57,8 +57,11 @@ MOGUGI 的 release note 是寫給**一般玩家**看的，不是給開發者。�
 3. `git tag vX.Y.Z` → `git push github master` → `git push github vX.Y.Z`。
 4. `gh release create vX.Y.Z <exe> <zip> --title "vX.Y.Z" --notes-file <note>`。
 5. GitHub release published 會觸發 Discord 公告 workflow（`discord-release.yml`）自動發到社群。
+   - 同一個 workflow 會把 exe／zip 鏡像到 `cdn.elden-mogu.com/mogugi/`，公告給的是鏡像連結，
+     GitHub release 當備用（GitHub 附件從台灣抓很慢）。
    - zip 超過 8 MB 時 Discord 只發純文字 embed＋下載連結，不附檔（正常行為）。
    - Discord 訊息由 webhook 發出，**無法事後編輯或刪除**；notes 要在發布前就定稿。
+6. 需要手動補傳鏡像時用 `python tools/r2-upload.py release <version>`（見該檔開頭的說明）。
 
 ## 範本（v0.4.0，符合本準則）
 
