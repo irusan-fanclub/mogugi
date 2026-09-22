@@ -104,29 +104,28 @@ jobs:
               --content-type "$3" --cache-control "$4" >/dev/null
           }
 
-          exe_url=""; zip_url=""
+          # Only the versioned copy exists: it never changes, so it caches
+          # forever, and a post about vX keeps pointing at vX. No latest/ alias.
+          exe_url=""; zip_url=""; exe_file=""; zip_file=""
           for f in _mirror/*; do
             name=$(basename "$f")
             case "$name" in
-              *.exe) ct=application/vnd.microsoft.portable-executable; alias=mogugi.exe ;;
-              *.zip) ct=application/zip; alias=mogugi.zip ;;
+              *.exe) ct=application/vnd.microsoft.portable-executable ;;
+              *.zip) ct=application/zip ;;
               *) continue ;;
             esac
-            # The versioned copy never changes, so it caches forever; the
-            # latest/ alias is rewritten every release and caches briefly.
             put "$R2_PREFIX/$TAG/$name" "$f" "$ct" "public, max-age=31536000, immutable"
-            put "$R2_PREFIX/latest/$alias" "$f" "$ct" "public, max-age=300"
-            # The announcement links the versioned copy: a post about vX must
-            # keep pointing at vX after the next release moves latest/.
             case "$name" in
-              *.exe) exe_url="$DL_BASE/$R2_PREFIX/$TAG/$name" ;;
-              *.zip) zip_url="$DL_BASE/$R2_PREFIX/$TAG/$name" ;;
+              *.exe) exe_url="$DL_BASE/$R2_PREFIX/$TAG/$name"; exe_file="$name" ;;
+              *.zip) zip_url="$DL_BASE/$R2_PREFIX/$TAG/$name"; zip_file="$name" ;;
             esac
           done
 
           {
             echo "exe_url=$exe_url"
             echo "zip_url=$zip_url"
+            echo "exe_file=$exe_file"
+            echo "zip_file=$zip_file"
           } >> "$GITHUB_OUTPUT"
 
       - name: Send Discord embed (with attached zip)
@@ -138,10 +137,12 @@ jobs:
           ZIP_NAME: ${{ steps.bundle.outputs.zip_name }}
           EXE_URL:  ${{ steps.mirror.outputs.exe_url }}
           ZIP_URL:  ${{ steps.mirror.outputs.zip_url }}
+          EXE_FILE: ${{ steps.mirror.outputs.exe_file }}
+          ZIP_FILE: ${{ steps.mirror.outputs.zip_file }}
         run: |
           if [ -n "$EXE_URL" ]; then
-            dl=$(printf '[下載 mogugi.exe](%s)\n[下載 mogugi.zip](%s)\n備用：[GitHub Release](%s)' \
-              "$EXE_URL" "$ZIP_URL" "$URL")
+            dl=$(printf '[下載 %s](%s)\n[下載 %s](%s)\n備用：[GitHub Release](%s)' \
+              "$EXE_FILE" "$EXE_URL" "$ZIP_FILE" "$ZIP_URL" "$URL")
           else
             dl="[前往 GitHub Release 下載]($URL)"
           fi

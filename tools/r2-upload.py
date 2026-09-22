@@ -9,6 +9,9 @@
     # anything else
     python tools/r2-upload.py put logo.png img/logo.png --cache-control "public, max-age=300"
 
+    # remove a key (e.g. a retired alias)
+    python tools/r2-upload.py delete mogugi/latest/mogugi.exe
+
 Credentials come from the environment:
 
     R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, CLOUDFLARE_ACCOUNT_ID
@@ -27,9 +30,10 @@ from pathlib import Path
 BUCKET = "elden-mogu-public"
 BASE_URL = "https://cdn.elden-mogu.com"
 
-# A versioned key never changes; anything rewritten in place caches briefly so
-# a new release is not shadowed by the old one. Keep in sync with
-# .github/workflows/discord-release.yml.
+# A versioned key never changes, so it caches forever; releases are published
+# only under mogugi/<tag>/ (no latest/ alias). Keep in sync with
+# .github/workflows/discord-release.yml. SHORT is for `put` of files that get
+# rewritten in place.
 IMMUTABLE = "public, max-age=31536000, immutable"
 SHORT = "public, max-age=300"
 
@@ -92,7 +96,12 @@ def cmd_release(args) -> int:
             sys.exit(f"not found: {src} (run release.ps1 first)")
         ct = guess_type(src)
         upload(s3, src, f"mogugi/v{args.version}/{src.name}", ct, IMMUTABLE)
-        upload(s3, src, f"mogugi/latest/mogugi{suffix}", ct, SHORT)
+    return 0
+
+
+def cmd_delete(args) -> int:
+    client().delete_object(Bucket=BUCKET, Key=args.key)
+    print(f"deleted {BASE_URL}/{args.key}")
     return 0
 
 
@@ -125,6 +134,10 @@ def main() -> int:
     put.add_argument("--content-type")
     put.add_argument("--cache-control", default=SHORT)
     put.set_defaults(func=cmd_put)
+
+    rm = sub.add_parser("delete", help="delete one key from the bucket")
+    rm.add_argument("key", help="path inside the bucket, e.g. mogugi/latest/mogugi.exe")
+    rm.set_defaults(func=cmd_delete)
 
     args = parser.parse_args()
     return args.func(args)
