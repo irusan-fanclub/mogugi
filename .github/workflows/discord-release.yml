@@ -13,10 +13,19 @@ on:
 permissions:
   contents: read
 
+# R2 mirror of the release assets. GitHub serves attachments from Azure blob,
+# which is slow from Taiwan; the mirror is a CDN copy, GitHub stays the source.
+env:
+  R2_BUCKET: elden-mogu-public
+  R2_PREFIX: mogugi
+  DL_BASE: https://cdn.elden-mogu.com
+
 jobs:
   announce:
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.release.prerelease == false }}
+    env:
+      R2_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
     steps:
       - name: Resolve release info
         id: rel
@@ -65,6 +74,54 @@ jobs:
           (cd _release && zip "$zip_name" "$exe_name")
           echo "zip_name=$zip_name" >> "$GITHUB_OUTPUT"
 
+      # Skipped when the R2 secrets are absent, so the announcement still goes
+      # out on an account that has no mirror configured.
+      #
+      # S3 API, not wrangler: wrangler's r2 commands go through Cloudflare's
+      # REST API, which rejects bucket-scoped tokens — those are S3-only. See
+      # https://developers.cloudflare.com/r2/api/tokens/
+      - name: Mirror assets to R2
+        id: mirror
+        if: ${{ env.R2_KEY_ID != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          # aws-cli v2 attaches a CRC32 checksum to every upload by default,
+          # which R2 does not accept on all paths.
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          ENDPOINT: https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          TAG: ${{ steps.rel.outputs.tag }}
+        run: |
+          mkdir -p _mirror
+          gh release download "$TAG" --repo "${{ github.repository }}" \
+            --dir _mirror --pattern 'mogugi_*'
+
+          put() {
+            aws s3api put-object --endpoint-url "$ENDPOINT" \
+              --bucket "$R2_BUCKET" --key "$1" --body "$2" \
+              --content-type "$3" --cache-control "$4" >/dev/null
+          }
+
+          for f in _mirror/*; do
+            name=$(basename "$f")
+            case "$name" in
+              *.exe) ct=application/vnd.microsoft.portable-executable; alias=mogugi.exe ;;
+              *.zip) ct=application/zip; alias=mogugi.zip ;;
+              *) continue ;;
+            esac
+            # The versioned copy never changes, so it caches forever; the
+            # latest/ alias is rewritten every release and caches briefly.
+            put "$R2_PREFIX/$TAG/$name" "$f" "$ct" "public, max-age=31536000, immutable"
+            put "$R2_PREFIX/latest/$alias" "$f" "$ct" "public, max-age=300"
+          done
+
+          {
+            echo "exe_url=$DL_BASE/$R2_PREFIX/latest/mogugi.exe"
+            echo "zip_url=$DL_BASE/$R2_PREFIX/latest/mogugi.zip"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Send Discord embed (with attached zip)
         env:
           WEBHOOK:  ${{ secrets.DISCORD_WEBHOOK_URL }}
@@ -72,18 +129,28 @@ jobs:
           URL:      ${{ steps.rel.outputs.url }}
           BODY:     ${{ steps.rel.outputs.body }}
           ZIP_NAME: ${{ steps.bundle.outputs.zip_name }}
+          EXE_URL:  ${{ steps.mirror.outputs.exe_url }}
+          ZIP_URL:  ${{ steps.mirror.outputs.zip_url }}
         run: |
+          if [ -n "$EXE_URL" ]; then
+            dl=$(printf '[下載 mogugi.exe](%s)\n[下載 mogugi.zip](%s)\n備用：[GitHub Release](%s)' \
+              "$EXE_URL" "$ZIP_URL" "$URL")
+          else
+            dl="[前往 GitHub Release 下載]($URL)"
+          fi
+
           payload=$(jq -n \
             --arg title "$NAME" \
             --arg desc  "$BODY" \
             --arg url   "$URL"  \
+            --arg dl    "$dl"   \
             '{
               embeds: [{
                 title: $title,
                 description: $desc,
                 url: $url,
                 color: 9024762,
-                fields: [{ name: "📥 下載", value: "[前往 GitHub Release 下載](\($url))" }],
+                fields: [{ name: "📥 下載", value: $dl }],
                 footer: { text: "irusan-fanclub/mogugi" }
               }],
               allowed_mentions: { parse: [] }
