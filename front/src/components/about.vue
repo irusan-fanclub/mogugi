@@ -1,7 +1,6 @@
 <template>
     <v-sheet class="pa-6" style="max-width: 640px;">
         <div class="text-h5 mb-4">mogugi <span style="opacity:0.5; font-size:0.7em;">v{{ appVersion }}</span></div>
-        <div v-if="appTagline" class="mb-4" style="opacity:0.7; font-style: italic;">{{ appTagline }}</div>
 
         <div class="mb-4">
             <div class="text-subtitle-2 mb-1" style="opacity:0.6;">中文</div>
@@ -64,7 +63,6 @@ export default defineComponent({
     },
     setup() {
         const appVersion = __APP_VERSION__;
-        const appTagline = __APP_TAGLINE__;
         const isStandalone = __IS_STANDALONE__;
 
         // Display defaults to all-unknown (shown as ✗) until a live socket
@@ -104,7 +102,7 @@ export default defineComponent({
             }
         }
 
-        return { appVersion, appTagline, isStandalone, status, DISCORD_URL, discordCopied, shareDiscord };
+        return { appVersion, isStandalone, status, DISCORD_URL, discordCopied, shareDiscord };
     },
 });
 </script>

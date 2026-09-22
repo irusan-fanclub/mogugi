@@ -32,7 +32,6 @@ export default defineConfig({
     define: {
         __IS_STANDALONE__: process.env.STANDALONE === 'true',
         __APP_VERSION__: JSON.stringify(pkg.version),
-        __APP_TAGLINE__: JSON.stringify(process.env.MOGUGI_TAGLINE ?? ''),
     },
     plugins: [
         {

@@ -8,13 +8,11 @@
 #   .\release.ps1 -Version 0.2.1   # build & package as 0.2.1
 #   .\release.ps1 -SkipTest        # skip lint + both test suites
 #   .\release.ps1 -Force           # override the working-tree and tag guards
-#   .\release.ps1 -Tagline '...'   # carry a one-line tagline into the exe/About tab
 
 param(
     [string]$Version = "",
     [switch]$SkipTest,
-    [switch]$Force,
-    [string]$Tagline = ''
+    [switch]$Force
 )
 
 $ErrorActionPreference = "Stop"
@@ -112,8 +110,6 @@ try {
 
 # ── Frontend ─────────────────────────────────────────────────────────────────
 Write-Step "Frontend: version sync, lint, tests, build"
-# Picked up by vite.config.mjs as __APP_TAGLINE__; empty is fine, no tagline ships.
-$env:MOGUGI_TAGLINE = $Tagline
 Push-Location front
 
 $prevPref = $ErrorActionPreference
@@ -217,7 +213,6 @@ try {
         Write-Host "Rolled version files back to $($rollback.From)" -ForegroundColor Gray
     }
     Pop-Location
-    Remove-Item Env:\MOGUGI_TAGLINE -ErrorAction SilentlyContinue
 }
 
 if ($frontendError) {
@@ -245,7 +240,7 @@ Write-Step "Building Backend (release flags)..."
 # Must run before go build: the linker picks the .syso up off disk.
 . (Join-Path $PSScriptRoot 'versioninfo-lib.ps1')
 try {
-    New-VersionResource -Version $Version -Tagline $Tagline
+    New-VersionResource -Version $Version
 } catch {
     Write-Host $_.Exception.Message -ForegroundColor Red
     exit 1
