@@ -75,13 +75,7 @@ type gamePacketPayload struct {
 	relSeq uint32
 	data   []byte
 	at     time.Time
-}
-
-// pendingTcpLayer buffers a TCP segment that arrived out of order,
-// waiting for earlier sequence numbers to fill in the gap.
-type pendingTcpLayer struct {
-	tcpLayer layers.TCP
-	ci       gopacket.CaptureInfo
+	gap    bool // bytes before this payload were lost; drop any partial packet
 }
 
 const pcapQueueSize = 100
@@ -262,6 +256,12 @@ func (t *GameServerPacketReader) packetLoop(payloadCh <-chan gamePacketPayload) 
 		}
 		if st.junk {
 			continue
+		}
+		if payloadData.gap {
+			// Bytes were lost before this payload: a buffered partial
+			// packet can never complete, so drop it rather than splice.
+			st.buffer.Reset()
+			st.payloads = nil
 		}
 		pushPayload(st, payloadData)
 
@@ -476,13 +476,6 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 		srcPort layers.TCPPort
 		dstPort layers.TCPPort
 	}
-	type tcpStreamState struct {
-		id       uint32
-		baseSeq  uint32
-		nextSeq  uint32
-		pending  []pendingTcpLayer
-		rejected bool // not a Client.exe connection: don't parse, don't record
-	}
 	streams := map[streamKey]*tcpStreamState{}
 	nextStreamID := uint32(0)
 
@@ -565,7 +558,7 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 				// A new connection's first packet is usually the 4-byte
 				// encryption key; it carries no game data.
 				if len(tcp.Payload) == 4 {
-					st.nextSeq = tcp.Seq + 4
+					st.nextSeq, st.synced = tcp.Seq+4, true
 					continue
 				}
 			}
@@ -579,112 +572,13 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 				_ = logHandle.WritePacket(ci, b)
 			}
 
-			if st.nextSeq != 0 && tcp.Seq != st.nextSeq {
-				// Out of alignment: normal TCP reorder/retransmit, handled
-				// below without logging (would be per-packet spam).
-				if tcp.Seq < st.nextSeq {
-					// Retransmission or overlap: if the segment overlaps
-					// but extends past nextSeq, trim the overlapping prefix
-					// and send only the fresh bytes.
-					if tcp.Seq+uint32(len(tcp.Payload)) >= st.nextSeq {
-						payload := tcp.Payload[st.nextSeq-tcp.Seq:]
-						if len(payload) > 0 {
-							send(gamePacketPayload{
-								stream: st.id,
-								relSeq: st.nextSeq - st.baseSeq,
-								data:   payload,
-								at:     ci.Timestamp,
-							})
-						}
-						st.nextSeq = tcp.Seq + uint32(len(tcp.Payload))
-						continue
-					}
-				}
+			st.push(tcp.Seq, tcp.Payload, ci.Timestamp, send)
+		}
 
-				if len(st.pending) >= packetQueueSize {
-					// Pending buffer is full: flush everything and give up
-					// waiting for the missing segment.
-					for _, v := range st.pending {
-						send(gamePacketPayload{
-							stream: st.id,
-							relSeq: v.tcpLayer.Seq - st.baseSeq,
-							data:   v.tcpLayer.Payload,
-							at:     v.ci.Timestamp,
-						})
-					}
-					st.pending = st.pending[:0]
-
-					send(gamePacketPayload{
-						stream: st.id,
-						relSeq: tcp.Seq - st.baseSeq,
-						data:   tcp.Payload,
-						at:     ci.Timestamp,
-					})
-					st.nextSeq = tcp.Seq + uint32(len(tcp.Payload))
-					continue
-				}
-
-				// Out of order: buffer this segment and wait for the
-				// missing earlier one. We must copy the payload because
-				// tcpLayer is reused by the decoding parser on the next
-				// iteration.
-				payloadCopy := make([]byte, len(tcp.Payload))
-				copy(payloadCopy, tcp.Payload)
-				tcpCopy := tcp
-				tcpCopy.Payload = payloadCopy
-				st.pending = append(st.pending, pendingTcpLayer{
-					tcpLayer: tcpCopy,
-					ci:       ci,
-				})
-				continue
-			}
-
-			// In-order segment: forward immediately.
-			send(gamePacketPayload{
-				stream: st.id,
-				relSeq: tcp.Seq - st.baseSeq,
-				data:   tcp.Payload,
-				at:     ci.Timestamp,
-			})
-			st.nextSeq = tcp.Seq + uint32(len(tcp.Payload))
-
-			// Drain any buffered out-of-order segments that have now
-			// become contiguous with nextSeq.
-			for len(st.pending) > 0 {
-				v := st.pending[0]
-				if v.tcpLayer.Seq == st.nextSeq {
-					send(gamePacketPayload{
-						stream: st.id,
-						relSeq: v.tcpLayer.Seq - st.baseSeq,
-						data:   v.tcpLayer.Payload,
-						at:     v.ci.Timestamp,
-					})
-					st.nextSeq = v.tcpLayer.Seq + uint32(len(v.tcpLayer.Payload))
-					st.pending = st.pending[1:]
-					continue
-				}
-				if v.tcpLayer.Seq < st.nextSeq {
-					// Retransmission/overlap case.
-					if v.tcpLayer.Seq+uint32(len(v.tcpLayer.Payload)) < st.nextSeq {
-						st.pending = st.pending[1:]
-						continue
-					}
-					payload := v.tcpLayer.Payload[st.nextSeq-v.tcpLayer.Seq:]
-					if len(payload) > 0 {
-						send(gamePacketPayload{
-							stream: st.id,
-							relSeq: st.nextSeq - st.baseSeq,
-							data:   payload,
-							at:     v.ci.Timestamp,
-						})
-					}
-					st.nextSeq = v.tcpLayer.Seq + uint32(len(v.tcpLayer.Payload))
-					st.pending = st.pending[1:]
-					continue
-				}
-				// An earlier segment is still missing; stop draining.
-				break
-			}
+		// Holes are timed on capture time so replay matches live; any
+		// stream's traffic advances the clock for all of them.
+		for _, st := range streams {
+			st.expire(ci.Timestamp, send)
 		}
 
 		// Throttle the loop to avoid pegging the CPU at 100%.
@@ -695,14 +589,7 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 
 	// Loop ended: flush any remaining pending segments of every stream.
 	for _, st := range streams {
-		for _, v := range st.pending {
-			send(gamePacketPayload{
-				stream: st.id,
-				relSeq: v.tcpLayer.Seq - st.baseSeq,
-				data:   v.tcpLayer.Payload,
-				at:     v.ci.Timestamp,
-			})
-		}
+		st.flush(send)
 	}
 }
 
