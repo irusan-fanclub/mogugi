@@ -2,7 +2,7 @@
 vi.mock('@/lib/runtimeEnv', async o => ({ ...(await o<object>()), isDesktop: () => true }));
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { nextTick } from 'vue';
-import { flushPromises, mount, VueWrapper } from '@vue/test-utils';
+import { mount, VueWrapper } from '@vue/test-utils';
 
 const hoisted = vi.hoisted(() => ({ resetZoom: vi.fn(), emitted: [] as { name: string; data: unknown }[] }));
 vi.mock('@/lib/desktopBridge', () => ({

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { nextTick } from 'vue';
-import { resetSettingsForTest, settingsStorage } from '@/lib/settingsStorage';
+import { settingsStorage } from '@/lib/settingsStorage';
 import { defineComponent, h } from 'vue';
 import { mount, VueWrapper } from '@vue/test-utils';
 import BattleSettings from './BattleSettings.vue';

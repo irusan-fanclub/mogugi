@@ -16,7 +16,6 @@ const pinnedEl = ref<HTMLElement>();
 const menuOpen = ref(false);
 const visibleIdx = ref<number[]>(props.tabs.map((_, i) => i));
 
-const allIds = computed(() => [...props.tabs.map(t => t.id), ...props.pinned.map(t => t.id)]);
 
 if (model.value === undefined) model.value = props.tabs[0]?.id ?? '';
 

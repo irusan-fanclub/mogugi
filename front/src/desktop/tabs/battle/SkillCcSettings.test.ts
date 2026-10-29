@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { nextTick } from 'vue';
-import { resetSettingsForTest, settingsStorage } from '@/lib/settingsStorage';
+import { resetSettingsForTest } from '@/lib/settingsStorage';
 import { mount, VueWrapper } from '@vue/test-utils';
 import SkillCcSettings from './SkillCcSettings.vue';
 import { setSkillCcList, skillCcModel } from './skillCcSettings';

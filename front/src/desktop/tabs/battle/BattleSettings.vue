@@ -2,7 +2,6 @@
 import { computed, ref } from 'vue';
 import type { EntityActor, EntityConditionState } from '@/eventActor';
 import {
-    condNameMap,
     hiddenSkillColumns, skillColumnOrder, skillRowLimit, showPetSkills,
     setSkillRowLimit, setShowPetSkills, setSkillColumnOrder, toggleSkillColumn, resetSkillSettings,
     autoSelectBoss, setAutoSelectBoss, hpGuideStep, setHpGuideStep, HP_GUIDE_STEPS,
@@ -13,7 +12,6 @@ import { DEFAULT_SELF_CC_LIST, seenCCIds } from '@/lib/ccTracking';
 import { DETAIL_COLUMNS, mergeColumnOrder } from '@/lib/skillColumns';
 import DDialog from '../../ui/DDialog.vue';
 import DButton from '../../ui/DButton.vue';
-import DIconButton from '../../ui/DIconButton.vue';
 import DSegmented from '../../ui/DSegmented.vue';
 import DSwitch from '../../ui/DSwitch.vue';
 import DNumberField from '../../ui/DNumberField.vue';
