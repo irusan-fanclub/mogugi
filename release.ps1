@@ -4,7 +4,7 @@
 # and packages the result into dist/mogugi_<version>.zip.
 #
 # Usage:
-#   .\release.ps1                  # uses cmd/mogugi/main.go default version
+#   .\release.ps1                  # uses internal/app/run.go default version
 #   .\release.ps1 -Version 0.2.1   # build & package as 0.2.1
 #   .\release.ps1 -SkipTest        # skip lint + both test suites
 #   .\release.ps1 -Force           # override the working-tree and tag guards
@@ -29,8 +29,8 @@ function Write-Step($name) {
 
 # ── Resolve version ───────────────────────────────────────────────────────────
 if ([string]::IsNullOrWhiteSpace($Version)) {
-    # Read default from cmd/mogugi/main.go
-    $constsPath = "cmd/mogugi/main.go"
+    # Read default from internal/app/run.go
+    $constsPath = "internal/app/run.go"
     $line = Select-String -Path $constsPath -Pattern '^var Version = "(.+)"' | Select-Object -First 1
     if (-not $line) {
         Write-Host "Could not find Version in $constsPath" -ForegroundColor Red
@@ -186,7 +186,7 @@ try {
     $ErrorActionPreference = $prevPref
 
     # Copy to embed dir consumed by go:embed.
-    $staticPath = "../cmd/mogugi/static"
+    $staticPath = "../internal/app/static"
     if (Test-Path $staticPath) {
         Get-ChildItem -Path $staticPath -Exclude ".keep" | Remove-Item -Recurse -Force
     } else {
@@ -249,7 +249,7 @@ try {
 $binDir = "bin"
 if (-not (Test-Path $binDir)) { New-Item -ItemType Directory -Path $binDir | Out-Null }
 
-$ldflags = "-s -w -X main.Version=$Version $($lic.LDFlag)"
+$ldflags = "-s -w -H windowsgui -X github.com/irusan-fanclub/mogugi/internal/app.Version=$Version $($lic.LDFlag)"
 $apiBin  = "$binDir/mogugi.exe"
 
 go build -ldflags $ldflags -trimpath -o $apiBin ./cmd/mogugi

@@ -93,7 +93,7 @@ func ParseStatUpdate(msg Message) StatTable {
 	}
 	count := int(msg[1].Data().(uint32))
 
-	st := make(StatTable, count)
+	st := make(StatTable, min(count, (len(msg)-head)/2))
 	for i := range count {
 		k := head + i*2
 		if k+1 >= len(msg) || msg[k].Type() != MessageElemTypeInt {

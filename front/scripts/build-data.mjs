@@ -44,9 +44,9 @@ const ICON_SOURCES = [
     { kind: 'title', table: 'title', id: 'title_id' },
 ];
 
-// Synthetic CCs have no upstream icon; borrow the skill's. Keep in sync
-// with BARDSONG_CC_ID in front/src/lib/bardsongTrack.ts.
-const SYNTHETIC_CC_ICONS = [{ ccId: 900206, fromSkillId: 10003 }];
+// Synthetic CCs have no upstream icon; borrow another icon (kind 'cc' or 'skill').
+// Keep in sync with BARDSONG_CC_ID in front/src/lib/bardsongTrack.ts.
+const SYNTHETIC_CC_ICONS = [{ ccId: 900206, from: { kind: 'cc', id: 624 } }];
 
 // `optional: true` — table may be absent from older upstream sqlites (optionset:
 // mabitsequal schema >= 4, metalware_ability: >= 5); emit an empty table then.
@@ -164,14 +164,14 @@ async function extractIcons(src) {
     // Not from ICON_SOURCES — copied after both cc/ and skill/ exist. A
     // missing source icon must fail the build: a silent skip leaves the
     // synthetic lane rendering a broken image with nothing to catch the drift.
-    for (const { ccId, fromSkillId } of SYNTHETIC_CC_ICONS) {
-        const from = path.join(OUT_ICONS, 'skill', `${fromSkillId}.png`);
+    for (const { ccId, from: src } of SYNTHETIC_CC_ICONS) {
+        const from = path.join(OUT_ICONS, src.kind, `${src.id}.png`);
         const to = path.join(OUT_ICONS, 'cc', `${ccId}.png`);
         if (!await exists(from)) {
-            throw new Error(`synthetic cc icon: source skill ${fromSkillId}.png for cc ${ccId} not found at ${from}`);
+            throw new Error(`synthetic cc icon: source ${src.kind} ${src.id}.png for cc ${ccId} not found at ${from}`);
         }
         await fs.copyFile(from, to);
-        console.log(`[build-data] wrote synthetic cc icon ${ccId}.png (from skill ${fromSkillId}).`);
+        console.log(`[build-data] wrote synthetic cc icon ${ccId}.png (from ${src.kind} ${src.id}).`);
     }
 
     // Copied from the repo, not the sqlite. Same reasoning as the synthetic

@@ -47,10 +47,18 @@ func LogInit(logFileName string) error {
 		return err
 	}
 
-	w := io.MultiWriter(os.Stdout, fd)
+	// File first: a -H windowsgui build has no stdout and its write error
+	// would otherwise stop the file from being written.
+	w := io.MultiWriter(fd, os.Stdout)
 	writer.w.Store(&w)
+	logFile.Store(fd)
 	return nil
 }
+
+var logFile atomic.Pointer[os.File]
+
+// LogFile returns the open log file (nil before LogInit); it is never closed.
+func LogFile() *os.File { return logFile.Load() }
 
 // NewLogger creates a log.Logger whose output follows the shared
 // switchable writer. Call LogInit at program start to enable file logging.

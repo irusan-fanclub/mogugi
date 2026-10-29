@@ -4,7 +4,6 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
-import vuetify from 'vite-plugin-vuetify';
 import checker from 'vite-plugin-checker';
 import wasm from 'vite-plugin-wasm';
 
@@ -42,7 +41,6 @@ export default defineConfig({
         },
         buildDataPlugin(),
         vue(),
-        vuetify(),
         checker({
             vueTsc: true,
         }),
@@ -75,5 +73,13 @@ export default defineConfig({
     build: {
         sourcemap: true,
         minify: false,
+        rollupOptions: {
+            input: {
+                main: path.resolve(__dirname, 'index.html'),
+                desktop: path.resolve(__dirname, 'desktop.html'),
+                chart: path.resolve(__dirname, 'chart.html'),
+                overlay: path.resolve(__dirname, 'overlay.html'),
+            },
+        },
     },
 });

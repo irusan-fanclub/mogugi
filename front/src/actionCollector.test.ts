@@ -89,3 +89,24 @@ describe('DamageCollectorManager.reattribute', () => {
         expect(mgr.reattribute('puppet', 'owner')).toBe(false);
     });
 });
+
+describe('DamageCollectorManager.evictBefore', () => {
+    it('leaves a grouped collector equal to a feed of only the kept events', () => {
+        const at = (id: string, t: number, target: string, d: number): EntityDamage => ({ ...dmg(id, d), At: t, TargetId: target });
+        const old = [at('a', 100, 't1', 5), at('b', 110, 't1', 7)];
+        const kept = [at('a', 1000, 't2', 11), at('c', 1010, 't2', 13)];
+        const m1 = new DamageCollectorManager();
+        const c1 = m1.getGroupedDamageCollector(() => true, v => v.TargetId);
+        [...old, ...kept].forEach(d => m1.onDamage(d));
+        m1.evictBefore(1000);
+        const m2 = new DamageCollectorManager();
+        const c2 = m2.getGroupedDamageCollector(() => true, v => v.TargetId);
+        kept.forEach(d => m2.onDamage(d));
+        expect(c1.totalDamage).toBe(c2.totalDamage);
+        expect(c1.groupedTotalDamages).toEqual(c2.groupedTotalDamages);
+        expect(m1.damages).toEqual(kept);
+        // The id set was rebuilt: an evicted attacker no longer triggers a rebuild.
+        expect(m1.reattribute('b', 'x')).toBe(false);
+        expect(m1.reattribute('c', 'x')).toBe(true);
+    });
+});

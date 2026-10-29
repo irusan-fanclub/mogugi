@@ -10,6 +10,11 @@ export const DEFAULT_BOSS_RACE_IDS: readonly number[] = [
     4856, 4857, 4858, 4859, 4860, 7600, 7601, 7602, 7603, 7615, 193810, 193818,
 ];
 
+// A boss that turns into its next form: the earlier form's phase ends when the next one appears.
+export const BOSS_PREV_FORM: Readonly<Record<number, number>> = { 7601: 7600 };
+// The earlier form disappears in the same second the next one appears; a minute leaves room for lag.
+export const FORM_CHANGE_WINDOW_SEC = 60;
+
 export interface BossRaceOverrides {
     added: number[];
     removed: number[];

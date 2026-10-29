@@ -26,7 +26,7 @@ export interface AutoInputs {
     detail: Partial<Record<keyof AutoInputs, string>>;  // per-field source text for tooltips
 }
 
-// Fields the user fills; persisted in localStorage.
+// Fields the user fills; kept for this session only.
 export interface ManualInputs {
     titleBattle: number; titleLively: number; titleMarch: number; titleMusic: number; titleDuration: number;
     arcana: boolean; master: boolean; couple: boolean;
@@ -307,16 +307,12 @@ export function gearInputs(items: WornItem[], deps: GearDeps): AutoInputs {
     return a;
 }
 
-export const MANUAL_STORAGE_KEY = 'mogugi.musicAnalysis.v1';
+let sessionManual: ManualInputs | null = null;
 
 export function loadManual(): ManualInputs {
-    try {
-        const raw = localStorage.getItem(MANUAL_STORAGE_KEY);
-        if (raw) return { ...defaultManual(), ...JSON.parse(raw) };
-    } catch { /* missing or corrupt storage → defaults */ }
-    return defaultManual();
+    return { ...defaultManual(), ...sessionManual };
 }
 
 export function saveManual(m: ManualInputs): void {
-    try { localStorage.setItem(MANUAL_STORAGE_KEY, JSON.stringify(m)); } catch { /* ignore */ }
+    sessionManual = { ...m };
 }

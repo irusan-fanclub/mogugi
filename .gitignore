@@ -2,7 +2,7 @@ log*.txt
 *.exe
 node_modules
 dist
-cmd/mogugi/static
+internal/app/static
 bin
 
 # runtime artifacts
@@ -25,7 +25,7 @@ license.key
 release-keys.txt
 license-build.txt
 dev-run-live.log
-# activated licence the dev runs read via MOGUGI_LICENSE_DIR
+# activated licence the dev runs read via MOGUGI_DATA_DIR
 license.dat
 
 # Generated Windows version resource (built by versioninfo-lib.ps1)
@@ -38,3 +38,6 @@ front/public/favicon.ico
 # app config written next to the exe (dev-run puts it in the repo root)
 mogugi-config.toml
 mogugi-config.toml*.tmp
+
+# controller scratch
+.superpowers/

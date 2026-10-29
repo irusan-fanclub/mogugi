@@ -4,6 +4,7 @@ import { ActorManager } from '@/eventActor';
 import { DamageCollectorManager } from '@/actionCollector';
 import type { ownerEquipmentItem, ownerPanel } from '@/protocols';
 import { effectiveBossRaces, addBossRace, removeBossRace, hasBossRaceOverrides, type BossRaceOverrides } from '@/lib/bossRaces';
+import { settingsStorage } from '@/lib/settingsStorage';
 
 export const loadingCount = ref(0);
 export const isLoading = computed(() => loadingCount.value > 0);
@@ -81,8 +82,6 @@ export function clearTimeRange() {
 const CONFIG_STORAGE_KEY = 'config';
 
 export interface AppConfig {
-    hiddenCCIds: number[];
-    hiddenTrackIds: string[];
     hiddenSkillColumns: string[];
     skillColumnOrder: string[];
     seenSkillColumns: string[];
@@ -93,6 +92,11 @@ export interface AppConfig {
     // User edits to the built-in boss race list (see lib/bossRaces.ts).
     bossRaceAdded: number[];
     bossRaceRemoved: number[];
+    hpGuideStep: number;
+    showCastTicks: boolean;
+    showHpRuler: boolean;
+    showInvincible: boolean;
+    hiddenTargetRaces: number[];
 }
 
 // Hidden-by-default columns added after users already saved a hidden list;
@@ -100,8 +104,6 @@ export interface AppConfig {
 const LATER_HIDDEN_SKILL_COLUMNS = ['hitsPerMin'];
 
 const defaultConfig: AppConfig = {
-    hiddenCCIds: [],
-    hiddenTrackIds: [],
     // Shown by default: 命中次數 (fixed), 爆擊次數, 爆擊率, 爆擊平均, 非爆平均, 最高.
     hiddenSkillColumns: [
         'hitsPerMin', 'castCount', 'normalCount', 'avg', 'min', 'critMin', 'critMax',
@@ -115,11 +117,16 @@ const defaultConfig: AppConfig = {
     bossOnlyTarget: false,
     bossRaceAdded: [],
     bossRaceRemoved: [],
+    hpGuideStep: 25,
+    showCastTicks: true,
+    showHpRuler: true,
+    showInvincible: true,
+    hiddenTargetRaces: [],
 };
 
 function loadConfig(): AppConfig {
     try {
-        const raw = localStorage.getItem(CONFIG_STORAGE_KEY);
+        const raw = settingsStorage.getItem(CONFIG_STORAGE_KEY);
         if (raw) {
             const saved = JSON.parse(raw);
             const seen: string[] = saved.seenSkillColumns ?? [];
@@ -133,8 +140,6 @@ function loadConfig(): AppConfig {
 
 function saveConfig() {
     const data: AppConfig = {
-        hiddenCCIds: [...hiddenCCIds.value],
-        hiddenTrackIds: [...hiddenTrackIds.value],
         hiddenSkillColumns: [...hiddenSkillColumns.value],
         skillColumnOrder: [...skillColumnOrder.value],
         seenSkillColumns: LATER_HIDDEN_SKILL_COLUMNS,
@@ -144,8 +149,13 @@ function saveConfig() {
         bossOnlyTarget: bossOnlyTarget.value,
         bossRaceAdded: [...bossRaceOverrides.value.added],
         bossRaceRemoved: [...bossRaceOverrides.value.removed],
+        hpGuideStep: hpGuideStep.value,
+        showCastTicks: showCastTicks.value,
+        showHpRuler: showHpRuler.value,
+        showInvincible: showInvincible.value,
+        hiddenTargetRaces: [...hiddenTargetRaces.value],
     };
-    localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(data));
+    settingsStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(data));
 }
 
 const _config = loadConfig();
@@ -198,37 +208,6 @@ export function toggleSkillColumn(key: string) {
     saveConfig();
 }
 
-export const hiddenCCIds = ref<Set<number>>(new Set(_config.hiddenCCIds));
-
-export function addHiddenCC(ccId: number) {
-    hiddenCCIds.value = new Set(hiddenCCIds.value).add(ccId);
-    saveConfig();
-}
-
-export function removeHiddenCC(ccId: number) {
-    const next = new Set(hiddenCCIds.value);
-    next.delete(ccId);
-    hiddenCCIds.value = next;
-    saveConfig();
-}
-
-// Synthetic-track visibility (e.g. 'cc:516'). Kept separate from hiddenCCIds:
-// that one is keyed by real numeric CCIds, and stuffing string track ids in
-// there would force fake numeric ids nobody could interpret later.
-export const hiddenTrackIds = ref<Set<string>>(new Set(_config.hiddenTrackIds));
-
-export function hideTrack(id: string) {
-    hiddenTrackIds.value = new Set(hiddenTrackIds.value).add(id);
-    saveConfig();
-}
-
-export function unhideTrack(id: string) {
-    const next = new Set(hiddenTrackIds.value);
-    next.delete(id);
-    hiddenTrackIds.value = next;
-    saveConfig();
-}
-
 // Auto-select boss target in tab 3.
 export const autoSelectBoss = ref(_config.autoSelectBoss);
 // Boss race set = built-in list (lib/bossRaces.ts) plus/minus the user's
@@ -264,6 +243,32 @@ export function setAutoSelectBoss(v: boolean) {
     autoSelectBoss.value = v;
     saveConfig();
 }
+
+// Monster races left out of the battle tab's target list.
+export const hiddenTargetRaces = ref<Set<number>>(new Set(numList(_config.hiddenTargetRaces)));
+
+export function setHiddenTargetRaces(races: Set<number>) {
+    hiddenTargetRaces.value = races;
+    saveConfig();
+}
+
+// Boss HP % between the timeline's dashed guides; 0 hides them. Marks only exist at 5% steps.
+export const HP_GUIDE_STEPS = [0, 5, 10, 20, 25, 50] as const;
+const validGuideStep = (v: unknown) => (HP_GUIDE_STEPS as readonly unknown[]).includes(v) ? v as number : defaultConfig.hpGuideStep;
+export const hpGuideStep = ref(validGuideStep(_config.hpGuideStep));
+
+export function setHpGuideStep(v: number) {
+    hpGuideStep.value = validGuideStep(v);
+    saveConfig();
+}
+
+// DPS chart marks the 一般 settings can turn off: cast ticks on the CC lanes, the HP ruler band, the invincible tint.
+export const showCastTicks = ref(_config.showCastTicks !== false);
+export const showHpRuler = ref(_config.showHpRuler !== false);
+export const showInvincible = ref(_config.showInvincible !== false);
+export function setShowCastTicks(v: boolean) { showCastTicks.value = v; saveConfig(); }
+export function setShowHpRuler(v: boolean) { showHpRuler.value = v; saveConfig(); }
+export function setShowInvincible(v: boolean) { showInvincible.value = v; saveConfig(); }
 
 // Target select filtered down to boss races only.
 export const bossOnlyTarget = ref(_config.bossOnlyTarget);

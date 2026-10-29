@@ -13,6 +13,7 @@ type EntityInfo struct {
 	RaceId                uint32
 	SkinColor             uint8
 	EyeType               uint16
+	EyeColor              uint8
 	LeftEyeColor          uint8
 	RightEyeColor         uint8
 	MouthType             uint16
@@ -45,9 +46,9 @@ type EntityItem struct {
 }
 
 type EntityCharacterCondition struct {
-	CCId       uint32
-	DisableAt  int64
-	AttackerId uint64
+	CCId        uint32
+	DisableAtMs int64
+	AttackerId  uint64
 	// Params holds the KEY:type:value; triples of element 3 — the only
 	// place an effect's magnitudes appear. Empty on a disable update.
 	Params map[string]string
@@ -129,6 +130,7 @@ func ParseEntityAppearPacket(msg Message) (*EntityInfo, error) {
 	}
 
 	eyeColor := msg[8].Data().(uint8)
+	v.EyeColor = eyeColor
 
 	if msg[9].Type() != MessageElemTypeShort {
 		err := fmt.Errorf("mouthType has unexpected type %v", msg[9].Type())
@@ -436,7 +438,7 @@ func ParseEntityAppearPacket(msg Message) (*EntityInfo, error) {
 		}
 
 		disableAtRaw := msg[1].Data().(uint64)
-		disableAt := util.ParseMabiTime(disableAtRaw).Unix()
+		disableAtMs := util.MabiTimeUnixMilli(disableAtRaw)
 
 		params := map[string]string{}
 		if msg[2].Type() == MessageElemTypeString {
@@ -452,10 +454,10 @@ func ParseEntityAppearPacket(msg Message) (*EntityInfo, error) {
 		attackerId := msg[3].Data().(uint64)
 
 		v.CharacterConditionMap[ccId] = &EntityCharacterCondition{
-			CCId:       ccId,
-			DisableAt:  disableAt,
-			AttackerId: attackerId,
-			Params:     params,
+			CCId:        ccId,
+			DisableAtMs: disableAtMs,
+			AttackerId:  attackerId,
+			Params:      params,
 		}
 	}
 
@@ -649,22 +651,23 @@ func ParseEntitiesAppearPacket(p *GamePacket) ([]*EntityInfo, error) {
 			break
 		}
 
-		if msg[0].Type() != MessageElemTypeShort ||
-			msg[1].Type() != MessageElemTypeInt ||
-			msg[2].Type() != MessageElemTypeBin {
+		entry := msg[:3]
+		// Advance first: a skipped entry must not stall the walk on itself.
+		msg = msg[3:]
+
+		if entry[0].Type() != MessageElemTypeShort ||
+			entry[1].Type() != MessageElemTypeInt ||
+			entry[2].Type() != MessageElemTypeBin {
 
 			logger.Println("invalid packet", i)
 			continue
 		}
 
-		t, b := msg[0].Data().(uint16), msg[2].Data().([]byte)
+		t, b := entry[0].Data().(uint16), entry[2].Data().([]byte)
 		if t != 16 {
 			// Not a character
-			// logger.Println("invalid packet", i, t)
 			continue
 		}
-
-		msg = msg[3:]
 
 		_, _, subMsg, err := GamePacketBodyReader(bytes.NewReader(b))
 		if err != nil {

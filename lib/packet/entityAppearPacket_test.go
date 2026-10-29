@@ -149,3 +149,13 @@ func TestParseEntityAppearPacketWithoutConditions(t *testing.T) {
 		t.Fatalf("CharacterConditionMap = %v, want empty", v.CharacterConditionMap)
 	}
 }
+
+func TestParseEntityAppearPacketKeepsExpiryMilliseconds(t *testing.T) {
+	v, err := ParseEntityAppearPacket(entityAppearMessage(1, 10002, "x", 0, appearCondition{ccId: 680}))
+	if err != nil || v == nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got := v.CharacterConditionMap[680].DisableAtMs; got%1000 != 596 {
+		t.Fatalf("DisableAtMs = %d, want the .596 part kept", got)
+	}
+}

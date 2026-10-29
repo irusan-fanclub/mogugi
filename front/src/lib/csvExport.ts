@@ -17,7 +17,7 @@ export function buildCsv(header: string[], rowsText: string[][]): string {
 
 export interface SortSpec { key: string; order: 'asc' | 'desc' }
 
-// isEmptyVal mirrors Vuetify's util.isEmpty: null/undefined/blank string.
+// isEmptyVal treats as empty: null/undefined/blank string.
 function isEmptyVal(v: unknown): boolean {
     return v === null || v === undefined || (typeof v === 'string' && v.trim() === '');
 }

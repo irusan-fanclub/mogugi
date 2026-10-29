@@ -12,6 +12,7 @@ const end = (At: number): eventBardsong => ({
 
 const SINGER = '4503599629764211';
 const ME = '4503599630207674';
+const MINE = [{ At: 0, Id: ME }];
 const pulse = (At: number, Targets: string[]): eventBardsongPulse => ({
     EventId: eventIdBardsongPulse, At, Id: SINGER, Targets, Stop: false,
 });
@@ -27,7 +28,7 @@ const off = (At: number) => ({ At, List: [] });
 // fight 03:05:40: three performances announced, none reached the player).
 describe('buildBardsongConditionHistory with pulses', () => {
     it('turns a pulse listing the owner into 20s of presence', () => {
-        const h = buildBardsongConditionHistory([start(100)], [pulse(100, [SINGER, ME])], ME);
+        const h = buildBardsongConditionHistory([start(100)], [pulse(100, [SINGER, ME])], MINE);
         expect(h).toEqual([on(100), off(100 + BARDSONG_PULSE_SEC)]);
     });
 
@@ -35,33 +36,33 @@ describe('buildBardsongConditionHistory with pulses', () => {
         const h = buildBardsongConditionHistory(
             [start(100), start(160)],
             [pulse(100, [SINGER]), stop(106), pulse(160, [SINGER]), pulse(170, [SINGER]), stop(176)],
-            ME,
+            MINE,
         );
         expect(h).toEqual([]);
     });
 
     it('extends one run across consecutive pulses that list the owner', () => {
         const h = buildBardsongConditionHistory(
-            [start(100)], [pulse(100, [ME]), pulse(110, [ME]), pulse(121, [ME])], ME,
+            [start(100)], [pulse(100, [ME]), pulse(110, [ME]), pulse(121, [ME])], MINE,
         );
         expect(h).toEqual([on(100), off(141)]);
     });
 
     it('keeps the timer running through a pulse that drops the owner and a stop', () => {
         const h = buildBardsongConditionHistory(
-            [start(100)], [pulse(100, [ME]), pulse(110, [SINGER]), stop(115)], ME,
+            [start(100)], [pulse(100, [ME]), pulse(110, [SINGER]), stop(115)], MINE,
         );
         expect(h).toEqual([on(100), off(120)]);
     });
 
     it('closes early on an end notice that arrives before the timer', () => {
-        const h = buildBardsongConditionHistory([start(100), end(112)], [pulse(100, [ME])], ME);
+        const h = buildBardsongConditionHistory([start(100), end(112)], [pulse(100, [ME])], MINE);
         expect(h).toEqual([on(100), off(112)]);
     });
 
     it('treats an end notice in the same second as a fresh pulse as a refresh', () => {
         const h = buildBardsongConditionHistory(
-            [start(100), end(120)], [pulse(100, [ME]), pulse(120, [ME])], ME,
+            [start(100), end(120)], [pulse(100, [ME]), pulse(120, [ME])], MINE,
         );
         expect(h).toEqual([on(100), off(140)]);
     });
@@ -70,18 +71,34 @@ describe('buildBardsongConditionHistory with pulses', () => {
         const h = buildBardsongConditionHistory(
             [start(100), end(120), start(150)],
             [pulse(100, [ME]), pulse(150, [SINGER])],
-            ME,
+            MINE,
         );
         expect(h).toEqual([on(100), off(120)]);
     });
 
     it('falls back to the notice rules when no pulse was recorded (older logs)', () => {
-        const h = buildBardsongConditionHistory([start(10), end(30)], [], ME);
+        const h = buildBardsongConditionHistory([start(10), end(30)], [], MINE);
         expect(h).toEqual([on(10), off(30)]);
     });
 
     it('falls back to the notice rules when the owner id is unknown', () => {
-        const h = buildBardsongConditionHistory([start(10), end(30)], [pulse(10, [ME])], '');
+        const h = buildBardsongConditionHistory([start(10), end(30)], [pulse(10, [ME])], []);
+        expect(h).toEqual([on(10), off(30)]);
+    });
+
+    // One live session can switch characters; an earlier fight must still be
+    // read with the character that was logged in then (log 20261024_170946).
+    it('reads each pulse with the character logged in at that time', () => {
+        const ALT = '4503599630022047';
+        const owners = [{ At: 50, Id: ME }, { At: 500, Id: ALT }];
+        const h = buildBardsongConditionHistory(
+            [], [pulse(100, [SINGER, ME]), pulse(600, [SINGER, ME]), pulse(700, [SINGER, ALT])], owners,
+        );
+        expect(h).toEqual([on(100), off(120), on(700), off(720)]);
+    });
+
+    it('reads pulses before the first known owner with that owner', () => {
+        const h = buildBardsongConditionHistory([], [pulse(10, [ME])], [{ At: 100, Id: ME }]);
         expect(h).toEqual([on(10), off(30)]);
     });
 
@@ -108,7 +125,7 @@ describe('buildBardsongConditionHistory with pulses', () => {
             pulse(T + 597, [...P, 'x', 'y', 'z', 'mypet']), stop(T + 597), stop(T + 657),
             pulse(T + 693, [...P, 'pet']), pulse(T + 703, [...P, 'pet']), pulse(T + 714, ['p3', SINGER, ME, 'p4']), stop(T + 717),
         ];
-        const h = buildBardsongConditionHistory(notices, pulses, ME);
+        const h = buildBardsongConditionHistory(notices, pulses, MINE);
         expect(h.map(v => [v.At - T, v.List.length > 0])).toEqual([
             [257, true], [298, false], [413, true], [433, false], [526, true], [546, false],
             [565, true], [585, false], [597, true], [617, false], [693, true], [734, false],
@@ -159,9 +176,8 @@ describe('buildBardsongConditionHistory', () => {
         expect(h[1].List).toEqual([]);
     });
 
-    // Pins the synthetic id: changing it silently breaks hiddenTrackIds
-    // persistence and PLAYER_SIDE_CC_IDS wiring in dpsDebuffChart.vue, and
-    // nothing else would catch the drift.
+    // Pins the synthetic id: the 自身 lanes, stored lists and the backend
+    // all key on it, and nothing else would catch the drift.
     it('pins BARDSONG_CC_ID', () => {
         expect(BARDSONG_CC_ID).toBe(900206);
     });

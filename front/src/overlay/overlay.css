@@ -1,0 +1,320 @@
+/* The 5px body padding from base.css stays: it is the resize hot zone.
+   Extra specificity: the build may load base.css (body background) after this file. */
+html, html body, html #app {
+    background: transparent;
+}
+
+.ov-root {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    color: var(--c-text);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.ov-stage {
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform-origin: 0 0;
+    touch-action: none;
+    --ov-edit: var(--c-share);
+    --ov-guide: var(--c-accent);
+    --ov-badge: max(26px, calc(26px * var(--ov-inv, 1) * 0.85));
+    --ov-handle-w: max(14px, calc(14px * var(--ov-inv, 1) * 0.8));
+    --ov-handle-h: max(40px, calc(40px * var(--ov-inv, 1) * 0.7));
+}
+
+.ov-frame {
+    position: absolute;
+    box-sizing: border-box;
+    border-radius: 4px;
+}
+
+.ov-frame.editing {
+    cursor: grab;
+    outline: 1.5px solid var(--ov-edit);
+}
+
+.ov-frame.editing.dragging {
+    cursor: grabbing;
+    outline-color: var(--ov-guide);
+}
+
+.ov-frame.editing.off {
+    opacity: 0.35;
+    outline-style: dashed;
+}
+
+.ov-frame.clamped {
+    outline: 2px dashed var(--c-warn);
+}
+
+.ov-mask {
+    position: absolute;
+    inset: 0;
+    background: color-mix(in srgb, var(--c-bg-deep) 60%, transparent);
+}
+
+.ov-fx {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    overflow: visible;
+}
+
+.ov-grid-line {
+    stroke: color-mix(in srgb, var(--c-text) 18%, transparent);
+    stroke-width: calc(1.5px * var(--ov-inv, 1));
+    stroke-dasharray: 6 6;
+}
+
+.ov-cell { fill: color-mix(in srgb, var(--ov-edit) 12%, transparent); }
+
+.ov-centre {
+    stroke: color-mix(in srgb, var(--c-text) 28%, transparent);
+    stroke-width: calc(1.5px * var(--ov-inv, 1));
+}
+
+.ov-dot { fill: color-mix(in srgb, var(--c-text) 45%, transparent); }
+.ov-dot.used { fill: var(--ov-edit); }
+
+.ov-link {
+    stroke: var(--ov-edit);
+    stroke-width: calc(1.5px * var(--ov-inv, 1));
+    stroke-dasharray: 4 3;
+    opacity: 0.9;
+}
+
+.ov-guide {
+    stroke: var(--ov-guide);
+    stroke-width: calc(1.5px * var(--ov-inv, 1));
+}
+
+.ov-guide.centre { stroke-width: calc(2px * var(--ov-inv, 1)); }
+
+.ov-tag {
+    position: absolute;
+    left: 0;
+    bottom: 100%;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 1px 6px;
+    border-radius: 3px 3px 0 0;
+    background: var(--ov-edit);
+    color: var(--c-bg-deep);
+    font-size: max(11px, calc(12px * var(--ov-inv, 1)));
+    font-weight: 700;
+    white-space: nowrap;
+    text-shadow: none;
+}
+
+.ov-tag i { font-style: normal; font-weight: 400; opacity: 0.75; }
+
+.ov-switch {
+    position: relative;
+    width: 24px;
+    height: 12px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--c-bg-deep) 35%, transparent);
+    cursor: pointer;
+}
+
+.ov-switch::after {
+    content: "";
+    position: absolute;
+    left: 2px;
+    top: 2px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--c-bg-deep);
+    transition: transform 0.12s;
+}
+
+.ov-switch.on { background: color-mix(in srgb, var(--c-bg-deep) 80%, transparent); }
+.ov-switch.on::after { transform: translateX(12px); background: var(--ov-edit); }
+
+.ov-badge {
+    position: absolute;
+    width: var(--ov-badge);
+    height: var(--ov-badge);
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: var(--ov-edit);
+    color: var(--c-bg-deep);
+    font-size: calc(var(--ov-badge) * 0.58);
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    text-shadow: none;
+}
+
+.ov-handle {
+    position: absolute;
+    top: 50%;
+    width: var(--ov-handle-w);
+    height: var(--ov-handle-h);
+    margin-top: calc(var(--ov-handle-h) / -2);
+    border-radius: 4px;
+    background: var(--ov-edit);
+    cursor: ew-resize;
+}
+
+.ov-handle::after {
+    content: "";
+    position: absolute;
+    inset: 30% 35%;
+    border-left: 1.5px solid var(--c-bg-deep);
+    border-right: 1.5px solid var(--c-bg-deep);
+}
+
+.ov-sample {
+    position: absolute;
+    right: 6px;
+    top: 4px;
+    padding: 0 4px;
+    border: 1px solid color-mix(in srgb, var(--c-text) 25%, transparent);
+    border-radius: 3px;
+    font-size: 10px;
+    opacity: 0.8;
+    pointer-events: none;
+}
+
+.ov-toolbar {
+    position: absolute;
+    left: 50%;
+    bottom: 24px;
+    display: flex;
+    gap: 8px;
+    transform: translateX(-50%) scale(var(--ov-inv, 1));
+    transform-origin: 50% 100%;
+}
+
+.ov-tb-btn {
+    padding: 7px 14px;
+    border: 1px solid var(--c-line);
+    border-radius: 6px;
+    background: var(--c-surface);
+    color: var(--c-text);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    text-shadow: none;
+}
+
+.ov-tb-btn.primary {
+    border-color: var(--c-accent);
+    background: var(--c-accent);
+    color: var(--c-bg-deep);
+    font-weight: 600;
+}
+
+.ov-num {
+    color: var(--c-number);
+    font-variant-numeric: tabular-nums;
+}
+
+.ov-dps {
+    padding: 4px 6px;
+}
+
+.ov-top {
+    display: flex;
+    gap: 12px;
+    padding-bottom: 3px;
+    margin-bottom: 3px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.ov-row {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    line-height: 1.5;
+}
+
+.ov-row.self {
+    color: var(--c-accent);
+}
+
+.ov-rank {
+    width: 1.6em;
+    text-align: right;
+}
+
+.ov-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ov-cc {
+    padding: 4px 6px;
+}
+
+.ov-sec-title {
+    font-size: 11px;
+    opacity: 0.7;
+    margin-top: 2px;
+}
+
+.ov-cc-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 2px;
+}
+
+.ov-cc-row .ov-name {
+    flex: 0 0 auto;
+    max-width: 7em;
+}
+
+.ov-icons {
+    display: flex;
+    gap: 3px;
+    flex-wrap: wrap;
+}
+
+.ov-icon {
+    position: relative;
+    border: 2px solid transparent;
+    border-radius: 3px;
+}
+
+.ov-icon.expiring {
+    border-color: var(--c-err);
+}
+
+.ov-icon img {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.ov-icon .ov-sec {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    padding: 0 2px;
+    font-size: 11px;
+    line-height: 1.2;
+    background: rgba(0, 0, 0, 0.65);
+    color: #fff;
+}
+
+.ov-icon .ov-mask { position: absolute; inset: 0; pointer-events: none; }
+.ov-cc-row.self .ov-name { color: var(--c-accent); }
+.ov-alerts { display: flex; flex-direction: column; gap: 4px; }
+.ov-alert { padding: 2px 8px; color: #fff; text-shadow: 0 0 3px #000; }

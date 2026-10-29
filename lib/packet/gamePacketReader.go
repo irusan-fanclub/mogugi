@@ -21,11 +21,17 @@ import (
 
 type GameServerPacketReader struct {
 	// non-mutable
+	logDir    string
 	ctx       context.Context
 	ctxCancel context.CancelFunc
 	packetCh  chan *GamePacket
 	quiet     bool
 	realtime  bool
+	progress  func(done, total int64)
+	fileSize  int64
+	finished  chan struct{} // closed once the input is exhausted and fully parsed
+	finOnce   sync.Once
+	readErr   error // non-EOF read failure; valid once Finished() is closed
 
 	// mutable
 	handle *pcap.Handle
@@ -65,9 +71,17 @@ type GameServerPacketReaderOpt struct {
 	Quiet bool
 	// NoCaptureFile skips the pcapng tee only, keeping the logs Quiet drops.
 	NoCaptureFile bool
+	// LogDir is where the pcapng tee is written; empty means "logs".
+	LogDir string
 	// Realtime paces file replay by capture timestamp diffs (capped at
 	// 200ms per gap) so the frontend sees events at original cadence.
 	Realtime bool
+	// NoStartDelay skips the 20s pause before file replay starts reading
+	// (used when the caller already has a listener attached).
+	NoStartDelay bool
+	// Progress, when set, reports approximate bytes read of the input file
+	// (done, total); the final call has done == total.
+	Progress func(done, total int64)
 }
 
 type gamePacketPayload struct {
@@ -113,7 +127,10 @@ func NewGameServerPacketReader(opt *GameServerPacketReaderOpt) (_ *GameServerPac
 		packetCh:  make(chan *GamePacket, packetQueueSize),
 		quiet:     opt.Quiet,
 		realtime:  opt.Realtime,
+		progress:  opt.Progress,
+		finished:  make(chan struct{}),
 		vetPort:   opt.VetLocalPort,
+		logDir:    opt.LogDir,
 		linkType:  layers.LinkTypeNull, // default, will be updated when opening
 	}
 	if opt.FileName != "" {
@@ -159,7 +176,9 @@ func NewGameServerPacketReader(opt *GameServerPacketReaderOpt) (_ *GameServerPac
 	// Start readPacketLoop. File mode delays 20 seconds so a WebSocket
 	// client has time to connect before replay begins; NIC mode starts
 	// immediately.
-	if isFile {
+	if isFile && opt.NoStartDelay {
+		go v.readPacketLoop(payloadCh)
+	} else if isFile {
 		time.AfterFunc(20*time.Second, func() {
 			logger.Println("start readPacketLoop", opt.FileName)
 			go v.readPacketLoop(payloadCh)
@@ -191,6 +210,11 @@ func (t *GameServerPacketReader) packetLoop(payloadCh <-chan gamePacketPayload) 
 	}
 	states := map[uint32]*parseState{}
 	const squelchAfter = time.Second
+	defer t.finOnce.Do(func() {
+		if t.finished != nil {
+			close(t.finished)
+		}
+	})
 
 	// skipPayload advances the front of the payloads list by n bytes
 	// after a successful parse.
@@ -245,7 +269,12 @@ func (t *GameServerPacketReader) packetLoop(payloadCh <-chan gamePacketPayload) 
 			}
 			return
 
-		case payloadData = <-payloadCh:
+		case pd, ok := <-payloadCh:
+			if !ok {
+				// Input exhausted (file end); everything is parsed.
+				return
+			}
+			payloadData = pd
 		}
 
 		t.payloadCount++
@@ -362,6 +391,9 @@ func (t *GameServerPacketReader) openFile(file string, filter string) (chan game
 
 	t.handle = handle
 	t.linkType = handle.LinkType()
+	if st, err := fd.Stat(); err == nil {
+		t.fileSize = st.Size()
+	}
 	logger.Printf("File LinkType: %v", t.linkType)
 
 	ch := make(chan gamePacketPayload, pcapQueueSize)
@@ -378,7 +410,10 @@ func (t *GameServerPacketReader) SourceName() string {
 }
 
 func (t *GameServerPacketReader) openLog() error {
-	logDir := "logs"
+	logDir := t.logDir
+	if logDir == "" {
+		logDir = "logs"
+	}
 	if err := os.MkdirAll(logDir, os.ModePerm); err != nil {
 		logger.Println(err)
 		return err
@@ -430,6 +465,10 @@ func (t *GameServerPacketReader) openLog() error {
 }
 
 func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
+	// Closing ch tells packetLoop the input is exhausted. Only reached on
+	// a natural end (EOF/read error), not on early ctx-cancel returns.
+	defer close(ch)
+	var readBytes int64
 	eth := layers.Ethernet{}
 	ip4 := layers.IPv4{}
 	tcp := layers.TCP{}
@@ -484,9 +523,19 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 	for i := 0; t.ctx.Err() == nil; i++ {
 		b, ci, err := handle.ReadPacketData()
 		if err != nil {
+			if err != io.EOF && t.ctx.Err() == nil {
+				t.readErr = err // published to Err() by the close(ch) below
+			}
 			// Expected on Close() / channel-switch — pcap handle goes
 			// away and ReadPacketData returns EOF. No diagnostic value.
 			break
+		}
+
+		if t.progress != nil && t.fileSize > 0 {
+			readBytes += int64(len(b)) + 32 // + approx pcapng block overhead
+			if i&0xff == 0 {
+				t.progress(min(readBytes, t.fileSize-1), t.fileSize)
+			}
 		}
 
 		if t.realtime {
@@ -506,8 +555,9 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 			prevCapTime = ci.Timestamp
 		}
 
-		// Poll pcap stats every 100 packets to detect kernel-level drops.
-		if i%100 == 0 {
+		// Poll pcap stats every 100 packets to detect kernel-level drops
+		// (live only; offline handles have none, and Stats can race Close).
+		if i%100 == 0 && t.fd == nil {
 			if stats, err := handle.Stats(); err == nil {
 				if stats.PacketsDropped > lastDropped {
 					logger.Printf("[pcap] received=%d dropped=%d ifdropped=%d (+%d new drops)",
@@ -591,7 +641,19 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 	for _, st := range streams {
 		st.flush(send)
 	}
+	if t.progress != nil && t.fileSize > 0 && t.ctx.Err() == nil {
+		t.progress(t.fileSize, t.fileSize)
+	}
 }
+
+// Finished is closed once a file input has been fully read and parsed (its
+// packets may still sit in PacketCh). Never closes for live capture before
+// Close().
+func (t *GameServerPacketReader) Finished() <-chan struct{} { return t.finished }
+
+// Err is the read error that ended a file input early (truncated or corrupt
+// file); nil for a clean end. Valid once Finished() is closed.
+func (t *GameServerPacketReader) Err() error { return t.readErr }
 
 // SetFilter updates the live capture's BPF filter in place (no reader
 // rebuild), so the watchdog can widen/narrow capture as the client's

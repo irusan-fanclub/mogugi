@@ -1,6 +1,6 @@
 ﻿# Dev build script — fast iterate-and-test loop.
 #
-# Builds the frontend, copies it into cmd/mogugi/static/ for go:embed,
+# Builds the frontend, copies it into internal/app/static/ for go:embed,
 # and builds the backend into bin/mogugi.exe.
 #
 # Does NOT touch version files or produce dist/ artifacts; for that, use
@@ -17,7 +17,8 @@ param(
     [switch]$BackendOnly,
     [switch]$FrontendOnly,
     [switch]$Install,
-    [switch]$Test
+    [switch]$Test,
+    [switch]$Replay
 )
 
 $ErrorActionPreference = "Stop"
@@ -57,7 +58,7 @@ if (-not $BackendOnly) {
     Pop-Location
 
     # Sync to go:embed dir.
-    $staticDir = "cmd/mogugi/static"
+    $staticDir = "internal/app/static"
     if (Test-Path $staticDir) {
         Get-ChildItem -Path $staticDir -Exclude ".keep" | Remove-Item -Recurse -Force
     } else {
@@ -83,13 +84,13 @@ if (-not $FrontendOnly) {
     Write-Host "`n[backend] go build ./cmd/mogugi..." -ForegroundColor Yellow
 
     # Keep the dev build's Details tab populated too, so a binary picked out of
-    # bin/ is identifiable. Version comes from main.go, same as the build does.
+    # bin/ is identifiable. Version comes from run.go, same as the build does.
     . (Join-Path $PSScriptRoot 'versioninfo-lib.ps1')
-    $verLine = Select-String -Path "cmd/mogugi/main.go" -Pattern '^var Version = "(.+)"' | Select-Object -First 1
+    $verLine = Select-String -Path "internal/app/run.go" -Pattern '^var Version = "(.+)"' | Select-Object -First 1
     if ($verLine) {
         New-VersionResource -Version $verLine.Matches[0].Groups[1].Value
     } else {
-        Write-Host "  could not read Version from main.go; building without a version resource" -ForegroundColor Yellow
+        Write-Host "  could not read Version from run.go; building without a version resource" -ForegroundColor Yellow
     }
 
     # Inject the license keys when license-build.txt is present, so a binary
@@ -107,10 +108,16 @@ if (-not $FrontendOnly) {
 
     if (-not (Test-Path "bin")) { New-Item -ItemType Directory -Path "bin" | Out-Null }
     $apiBin = "bin/mogugi.exe"
-    go build -ldflags $licFlag -o $apiBin ./cmd/mogugi
+    go build -ldflags "$licFlag -H windowsgui" -o $apiBin ./cmd/mogugi
     if ($LASTEXITCODE -ne 0) { Write-Host "backend build failed" -ForegroundColor Red; exit 1 }
     $info = Get-Item $apiBin
     Write-Host "  $apiBin ($([math]::Round($info.Length / 1MB, 2)) MB)" -ForegroundColor Green
+
+    if ($Replay) {
+        Write-Host "`n[backend] go build ./cmd/mogugireplay..." -ForegroundColor Yellow
+        go build -ldflags $licFlag -o bin/mogugireplay.exe ./cmd/mogugireplay
+        if ($LASTEXITCODE -ne 0) { Write-Host "mogugireplay build failed" -ForegroundColor Red; exit 1 }
+    }
 
     if ($Test) {
         Write-Host "`n[backend] go build ./cmd/dilmetertest..." -ForegroundColor Yellow

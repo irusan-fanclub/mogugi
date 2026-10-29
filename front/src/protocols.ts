@@ -22,14 +22,22 @@ export const eventIdSkillUse = 17;
 export const eventIdSkillPrepareStart = 18;
 export const eventIdSkillStop = 19;
 export const eventIdMaxLife = 20;
-// eventIdEntityDown = 21 exists on the backend but has no frontend handler.
+export const eventIdEntityDown = 21;
 export const eventIdCaptureStatus = 22;
 export const eventIdOwnerEquipment = 23;
 export const eventIdOwnerStats = 24;
 export const eventIdBardsongPulse = 25;
+export const eventIdEntityLife = 26;
+export const eventIdEntityDeath = 27;
+export const eventIdEntityInvincible = 28;
+export const eventIdClockShift = 29;
 
 export const eventIdMessageBox = -1;
 export const eventIdSessionReset = -2;
+export const eventIdConfigChanged = -3;
+export const eventIdSourceChanged = -4;
+export const eventIdHistoryEvicted = -5;
+export const eventIdBattleBoundary = -6;
 
 export type eventBase = {
     EventId: eventId;
@@ -47,6 +55,13 @@ export type eventEntityAppear = eventBase & {
     Lower: number;
     GuildName: string;
     OwnerId: string;
+    // Look fields: absent in old records and when the value is 0.
+    SkinColor?: number;
+    EyeType?: number;
+    EyeColor?: number;
+    LeftEyeColor?: number;
+    RightEyeColor?: number;
+    MouthType?: number;
 }
 
 export type eventDamage = eventBase & {
@@ -56,6 +71,8 @@ export type eventDamage = eventBase & {
     Damage: number;
     IsCritical: boolean;
     IsDelayed: boolean;
+    /** The killing blow; absent in older logs. */
+    IsFinish?: boolean;
 }
 
 export type eventCharacterConditionEnable = eventBase & {
@@ -63,6 +80,10 @@ export type eventCharacterConditionEnable = eventBase & {
     CCId: number;
     DisableAt: number;
     AttackerId: string;
+    /** Clock generation DisableAt was converted under; absent = 0. */
+    ClockGen?: number;
+    /** DisableAt comes from capture time, so clock shifts never apply. */
+    LocalClock?: boolean;
     /** KEY -> value from the condition parameter string. Broadcast (all party members). */
     Params: Record<string, string>;
 }
@@ -179,6 +200,30 @@ export type eventSkillStop = eventBase & {
     SkillId: number;
 }
 
+export type eventEntityLife = eventBase & {
+    EventId: 26;
+    Life: number;
+}
+
+export type eventEntityDeath = eventBase & {
+    EventId: 27;
+    Dead: boolean;
+}
+
+/** 0x7533: the boss cannot be damaged while On. */
+export type eventEntityInvincible = eventBase & {
+    EventId: 28;
+    On: boolean;
+}
+
+/** The server clock estimate moved: every published local DisableAt shifts by ShiftSec. */
+export type eventClockShift = eventBase & {
+    EventId: 29;
+    ShiftSec: number;
+    /** Clock generation this shift creates; only conditions of an older generation move. */
+    Gen: number;
+}
+
 export type eventMaxLife = eventBase & {
     EventId: 20;
     MaxLife: number;
@@ -232,4 +277,36 @@ export type eventMessageBox = eventBase & {
 export type eventSessionReset = eventBase & {
     EventId: -2;
     Reason: string;
+}
+
+export type eventConfigChanged = eventBase & {
+    EventId: -3;
+    Config: Record<string, unknown>;
+}
+
+export type sourceState = {
+    Mode: 'live' | 'replay';
+    File: string;
+    Done: number;
+    Total: number;
+    Finished: boolean;
+    Err: string;
+    Notice: string;
+    // Detected (live) or recorded (ndjson replay) game client version; omitted when unknown.
+    ClientVersion?: string;
+}
+
+export type eventSourceChanged = eventBase & sourceState & {
+    EventId: -4;
+}
+
+/** Entity ids (EntityAppear Id format) the backend still holds. */
+export type eventHistoryEvicted = eventBase & {
+    EventId: -5;
+    Present?: string[];
+}
+
+export type eventBattleBoundary = eventBase & {
+    EventId: -6;
+    Present?: string[];
 }

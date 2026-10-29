@@ -1,6 +1,6 @@
 // itemIndex.test.ts — search box query classification (vitest, pure logic).
 import { describe, it, expect } from 'vitest';
-import { parseSearchQuery, parseExcludeEntries, buildExcludeSets, isExcludeEmpty } from './itemIndex';
+import { parseSearchQuery, buildExcludeSets, isExcludeEmpty } from './itemIndex';
 
 describe('parseSearchQuery', () => {
     it('treats blank input as empty', () => {
@@ -58,64 +58,6 @@ describe('parseSearchQuery', () => {
 
     it('does not treat // as a regex', () => {
         expect(parseSearchQuery('//')).toEqual({ kind: 'text', needle: '//' });
-    });
-});
-
-describe('parseExcludeEntries', () => {
-    it('returns an empty list for null', () => {
-        expect(parseExcludeEntries(null)).toEqual([]);
-    });
-
-    it('returns an empty list for broken JSON', () => {
-        expect(parseExcludeEntries('{not json')).toEqual([]);
-    });
-
-    it('returns an empty list when the payload is not an array', () => {
-        expect(parseExcludeEntries('{"col":"item","value":"x"}')).toEqual([]);
-    });
-
-    it('keeps well-formed entries', () => {
-        const raw = JSON.stringify([
-            { col: 'item', value: '生命藥水' },
-            { col: 'storage', value: '銀行' },
-        ]);
-        expect(parseExcludeEntries(raw)).toEqual([
-            { col: 'item', value: '生命藥水' },
-            { col: 'storage', value: '銀行' },
-        ]);
-    });
-
-    it('drops entries with an unknown column or a non-string value', () => {
-        const raw = JSON.stringify([
-            { col: 'bag', value: '背包' },
-            { col: 'item', value: 42 },
-            { col: 'item' },
-            null,
-            { col: 'entity', value: '小白' },
-        ]);
-        expect(parseExcludeEntries(raw)).toEqual([{ col: 'entity', value: '小白' }]);
-    });
-
-    it('drops entries with an empty value', () => {
-        const raw = JSON.stringify([{ col: 'item', value: '' }]);
-        expect(parseExcludeEntries(raw)).toEqual([]);
-    });
-
-    it('de-duplicates identical entries', () => {
-        const raw = JSON.stringify([
-            { col: 'item', value: '生命藥水' },
-            { col: 'item', value: '生命藥水' },
-        ]);
-        expect(parseExcludeEntries(raw)).toHaveLength(1);
-    });
-
-    // The same string may legitimately appear in two different columns.
-    it('keeps the same value under two different columns', () => {
-        const raw = JSON.stringify([
-            { col: 'entity', value: '銀行' },
-            { col: 'storage', value: '銀行' },
-        ]);
-        expect(parseExcludeEntries(raw)).toHaveLength(2);
     });
 });
 

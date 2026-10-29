@@ -74,6 +74,13 @@ export class DamageCollectorManager {
         this._et.dispatchEvent(new CustomEvent("Clear"));
     }
 
+    /** Drops damage before `t` (unix seconds) and rebuilds every collector once. */
+    public evictBefore(t: number): void {
+        this._damages = this._damages.filter(d => d.At >= t);
+        this._attackerIds = new Set(this._damages.map(d => d.Id));
+        this._et.dispatchEvent(new CustomEvent("Rebuild", { detail: this._damages }));
+    }
+
     /**
      * Moves already-collected damage from one attacker to another and rebuilds
      * every collector. Needed because an owned unit's owner is only known once

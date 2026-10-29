@@ -3,6 +3,7 @@ import * as protocols from '@/protocols';
 export class SocketClient {
     private socket?: WebSocket;
     private reconnectDelay = 1000;
+    private closed = false;
     private static readonly MAX_RECONNECT_DELAY = 30000;
 
     public onConnect?: (isConnected: boolean) => void;
@@ -11,7 +12,7 @@ export class SocketClient {
     constructor(private url: string) { }
 
     public connect() {
-        if (this.socket?.readyState === WebSocket.OPEN) {
+        if (this.closed || this.socket?.readyState === WebSocket.OPEN) {
             return;
         }
 
@@ -53,5 +54,12 @@ export class SocketClient {
             );
             setTimeout(() => this.connect(), delay);
         };
+    }
+
+    /** Closes the socket for good; no reconnect follows. */
+    public close() {
+        this.closed = true;
+        this.socket?.close();
+        this.socket = undefined;
     }
 }

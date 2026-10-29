@@ -42,3 +42,13 @@ func TestParseCharacterConditionPacketDisableHasNoParams(t *testing.T) {
 		t.Fatalf("Params = %v, want empty on a disable update", got.Params)
 	}
 }
+
+func TestParseCharacterConditionPacketKeepsExpiryMilliseconds(t *testing.T) {
+	got, err := ParseCharacterConditionPacket(conditionEnablePacket(t, 680, ""))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got.DisableAtMs%1000 != 596 {
+		t.Fatalf("DisableAtMs = %d, want the .596 part kept", got.DisableAtMs)
+	}
+}

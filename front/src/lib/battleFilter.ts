@@ -3,13 +3,14 @@
 
 export type BattlePlayer = {
     EntityId: string; Name: string; Arcana: number; Damage: number; Dps: number;
+    ActiveDps?: number;
 }
 
 export type BattleFight = {
     stage: string; bossRace: number; bossName: string; bossMaxLife?: number;
     fightStartAt: number; fightEndAt: number; durationSec: number;
     cleared?: boolean; partySize: number;
-    ownerDps?: number; ownerArcana?: number;
+    ownerDps?: number; ownerActiveDps?: number; ownerArcana?: number;
     // Owner's highest music-buff (CC 680 戰場的序曲 / 192 活潑板) pct in the
     // fight window; both absent when no music buff was active.
     musicCcId?: number; musicPct?: number;
@@ -20,6 +21,8 @@ export type BattleRecord = {
     file: string; code: string; tier: string;
     player: string; startedAtLocal: string; sizeBytes: number;
     note?: string;
+    // Game client version, e.g. tw100; absent when unknown.
+    client?: string;
     // One fight per stage; absent while still recording.
     fights?: BattleFight[];
 }
@@ -28,10 +31,10 @@ export type BattleRecord = {
 // row for a file with no fights yet.
 export type BattleRow = {
     key: string; file: string; code: string; tier: string; player: string;
-    startedAtLocal: string; sizeBytes: number; note?: string;
+    startedAtLocal: string; sizeBytes: number; note?: string; client?: string;
     sortTime: number; // fight start (unix s), or the file's start time
     bossName?: string; bossRace?: number; durationSec?: number;
-    cleared?: boolean; partySize?: number; ownerDps?: number; ownerArcana?: number;
+    cleared?: boolean; partySize?: number; ownerDps?: number; ownerActiveDps?: number; ownerArcana?: number;
     musicCcId?: number; musicPct?: number;
     fightStartAt?: number;
     players?: BattlePlayer[];
@@ -44,7 +47,7 @@ export function flattenBattles(records: BattleRecord[]): BattleRow[] {
     for (const r of records) {
         const base = {
             file: r.file, code: r.code, tier: r.tier, player: r.player,
-            startedAtLocal: r.startedAtLocal, sizeBytes: r.sizeBytes, note: r.note,
+            startedAtLocal: r.startedAtLocal, sizeBytes: r.sizeBytes, note: r.note, client: r.client,
         };
         if (r.fights?.length) {
             for (const f of r.fights) {
@@ -54,7 +57,7 @@ export function flattenBattles(records: BattleRecord[]): BattleRow[] {
                     sortTime: f.fightStartAt,
                     bossName: f.bossName, bossRace: f.bossRace,
                     durationSec: f.durationSec, cleared: f.cleared,
-                    partySize: f.partySize, ownerDps: f.ownerDps,
+                    partySize: f.partySize, ownerDps: f.ownerDps, ownerActiveDps: f.ownerActiveDps,
                     ownerArcana: f.ownerArcana, fightStartAt: f.fightStartAt,
                     musicCcId: f.musicCcId, musicPct: f.musicPct,
                     players: f.players,
@@ -139,7 +142,23 @@ export function personalStats(rows: BattleRow[]): Map<string, PersonalStat> {
 };
 export type BattleFilter = {
     code?: string; player?: string; from?: string; to?: string;
+    // Inclusive version bounds; a record without a version fails either bound.
+    clientFrom?: string; clientTo?: string;
 };
+
+// clientNumber: numeric part of a version label (tw100 -> 100), NaN if none.
+export function clientNumber(v: string | undefined): number {
+    const m = /\d+/.exec(v ?? '');
+    return m ? parseInt(m[0], 10) : NaN;
+}
+
+function clientInRange(v: string | undefined, from?: string, to?: string): boolean {
+    if (from === undefined && to === undefined) return true;
+    const n = clientNumber(v);
+    if (Number.isNaN(n)) return false;
+    return (from === undefined || n >= clientNumber(from)) &&
+        (to === undefined || n <= clientNumber(to));
+}
 
 // from/to are RFC3339-with-offset strings, same as startedAtLocal, so plain
 // string comparison matches chronological order (within one zone).
@@ -148,7 +167,8 @@ export function filterBattles(list: BattleRecord[], f: BattleFilter): BattleReco
         (f.code === undefined || v.code === f.code) &&
         (f.player === undefined || v.player === f.player) &&
         (f.from === undefined || v.startedAtLocal >= f.from) &&
-        (f.to === undefined || v.startedAtLocal <= f.to));
+        (f.to === undefined || v.startedAtLocal <= f.to) &&
+        clientInRange(v.client, f.clientFrom, f.clientTo));
 }
 
 // filterByBossName: runs after flattenBattles since bossName is a per-fight
@@ -191,6 +211,21 @@ export function humanReadableBytes(n: number): string {
 // Generic so it also works over flattened BattleRow[] (e.g. bossName).
 export function distinctOptions<T>(list: T[], pick: (v: T) => string): string[] {
     return [...new Set(list.map(pick))].sort((a, b) => a.localeCompare(b, 'zh-Hant'));
+}
+
+// clientOptions: distinct numeric versions, sorted by their number.
+export function clientOptions(list: { client?: string }[]): string[] {
+    const set = new Set(list.map(v => v.client).filter((c): c is string => !!c && !Number.isNaN(clientNumber(c))));
+    return [...set].sort((a, b) => (clientNumber(a) - clientNumber(b)) || a.localeCompare(b));
+}
+
+// totalSizeBytes: sum of file sizes over rows; a file with several fight rows counts once.
+export function totalSizeBytes(rows: BattleRow[]): number {
+    const seen = new Map<string, number>();
+    for (const r of rows) seen.set(r.file, r.sizeBytes);
+    let sum = 0;
+    for (const n of seen.values()) sum += n;
+    return sum;
 }
 
 // Display names for dungeon codes; the raw code is still used for filtering
@@ -241,11 +276,11 @@ export function toLocalRFC3339(v: string | null): string | undefined {
 // Battle-records table column keys, in their default display order.
 export type BattleColKey =
     | 'startedAt' | 'bossName' | 'duration' | 'cleared' | 'player'
-    | 'dps' | 'partySize' | 'arcana' | 'music';
+    | 'dps' | 'activeDps' | 'partySize' | 'arcana' | 'music' | 'client';
 
 export const DEFAULT_BATTLE_COLS: BattleColKey[] = [
     'startedAt', 'bossName', 'duration', 'cleared', 'player',
-    'dps', 'partySize', 'arcana', 'music',
+    'dps', 'activeDps', 'partySize', 'arcana', 'music', 'client',
 ];
 
 export type BattleColState = { key: BattleColKey; visible: boolean };

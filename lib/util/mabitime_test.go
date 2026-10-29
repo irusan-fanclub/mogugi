@@ -59,3 +59,28 @@ func TestParseMabiTimeHonoursMabiZone(t *testing.T) {
 		t.Errorf("instant moved %d s for a +1 h zone, want -3600", delta)
 	}
 }
+
+func TestMabiTimeUnixMilliKeepsMilliseconds(t *testing.T) {
+	want := time.Date(2026, 10, 20, 0, 58, 15, 254000000, time.FixedZone("TW", 8*60*60)).UnixMilli()
+	if got := MabiTimeUnixMilli(63928054695254); got != want {
+		t.Fatalf("MabiTimeUnixMilli = %d, want %d", got, want)
+	}
+}
+
+func TestMabiTimeUnixMilliAgreesWithParseMabiTime(t *testing.T) {
+	for _, raw := range []uint64{rawMCAGT, rawSBT, 63928054695999, 63928054695000} {
+		if got, want := MabiTimeUnixMilli(raw)/1000, ParseMabiTime(raw).Unix(); got != want {
+			t.Errorf("raw %d: %d s, want %d s", raw, got, want)
+		}
+	}
+}
+
+func TestMabiTimeUnixMilliNoExpiry(t *testing.T) {
+	if got := MabiTimeUnixMilli(0); got != 0 {
+		t.Errorf("raw 0 = %d, want 0", got)
+	}
+	got := MabiTimeUnixMilli(^uint64(0))
+	if got != NoExpiryMs || got <= 0 {
+		t.Errorf("raw max = %d, want positive sentinel %d", got, NoExpiryMs)
+	}
+}

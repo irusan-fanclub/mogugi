@@ -1,8 +1,8 @@
 // appSettings.test.ts — settings-tab validation and hint text (vitest, pure logic).
 import { describe, it, expect } from 'vitest';
-import { validatePort, isDirty, effectHints, saveHints, overrideNote, loadErrorNote, type AppConfig } from './appSettings';
+import { validatePort, isDirty, effectHints, saveHints, loadErrorNote, dpsDisplayBody, validateMemoryLimit, type AppConfig } from './appSettings';
 
-const base: AppConfig = { savePcapng: true, autoOpenBrowser: true, autoPort: false, port: 8030 };
+const base: AppConfig = { savePcapng: true, autoOpenBrowser: true, autoPort: false, port: 8030, memoryLimitMB: 150 };
 
 describe('validatePort', () => {
     it('accepts the inclusive range', () => {
@@ -51,8 +51,7 @@ describe('saveHints', () => {
 });
 
 describe('notes', () => {
-    it('formats override and load-error notes', () => {
-        expect(overrideNote('--no-pcap')).toBe('本次執行由啟動參數 --no-pcap 覆寫,設定檔的值仍會保存');
+    it('formats the load-error note', () => {
         expect(loadErrorNote('設定檔格式錯誤:x')).toBe('設定檔有問題,已改用預設值:設定檔格式錯誤:x。修好檔案後重啟即可。');
     });
 });
@@ -71,5 +70,28 @@ describe('autoPort', () => {
         expect(saveHints(on, base, true)).toEqual(['自動切換 port:下次啟動生效', '重啟後 port 由自動切換決定(8030 到 8040)']);
         expect(saveHints(on, on, false)).toEqual([]);
         expect(saveHints(base, on, true)).toEqual(['自動切換 port:下次啟動生效', 'port:重啟後請改開 http://127.0.0.1:8030']);
+    });
+});
+
+describe('dpsDisplayBody', () => {
+    it('sends the saved file values with only dpsDisplay changed', () => {
+        expect(dpsDisplayBody({ ...base, dpsDisplay: 'desktop' }, 'web'))
+            .toEqual({ ...base, dpsDisplay: 'web' });
+    });
+    it('ignores dpsDisplay when checking for unsaved edits', () => {
+        expect(isDirty({ ...base, dpsDisplay: 'web' }, { ...base, dpsDisplay: 'desktop' })).toBe(false);
+    });
+});
+
+describe('validateMemoryLimit', () => {
+    it('rejects values outside 50 to 1000', () => {
+        expect(validateMemoryLimit(49)).toBe('須介於 50 到 1000 MB');
+        expect(validateMemoryLimit(1001)).toBe('須介於 50 到 1000 MB');
+        expect(validateMemoryLimit(NaN)).not.toBe('');
+        expect(validateMemoryLimit(100.5)).not.toBe('');
+    });
+    it('accepts the bounds', () => {
+        expect(validateMemoryLimit(50)).toBe('');
+        expect(validateMemoryLimit(1000)).toBe('');
     });
 });

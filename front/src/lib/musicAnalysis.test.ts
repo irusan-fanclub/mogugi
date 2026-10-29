@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import { defaultAuto, defaultManual, renderProcat, gearInputs, type MusicInputs, type WornItem } from './musicAnalysis';
 import { compute, formatDuration } from './musicAnalysis';
-import { loadManual, saveManual, MANUAL_STORAGE_KEY } from './musicAnalysis';
+import { loadManual, saveManual } from './musicAnalysis';
 import type { IndexItem } from './itemIndex';
 
 // The user-supplied sample; renderProcat must reproduce it byte for byte.
@@ -326,10 +326,10 @@ describe('gearInputs: metalware merge rules', () => {
         const items = [
             it_(10, 1, { metalware: [{ id: 1000307, level: 3 }] }),
             it_(11, 1, { metalware: [{ id: 1000307, level: 9 }] }),
-            it_(14, 9, { metalware: [{ id: 1000307, level: 9 }] }),
+            it_(13, 9, { metalware: [{ id: 1000307, level: 9 }] }),
         ];
         expect(gearInputs(items, deps(10)).playEffect).toBe(3);
-        expect(gearInputs(items, deps(11)).playEffect).toBe(18);   // 11 + 14 are both active in set II
+        expect(gearInputs(items, deps(11)).playEffect).toBe(18);   // 11 + 13 are both active in set II
     });
     it('活潑板ＸＸ速度 is the max over the three speed lines; durations and march lines are levels', () => {
         const items = [
@@ -424,17 +424,12 @@ describe('gearInputs: set items', () => {
     });
 });
 
-describe('manual storage', () => {
-    it('round-trips and merges defaults over a partial record', () => {
-        const store: Record<string, string> = {};
-        const ls = { getItem: (k: string) => store[k] ?? null, setItem: (k: string, v: string) => { store[k] = v; } };
-        (globalThis as unknown as { localStorage: typeof ls }).localStorage = ls;
+describe('manual inputs', () => {
+    it('round-trips for the session and merges defaults over a partial record', () => {
         const m = { ...defaultManual(), master: true, titleMusic: 10 };
         saveManual(m);
-        expect(JSON.parse(store[MANUAL_STORAGE_KEY]).master).toBe(true);
-        store[MANUAL_STORAGE_KEY] = JSON.stringify({ titleMusic: 4 });
+        expect(loadManual()).toEqual(m);
+        saveManual({ titleMusic: 4 } as ReturnType<typeof defaultManual>);
         expect(loadManual()).toEqual({ ...defaultManual(), titleMusic: 4 });
-        store[MANUAL_STORAGE_KEY] = '{not json';
-        expect(loadManual()).toEqual(defaultManual());
     });
 });

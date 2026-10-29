@@ -21,6 +21,7 @@ const (
 	OpcodeEntitiesAppear           OpCode = 21300 // 0x5334
 	OpcodeEntitiesDisappear        OpCode = 21301 // 0x5335
 	OpcodeIsNowDead                OpCode = 21500 // 0x53fc
+	OpcodeRemoveDeathScreen        OpCode = 21501 // 0x53fd owner-only revive (closes the death screen)
 	OpcodeItemMove                 OpCode = 23006 // 0x59de owner item move: (Long eid, Int from, Int to, Byte, Byte x, Byte y); pocket 1 = cursor
 	OpcodeItemAdd                  OpCode = 23008 // 0x59e0 one full ItemRecord entering the owner inventory (set switches, new items); Bin80@0 = new pocket
 	OpcodeEquipmentChanged         OpCode = 23014 // 0x59e6
@@ -39,6 +40,7 @@ const (
 	OpcodeChangeStance             OpCode = 28202 // 0x6e2a
 	OpcodeStatUpdatePrivate        OpCode = 30000 // 0x7530
 	OpcodeStatUpdatePublic         OpCode = 30002 // 0x7532
+	OpcodeEntityInvincible         OpCode = 30003 // 0x7533 (long entityId, byte on) from the region: 1 while a boss cannot be damaged, 0 when it can
 	OpcodeEntityRelated            OpCode = 30004 // 0x7534
 	OpcodeCombatTargetUpdate       OpCode = 31002 // 0x791a
 	OpcodeSetCombatTarget          OpCode = 31008 // 0x7920

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { humanReadableNumber, bossTargetLabel, bossTitleLabel, stackLayout, formatThousands } from './util';
+import { humanReadableNumber, bossTitleLabel, stackLayout, formatThousands } from './util';
 
 describe('formatThousands', () => {
     // Unlike humanReadableNumber's K/M/B abbreviation, this keeps full
@@ -97,26 +97,6 @@ describe('scheduleTrigger', () => {
         expect(calls).toEqual(['first']);
         await new Promise(r => setTimeout(r, 60));
         expect(calls).toEqual(['first', 'again']);
-    });
-});
-
-describe('bossTargetLabel', () => {
-    // 2026-08-13 21:58:45 local (UTC+8) = 1786888725
-    const at = new Date('2026-08-13T21:58:45+08:00').getTime() / 1000;
-
-    it('formats "time name (race) -- hp"', () => {
-        expect(bossTargetLabel(at, 7601, '佩塔克 7601', 850368576))
-            .toBe('2026-08-13 21:58:45 佩塔克 (7601) -- 850.37M');
-    });
-
-    it('omits missing time and hp, falls back on unknown race name', () => {
-        expect(bossTargetLabel(undefined, 7601, undefined, undefined))
-            .toBe('unknownRace:7601 (7601)');
-    });
-
-    it('keeps a race name that has no trailing id', () => {
-        expect(bossTargetLabel(undefined, 7615, '雷楠的米勒：悔恨', 3449779200))
-            .toBe('雷楠的米勒：悔恨 (7615) -- 3.45B');
     });
 });
 

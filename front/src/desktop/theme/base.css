@@ -1,0 +1,59 @@
+/* The 5px body edge stays free of interactive elements (Wails resize hot zone). */
+html, body, #app {
+    height: 100%;
+    margin: 0;
+}
+
+html {
+    color-scheme: dark;
+}
+
+body {
+    box-sizing: border-box;
+    padding: 5px;
+    overflow: hidden;
+    background: var(--c-bg);
+    color: var(--c-text);
+    font-family: var(--font-ui);
+    font-size: var(--fs-md);
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+}
+
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
+input, textarea {
+    user-select: text;
+}
+
+[data-drag] {
+    --wails-draggable: drag;
+}
+
+[data-nodrag] {
+    --wails-draggable: no-drag;
+}
+
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--c-bg-deep);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--c-line);
+    border-radius: var(--radius);
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--c-text-dim);
+}
+
+::-webkit-scrollbar-corner {
+    background: var(--c-bg-deep);
+}

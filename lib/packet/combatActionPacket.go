@@ -69,6 +69,8 @@ type CombatActionHitOptions uint32
 
 const (
 	CombatActionHitOptionsCritical = 0x01
+	// The killing blow; the target dies (or a player falls) on this hit.
+	CombatActionHitOptionsFinishingHit = 0x1000
 	CombatActionHitOptionsMultiHit = 0x200_0000
 )
 

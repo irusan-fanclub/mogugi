@@ -1,0 +1,88 @@
+:root {
+    --c-bg: #16181d;
+    --c-bg-deep: #0e1013;
+    --c-surface: #1d2026;
+    --c-surface-2: #252932;
+    --c-line: #2c2f37;
+    --c-text: #d6d9df;
+    --c-text-dim: #7d838e;
+    --c-accent: #e8a33d;
+    --c-number: #f0c060;
+    --c-ok: #5fb878;
+    --c-warn: #e0b040;
+    --c-err: #e5534b;
+    --c-dps: #e8a33d;
+    --c-share: #4f9fd6;
+
+    /* Categorical palette for chart series (players, effect lanes). */
+    --c-series-1: #ff6b6b;
+    --c-series-2: #4ecdc4;
+    --c-series-3: #ffd93d;
+    --c-series-4: #a78bfa;
+    --c-series-5: #f97316;
+    --c-series-6: #22d3ee;
+    --c-series-7: #f472b6;
+    --c-series-8: #34d399;
+    --c-series-9: #fb923c;
+    --c-series-10: #818cf8;
+    --c-series-11: #fbbf24;
+    --c-series-12: #6ee7b7;
+    /* CC lanes: a hue wheel picked by CC id, so a CC keeps its colour wherever its lane sits. */
+    --c-lane-1: #ef4444;
+    --c-lane-2: #f97316;
+    --c-lane-3: #f59e0b;
+    --c-lane-4: #eab308;
+    --c-lane-5: #84cc16;
+    --c-lane-6: #22c55e;
+    --c-lane-7: #10b981;
+    --c-lane-8: #14b8a6;
+    --c-lane-9: #06b6d4;
+    --c-lane-10: #0ea5e9;
+    --c-lane-11: #3b82f6;
+    --c-lane-12: #6366f1;
+    --c-lane-13: #8b5cf6;
+    --c-lane-14: #a855f7;
+    --c-lane-15: #d946ef;
+    --c-lane-16: #ec4899;
+    /* Lane row rules: opaque, so they also show across a coloured bar. */
+    --c-lane-grid: #34383f;
+
+    /* Boss HP ruler above the DPS plot: deliberately muted warm greys. */
+    --c-ruler-band: #23252a;
+    --c-ruler-tick: #5f5759;
+    --c-ruler-tick-major: #8c7f81;
+    --c-ruler-text: #7b7375;
+    --c-ruler-text-major: #a59a9c;
+
+    --space-1: 2px;
+    --space-2: 4px;
+    --space-3: 8px;
+    --space-4: 12px;
+    --space-5: 16px;
+
+    --radius: 3px;
+
+    --font-ui: "Microsoft JhengHei", "Segoe UI", sans-serif;
+    --font-num: "Consolas", monospace;
+
+    --fs-xs: 11px;
+    --fs-sm: 12px;
+    --fs-md: 13px;
+    --fs-lg: 15px;
+
+    --row-h: 26px;
+}
+
+/* Item tooltip: game-style rarity panel colours. */
+:root {
+    --c-tip-bg: rgba(12, 12, 14, 0.96);
+    --c-tip-border: #555;
+    --c-tip-text: #dddddd;
+    --c-tip-title: #ffffff;
+    --c-tip-section-bg: #7a4a00;
+    --c-tip-section-text: #ffd27f;
+    --c-tip-blue: #8fd0ff;
+    --c-tip-roll: #ffe08a;
+    --c-tip-desc: #aaaaaa;
+    --c-tip-swatch-border: #666;
+}

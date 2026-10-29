@@ -5,8 +5,15 @@ import * as bounds from 'binary-search-bounds';
 import * as protocols from '@/protocols';
 import { DamageCollectorManager } from '@/actionCollector';
 import { conditionStateChanged, significantValuesChanged } from '@/lib/conditionChange';
+import { isCast, type CastRecord } from '@/lib/castDetect';
+import type { OwnerChange } from '@/lib/bardsongTrack';
+import { BOSS_INVINCIBLE_CC_ID, type DeathToggle } from '@/lib/activeDps';
+import { BOSS_PREV_FORM, FORM_CHANGE_WINDOW_SEC } from '@/lib/bossRaces';
 
 // TODO: take cc, apply cc 구분하기
+
+// The Go side sends a far-future sentinel (~9.2e15 s) for conditions that never expire.
+const NO_EXPIRY_SEC = 1e12;
 
 export class ActorManager {
     constructor(private _damageCollector: DamageCollectorManager) {
@@ -15,6 +22,10 @@ export class ActorManager {
     public entityMap: Record<string, EntityActor> = shallowReactive({});
     public groupMap: Record<string, GroupActor> = shallowReactive({});
     public damages: protocols.eventDamage[] = [];
+    // Each raw hit under its attacker and its target, in arrival order, so a
+    // new entity replays only its own hits. Raw events are never re-owned
+    // (reattribute edits the collector's copies), so the keys stay valid.
+    private damagesByEntity = new Map<string, protocols.eventDamage[]>();
     // shallowReactive so a push() here is what invalidates computeds that
     // read it — there is no per-entity owner to route this through.
     public bardsongEvents: protocols.eventBardsong[] = shallowReactive([]);
@@ -23,8 +34,23 @@ export class ActorManager {
     // lists. Identity rather than battle data, so clear() keeps it.
     private _owner = shallowReactive({ id: '' });
     public get ownerEntityId() { return this._owner.id; }
+    // Every owner change sorted by At, for the bard-song lane: a session can
+    // switch characters, and older fights must keep the owner they had.
+    public ownerHistory: OwnerChange[] = shallowReactive([]);
 
     public static pcRaceSet = new Set<number>([8001, 8002, 9001, 9002, 10001, 10002]);
+
+    // Some hit carried the killing-blow flag, so this log has it; older logs need the finisher fallback.
+    public hasFinishFlags = false;
+
+    /** A boss's next form appearing counts its just-seen earlier form as killed. */
+    private endPreviousForm(raceId: number, at: number) {
+        const prev = BOSS_PREV_FORM[raceId];
+        if (prev === undefined) return;
+        for (const a of Object.values(this.entityMap)) {
+            if (a.raceId === prev && a.killedAt === null && at - a.lastEventAt <= FORM_CHANGE_WINDOW_SEC) a.onKilled(at);
+        }
+    }
 
     public onEvent(event: protocols.eventBase) {
         if (event.EventId === protocols.eventIdEntityAppear) {
@@ -32,6 +58,7 @@ export class ActorManager {
         }
 
         const entity = this.entityMap[event.Id];
+        if (entity) entity.touch(event.At);
 
         switch (event.EventId) {
             case protocols.eventIdEntityAppear: {
@@ -47,6 +74,7 @@ export class ActorManager {
                     const petId = ActorManager.isSummonRace(entity.raceId) ? '' : entity.id;
                     this._damageCollector.reattribute(entity.id, entity.ownerId, petId);
                 }
+                this.endPreviousForm(entity.raceId, event.At);
                 break;
             }
 
@@ -66,14 +94,21 @@ export class ActorManager {
                     const attacker = entity ?? this.addPlaceholderEntity(event_.Id, event_.At);
                     const target = this.entityMap[event_.TargetId]
                         ?? this.addPlaceholderEntity(event_.TargetId, event_.At);
+                    target.touch(event_.At);
 
                     this.damages.push(event_);
+                    this.indexDamage(event_.Id, event_);
+                    if (event_.TargetId !== event_.Id) this.indexDamage(event_.TargetId, event_);
 
                     attacker.onApplyDamage(event_);
                     attacker.group.onApplyDamage(event_);
 
                     target.onTakeDamage(event_);
                     target.group.onTakeDamage(event_);
+                    if (event_.IsFinish) {
+                        target.onKilled(event_.At);
+                        this.hasFinishFlags = true;
+                    }
                 }
                 break;
 
@@ -82,6 +117,26 @@ export class ActorManager {
                 // late (or never comes on a mid-fight attach).
                 (entity ?? this.addPlaceholderEntity(event.Id, event.At))
                     .onMaxLife(event as protocols.eventMaxLife);
+                break;
+
+            case protocols.eventIdEntityLife:
+                (entity ?? this.addPlaceholderEntity(event.Id, event.At))
+                    .onLife(event as protocols.eventEntityLife);
+                break;
+
+            case protocols.eventIdEntityDown:
+                (entity ?? this.addPlaceholderEntity(event.Id, event.At))
+                    .onDown(event);
+                break;
+
+            case protocols.eventIdEntityDeath:
+                (entity ?? this.addPlaceholderEntity(event.Id, event.At))
+                    .onDeath(event as protocols.eventEntityDeath);
+                break;
+
+            case protocols.eventIdEntityInvincible:
+                (entity ?? this.addPlaceholderEntity(event.Id, event.At))
+                    .onInvincible(event as protocols.eventEntityInvincible);
                 break;
 
             case protocols.eventIdCharacterConditionEnable:
@@ -146,14 +201,36 @@ export class ActorManager {
                 this.bardsongEvents.push(event as protocols.eventBardsong);
                 break;
 
+            case protocols.eventIdClockShift:
+                for (const a of Object.values(this.entityMap)) a.onClockShift(event as protocols.eventClockShift);
+                break;
+
             case protocols.eventIdBardsongPulse:
                 this.bardsongPulses.push(event as protocols.eventBardsongPulse);
                 break;
 
             case protocols.eventIdOwnerCharacter:
                 this._owner.id = event.Id;
+                this.addOwnerChange({ At: event.At, Id: event.Id });
                 break;
         }
+    }
+
+    private indexDamage(id: string, d: protocols.eventDamage) {
+        const list = this.damagesByEntity.get(id);
+        if (list) list.push(d);
+        else this.damagesByEntity.set(id, [d]);
+    }
+
+    // A repeat of the owner already in force at that time adds nothing; one
+    // that precedes the same owner's later entry moves that entry earlier.
+    private addOwnerChange(c: OwnerChange) {
+        const h = this.ownerHistory;
+        let i = h.findIndex(o => o.At > c.At);
+        if (i < 0) i = h.length;
+        if (i > 0 && h[i - 1].Id === c.Id) return;
+        if (h[i]?.Id === c.Id) h[i] = c;
+        else h.splice(i, 0, c);
     }
 
     /**
@@ -180,6 +257,7 @@ export class ActorManager {
             OwnerId: "",
         });
 
+        this.entityMap[id].touch(at);
         return this.entityMap[id];
     }
 
@@ -203,6 +281,13 @@ export class ActorManager {
         return Number.isFinite(v) && Math.floor(v / 0x10000000000) === 0x1000;
     }
 
+    /** Player (0x1000) or pet/partner/summon (0x1001) id: our side, never a monster. */
+    public static isAllyId(id: string): boolean {
+        const v = Number(id);
+        const block = Math.floor(v / 0x10000000000);
+        return Number.isFinite(v) && (block === 0x1000 || block === 0x1001);
+    }
+
     public onEntityAppear(event: protocols.eventEntityAppear) {
         const { Id, RaceId, Name } = event;
 
@@ -222,7 +307,7 @@ export class ActorManager {
                 // (e.g. when dilmeter started after the entity appeared).
                 // Dummy entities already received damages in real-time,
                 // so replaying would duplicate them.
-                for (const v of this.damages) {
+                for (const v of this.damagesByEntity.get(Id) ?? []) {
                     if (v.Id == Id) {
                         entity.onApplyDamage(v);
                         entity.group.onApplyDamage(v);
@@ -230,6 +315,7 @@ export class ActorManager {
                     else if (v.TargetId == Id) {
                         entity.onTakeDamage(v);
                         entity.group.onTakeDamage(v);
+                        if (v.IsFinish) entity.onKilled(v.At);
                     }
                 }
             }
@@ -249,9 +335,49 @@ export class ActorManager {
         }
     }
 
+    /**
+     * Drops everything older than `t` (unix seconds) so what remains equals a
+     * fresh feed of the events at or after `t`. State histories keep their last
+     * entry before `t` as the starting state, clamped to `t` so no span reads
+     * back into evicted time. `present` lists the entity ids the backend still
+     * holds; absent, quiet entities are deleted only when not listed.
+     */
+    public evictBefore(t: number, present?: Iterable<string>): void {
+        const keep = <T extends { At: number }>(a: T[]) => dropBefore(a, t);
+        keep(this.damages);
+        for (const [k, list] of this.damagesByEntity) {
+            if (keep(list).length === 0) this.damagesByEntity.delete(k);
+        }
+        keep(this.bardsongEvents);
+        keep(this.bardsongPulses);
+        seedBefore(this.ownerHistory, t);
+
+        const ownerIds = new Set([this._owner.id, ...this.ownerHistory.map(o => o.Id)]);
+        // Presence is decided by the backend entityCache; without a list (old
+        // replays) nothing is dropped, only trimmed.
+        const live = present ? new Set(present) : undefined;
+        for (const k of Object.keys(this.entityMap)) {
+            const e = this.entityMap[k];
+            if (live && e.lastEventAt < t && !ownerIds.has(k) && !live.has(k)) {
+                delete e.group.entityMap[k];
+                delete this.entityMap[k];
+            } else {
+                e.evictBefore(t);
+            }
+        }
+        for (const k of Object.keys(this.groupMap)) {
+            const g = this.groupMap[k];
+            if (Object.keys(g.entityMap).length === 0) delete this.groupMap[k];
+            else g.evictBefore(t);
+        }
+        this.forceUpdateAll();
+    }
+
     public clear() {
         // object instance를 새로 만들면 귀찮아짐
+        this.hasFinishFlags = false;
         this.damages.length = 0;
+        this.damagesByEntity.clear();
         this.bardsongEvents.length = 0;
         this.bardsongPulses.length = 0;
 
@@ -373,6 +499,10 @@ export abstract class BaseActor implements IEventActor, IUpdateCallback {
         // nothing
     }
 
+    public onClockShift(_event: protocols.eventClockShift): void {
+        // nothing
+    }
+
     public onFinish(_event: protocols.eventFinish): void {
         // nothing
     }
@@ -396,6 +526,14 @@ export abstract class BaseActor implements IEventActor, IUpdateCallback {
         this._body.Lower = event.Lower;
 
         this.vueUpdateRequest();
+    }
+
+    /** Drops damage before `t` and recomputes the totals. */
+    public evictBefore(t: number): void {
+        dropBefore(this._takeDamages, t);
+        dropBefore(this._applyDamages, t);
+        this._totalTakeDamage = this._takeDamages.reduce((n, d) => n + d.Damage, 0);
+        this._totalApplyDamage = this._applyDamages.reduce((n, d) => n + d.Damage, 0);
     }
 
     public clear() {
@@ -440,6 +578,12 @@ export class EntityActor extends BaseActor {
         return this._ownerId;
     }
 
+    // Latest event touching this entity; evictBefore removes the long-quiet ones.
+    public lastEventAt = 0;
+    public touch(at: number) {
+        if (at > this.lastEventAt) this.lastEventAt = at;
+    }
+
     protected _appearAt?: number;
     public get appearAt() {
         this.vueUpdateTrack?.();
@@ -455,6 +599,79 @@ export class EntityActor extends BaseActor {
     public onMaxLife(event: protocols.eventMaxLife): void {
         this.vueUpdateRequest();
         this._maxLife = event.MaxLife;
+    }
+
+    protected _lifeHistory: { At: number; Life: number }[] = [];
+    public get lifeHistory() {
+        this.vueUpdateTrack?.();
+        return this._lifeHistory;
+    }
+
+    /** Insert in At order (stable for equal At); snapshot and replay may interleave. */
+    public onLife(event: protocols.eventEntityLife): void {
+        this.vueUpdateRequest();
+        const h = this._lifeHistory;
+        let i = h.length;
+        while (i > 0 && h[i - 1].At > event.At) i--;
+        h.splice(i, 0, { At: event.At, Life: event.Life });
+    }
+
+    protected _downAt: number | null = null;
+    /** Time of the one-shot boss kill (EntityDown); records carry it instead of life samples. */
+    public get downAt(): number | null {
+        this.vueUpdateTrack?.();
+        return this._downAt;
+    }
+
+    public onDown(event: protocols.eventBase): void {
+        this.vueUpdateRequest();
+        if (this._downAt === null || event.At < this._downAt) this._downAt = event.At;
+    }
+
+    protected _killedAt: number | null = null;
+    /** Time of the latest killing blow taken (hit option 0x1000). */
+    public get killedAt(): number | null {
+        this.vueUpdateTrack?.();
+        return this._killedAt;
+    }
+
+    public onKilled(at: number): void {
+        this.vueUpdateRequest();
+        this._killedAt = at;
+    }
+
+    protected _deathHistory: DeathToggle[] = [];
+    public get deathHistory() {
+        this.vueUpdateTrack?.();
+        return this._deathHistory;
+    }
+
+    /** Insert in At order (stable for equal At), like onLife. */
+    public onDeath(event: protocols.eventEntityDeath): void {
+        this.vueUpdateRequest();
+        const h = this._deathHistory;
+        let i = h.length;
+        while (i > 0 && h[i - 1].At > event.At) i--;
+        h.splice(i, 0, { At: event.At, Dead: event.Dead });
+    }
+
+    /** Older logs carry the 0x7533 flag as its own event; it is condition 91000 now. */
+    public onInvincible(event: protocols.eventEntityInvincible): void {
+        const base = { At: event.At, Id: event.Id, CCId: BOSS_INVINCIBLE_CC_ID };
+        if (event.On) this.onCharacterConditionEnable({ ...base, EventId: 4, DisableAt: 0, AttackerId: '', Params: {} });
+        else this.onCharacterConditionDisable({ ...base, EventId: 5 });
+    }
+
+    /** Life at `at` (last sample with At <= at); null = latest. */
+    public lifeAt(at: number | null): number | undefined {
+        const h = this.lifeHistory;
+        if (at === null) return h.length ? h[h.length - 1].Life : undefined;
+        let lo = 0, hi = h.length;
+        while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (h[mid].At <= at) lo = mid + 1; else hi = mid;
+        }
+        return lo ? h[lo - 1].Life : undefined;
     }
 
     public get group() {
@@ -474,10 +691,25 @@ export class EntityActor extends BaseActor {
         return this._conditionHistory;
     }
 
+    // Real condition applications, in arrival order. Follows conditionHistory's
+    // lifetime, so clear() does not reset it.
+    protected _casts: CastRecord[] = [];
+    public get casts() {
+        this.vueUpdateTrack?.();
+        return this._casts;
+    }
+
     private _finisherId = '';
     public get finisherId() {
         this.vueUpdateTrack?.();
         return this._finisherId;
+    }
+
+    // A finisher was set at least once; the kill fallback for logs without the killing-blow flag.
+    private _everFinished = false;
+    public get everFinished() {
+        this.vueUpdateTrack?.();
+        return this._everFinished;
     }
 
     // Skills this character has used, in order — the only signal arcana
@@ -511,6 +743,12 @@ export class EntityActor extends BaseActor {
         this._body.Weight = event.Weight;
         this._body.Upper = event.Upper;
         this._body.Lower = event.Lower;
+        this._body.SkinColor = event.SkinColor;
+        this._body.EyeType = event.EyeType;
+        this._body.EyeColor = event.EyeColor;
+        this._body.LeftEyeColor = event.LeftEyeColor;
+        this._body.RightEyeColor = event.RightEyeColor;
+        this._body.MouthType = event.MouthType;
 
         if (ActorManager.pcRaceSet.has(event.RaceId)) {
             // pc일 경우 damage 초기와 안함
@@ -588,8 +826,16 @@ export class EntityActor extends BaseActor {
             DisableAt: event.DisableAt,
             AttackerId: event.AttackerId,
             Params: event.Params ?? {},
+            ...(event.ClockGen ? { ClockGen: event.ClockGen } : {}),
+            ...(event.LocalClock ? { LocalClock: true } : {}),
         };
         this._conditionMap[event.CCId] = now;
+
+        // Must precede the early return below: unchanged re-enables are
+        // exactly the ones that are not casts, but a new DisableAt is.
+        if (isCast(wasOn, now)) {
+            this._casts.push({ CCId: event.CCId, At: event.At, AttackerId: event.AttackerId ?? '' });
+        }
 
         // Re-enabling a CC that is already on, at the same magnitudes, cannot
         // change the state — and that is nearly all of these events: one
@@ -632,10 +878,26 @@ export class EntityActor extends BaseActor {
         }
     }
 
+    public override onClockShift(event: protocols.eventClockShift): void {
+        this.vueUpdateRequest();
+
+        // Copies, not edits: conditionHistory shares the objects and records what was true then.
+        for (const [id, c] of Object.entries(this._conditionMap)) {
+            if (c.DisableAt === 0 || c.DisableAt >= NO_EXPIRY_SEC || c.LocalClock) continue;
+            if ((c.ClockGen ?? 0) >= event.Gen) continue;
+            const moved = c.DisableAt + event.ShiftSec;
+            if (c.DisableAt <= event.At && moved <= event.At) continue;
+            this._conditionMap[Number(id)] = {
+                ...c, DisableAt: moved, ClockGen: event.Gen, Shifted: (c.Shifted ?? 0) + event.ShiftSec,
+            };
+        }
+    }
+
     public override onFinish(event: protocols.eventFinish): void {
         this.vueUpdateRequest();
 
         this._finisherId = event.AttackerId;
+        if (event.AttackerId) this._everFinished = true;
     }
 
     public override onSkillUse(event: protocols.eventSkillUse): void {
@@ -665,6 +927,15 @@ export class EntityActor extends BaseActor {
         }
 
         return this._conditionHistory[idx].List;
+    }
+
+    public override evictBefore(t: number): void {
+        super.evictBefore(t);
+        dropBefore(this._casts, t);
+        dropBefore(this._skillUses, t);
+        seedBefore(this._lifeHistory, t);
+        seedBefore(this._deathHistory, t);
+        seedBefore(this._conditionHistory, t);
     }
 
     public override clear() {
@@ -739,6 +1010,22 @@ export class GroupActor extends BaseActor {
     }
 }
 
+/** Removes entries older than `t` in place and returns the array. */
+function dropBefore<T extends { At: number }>(a: T[], t: number): T[] {
+    let n = 0;
+    for (const v of a) if (v.At >= t) a[n++] = v;
+    a.length = n;
+    return a;
+}
+
+/** Keeps entries from `t` on plus the latest earlier one, re-stamped to `t` as the starting state. */
+function seedBefore<T extends { At: number }>(a: T[], t: number): void {
+    let seed: T | undefined;
+    for (const v of a) if (v.At < t) seed = v;
+    dropBefore(a, t);
+    if (seed && !(a.length && a[0].At === t)) a.unshift({ ...seed, At: t });
+}
+
 export type EntityDamage = {
     Id: string;
     At: number;
@@ -759,6 +1046,10 @@ export type EntityCondition = {
     DisableAt: number;
     AttackerId: string;
     Params: Record<string, string>;
+    ClockGen?: number;
+    LocalClock?: boolean;
+    /** Total clock shift applied to DisableAt; DisableAt - Shifted is the expiry as first received. */
+    Shifted?: number;
 }
 
 export type EntityConditionState = {
@@ -782,4 +1073,11 @@ export type EntityBody = {
     Weight: number;
     Upper: number;
     Lower: number;
+    // Look fields from the appear event; undefined when not published.
+    SkinColor?: number;
+    EyeType?: number;
+    EyeColor?: number;
+    LeftEyeColor?: number;
+    RightEyeColor?: number;
+    MouthType?: number;
 }

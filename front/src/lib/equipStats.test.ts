@@ -23,7 +23,7 @@ function panel(partial: Partial<ownerPanel>): ownerPanel {
 describe('EQUIP_SLOTS', () => {
     it('lists the 20 worn pockets once each', () => {
         const pockets = EQUIP_SLOTS.map(s => s.pocket).sort((a, b) => a - b);
-        expect(pockets).toEqual([5, 6, 7, 8, 9, 10, 11, 13, 14, 16, 17, 32, 33, 34, 35, 51, 54, 62, 63, 64]);
+        expect(pockets).toEqual([5, 6, 7, 8, 9, 10, 11, 12, 13, 16, 17, 32, 33, 34, 35, 51, 54, 62, 63, 64]);
     });
 });
 
@@ -49,8 +49,8 @@ describe('contributionsOf', () => {
 
     it('a back-set weapon does not contribute defense/protection either', () => {
         const shield = item({ id: 40100, defense: 10, protection: 5 });
-        expect(contributionsOf(shield, 13).stats).toEqual({ defense: 10, protection: 5 });
-        expect(contributionsOf(shield, 14).stats).toEqual({});
+        expect(contributionsOf(shield, 12).stats).toEqual({ defense: 10, protection: 5 });
+        expect(contributionsOf(shield, 13).stats).toEqual({});
     });
 
     it('conditional effect lines are counted, not added; unknown codes go to unmapped', () => {

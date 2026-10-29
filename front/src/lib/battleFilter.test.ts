@@ -3,7 +3,7 @@ import {
     toLocalRFC3339, filterBattles, humanReadableBytes, distinctOptions,
     formatStartedAt, dungeonDisplayName, sortBattles, personalStats,
     flattenBattles, filterByBossName, filterByCleared, orderPartyArcana, splitOwnerArcana,
-    mergeBattleCols, moveBattleCol, DEFAULT_BATTLE_COLS,
+    mergeBattleCols, moveBattleCol, DEFAULT_BATTLE_COLS, clientOptions, totalSizeBytes,
     type BattleRecord, type BattleRow, type BattlePlayer, type BattleColState,
 } from './battleFilter';
 
@@ -381,5 +381,66 @@ describe('moveBattleCol', () => {
     it('clamps an out-of-range from index to a no-op copy', () => {
         expect(moveBattleCol(cols, -1, 2)).toEqual(cols);
         expect(moveBattleCol(cols, 10, 2)).toEqual(cols);
+    });
+});
+
+describe('active DPS column', () => {
+    it('appends activeDps as visible to a stored list that predates it', () => {
+        const stored = DEFAULT_BATTLE_COLS.filter(k => k !== 'activeDps').map(key => ({ key, visible: false }));
+        const merged = mergeBattleCols(stored);
+        expect(merged[merged.length - 1]).toEqual({ key: 'activeDps', visible: true });
+    });
+
+    it('lists activeDps right after dps by default', () => {
+        const i = DEFAULT_BATTLE_COLS.indexOf('dps');
+        expect(DEFAULT_BATTLE_COLS[i + 1]).toBe('activeDps');
+    });
+
+    it('carries ownerActiveDps from the fight to the row', () => {
+        const rows = flattenBattles([{
+            file: 'a', code: 'x', tier: '', player: 'p', startedAtLocal: '2026-08-19T20:58:27+08:00', sizeBytes: 1,
+            fights: [{ stage: 's', bossRace: 1, bossName: 'b', fightStartAt: 1, fightEndAt: 2, durationSec: 1, partySize: 1, ownerDps: 5, ownerActiveDps: 9, players: [] }],
+        }] as BattleRecord[]);
+        expect(rows[0].ownerActiveDps).toBe(9);
+    });
+});
+
+describe('client version helpers', () => {
+    const mk = (file: string, client?: string, sizeBytes = 10): BattleRecord => ({
+        file, code: 'c', tier: '', player: 'p', startedAtLocal: '2026-10-21T10:00:00+08:00', sizeBytes, client,
+    });
+    const recs = [mk('a', 'tw99'), mk('b', 'tw100'), mk('c', 'tw101'), mk('d')];
+
+    it('range bounds are inclusive and compared numerically', () => {
+        const files = (f: { clientFrom?: string; clientTo?: string }) => filterBattles(recs, f).map(r => r.file);
+        expect(files({ clientFrom: 'tw100' })).toEqual(['b', 'c']);
+        expect(files({ clientTo: 'tw100' })).toEqual(['a', 'b']);
+        expect(files({ clientFrom: 'tw99', clientTo: 'tw100' })).toEqual(['a', 'b']);
+    });
+
+    it('excludes records without a version only when a bound is set', () => {
+        expect(filterBattles(recs, {}).map(r => r.file)).toContain('d');
+        expect(filterBattles(recs, { clientTo: 'tw999' }).map(r => r.file)).not.toContain('d');
+    });
+
+    it('flattenBattles carries client onto rows', () => {
+        expect(flattenBattles([mk('a', 'tw99')])[0].client).toBe('tw99');
+    });
+
+    it('clientOptions are distinct and sorted by number', () => {
+        expect(clientOptions([...recs, mk('e', 'tw99'), mk('f', 'beta')])).toEqual(['tw99', 'tw100', 'tw101']);
+    });
+
+    it('totalSizeBytes sums each file once', () => {
+        const rows = flattenBattles([mk('a', 'tw99', 5), mk('b', 'tw99', 7)]);
+        expect(totalSizeBytes(rows)).toBe(12);
+        expect(totalSizeBytes([...rows, ...rows])).toBe(12);
+    });
+
+    it('mergeBattleCols appends the client column', () => {
+        const out = mergeBattleCols([{ key: 'player', visible: false }, { key: 'startedAt', visible: true }]);
+        expect(out.slice(0, 2)).toEqual([{ key: 'player', visible: false }, { key: 'startedAt', visible: true }]);
+        expect(out.find(c => c.key === 'client')).toEqual({ key: 'client', visible: true });
+        expect(out[out.length - 1].key).toBe('client');
     });
 });

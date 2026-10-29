@@ -33,7 +33,9 @@ func NewMessage(r io.Reader) (Message, error) {
 		return nil, err
 	}
 
-	l := make(Message, 0, elemCount)
+	// elemCount is untrusted (a false-positive header can yield ~2^60);
+	// cap the preallocation and let append grow.
+	l := make(Message, 0, min(elemCount, 256))
 
 	b := make([]byte, 1)
 	// unused field

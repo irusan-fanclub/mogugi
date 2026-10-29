@@ -20,11 +20,10 @@ const licenseFileName = "license.dat"
 // pathOverride, when non-empty, replaces the executable-directory resolution; used in tests.
 var pathOverride string
 
-// licenseDirEnv relocates license.dat. dev-run.ps1 sets it to the repo root:
-// `go run` builds into a fresh temp directory every time, so without it a dev
-// run never sees the activation the previous one wrote. It only moves the file
-// — signature, MAC, machine id and expiry are still verified as usual.
-const licenseDirEnv = "MOGUGI_LICENSE_DIR"
+// dataDirEnv relocates the whole data dir (license.dat included); keep the
+// rule in sync with app.DataDir. dev-run.ps1 points it at the repo root.
+// It only moves the file; signature, MAC and expiry are still verified.
+const dataDirEnv = "MOGUGI_DATA_DIR"
 
 type licenseData struct {
 	Code        string `json:"code"`
@@ -33,11 +32,14 @@ type licenseData struct {
 	MAC         string `json:"mac"`
 }
 
+// FilePath is where license.dat lives (data dir resolution).
+func FilePath() string { return licenseFilePath() }
+
 func licenseFilePath() string {
 	if pathOverride != "" {
 		return filepath.Join(pathOverride, licenseFileName)
 	}
-	if dir := strings.TrimSpace(os.Getenv(licenseDirEnv)); dir != "" {
+	if dir := strings.TrimSpace(os.Getenv(dataDirEnv)); dir != "" {
 		return filepath.Join(dir, licenseFileName)
 	}
 	if exe, err := os.Executable(); err == nil {

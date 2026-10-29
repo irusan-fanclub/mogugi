@@ -56,6 +56,7 @@ type ClientConnection struct {
 	ServerIP     string
 	ServerPort   string
 	LocalPort    string
+	PID          uint32
 }
 
 // nicCache memoizes interface mappings — they are queried by every
@@ -145,6 +146,7 @@ func PollClientConnections() ([]ClientConnection, error) {
 		remoteIP   string
 		remotePort uint32
 		localPort  uint32
+		pid        uint32
 	}
 	var raw []rawConn
 	for _, row := range rows {
@@ -160,6 +162,7 @@ func PollClientConnections() ([]ClientConnection, error) {
 			remoteIP:   ipv4FromDWORD(row.RemoteAddr).String(),
 			remotePort: row.RemotePort,
 			localPort:  row.LocalPort,
+			pid:        row.OwningPID,
 		})
 	}
 	if len(raw) == 0 {
@@ -186,6 +189,7 @@ func PollClientConnections() ([]ClientConnection, error) {
 			ServerIP:     r.remoteIP,
 			ServerPort:   fmt.Sprintf("%d", portFromDWORD(r.remotePort)),
 			LocalPort:    fmt.Sprintf("%d", portFromDWORD(r.localPort)),
+			PID:          r.pid,
 		})
 	}
 
@@ -236,6 +240,9 @@ var current ClientConnection
 func ApplyConnectionFilter(c ClientConnection) {
 	current = c
 }
+
+// CurrentPID is the Client.exe process the capture follows (0 if none).
+func CurrentPID() uint32 { return current.PID }
 
 // CurrentFilter returns the probe filter for the tracked connection: that
 // one server host, any port. Used by FindNic to test a candidate NIC.
@@ -361,6 +368,15 @@ func testNicForPackets(nicName string, filter string) bool {
 }
 
 func processName(pid uint32) (string, error) {
+	full, err := ProcessImagePath(pid)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Base(full), nil
+}
+
+// ProcessImagePath returns the full executable path of a process.
+func ProcessImagePath(pid uint32) (string, error) {
 	h, err := windows.OpenProcess(processQueryLimitedInf, false, pid)
 	if err != nil {
 		return "", err
@@ -372,9 +388,7 @@ func processName(pid uint32) (string, error) {
 	if err := windows.QueryFullProcessImageName(h, 0, &buf[0], &size); err != nil {
 		return "", err
 	}
-
-	full := windows.UTF16ToString(buf[:size])
-	return filepath.Base(full), nil
+	return windows.UTF16ToString(buf[:size]), nil
 }
 
 func buildInterfaceNicMap() map[string]string {

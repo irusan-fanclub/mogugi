@@ -47,6 +47,12 @@ export function formatDuration(seconds: number): string {
     return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
 }
 
+/** m:ss without a leading zero on the minutes, as the battle tab writes every time. */
+export function formatMinSec(seconds: number): string {
+    const s = Math.max(0, Math.floor(seconds));
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
 export function getMabiNameColor(name: string): string {
     if (!name?.length) {
         return '#808080';
@@ -79,6 +85,8 @@ export function getMabiNameColor(name: string): string {
 const CC_ICON_OVERRIDE: Record<number, { kind: 'skill' | 'cc', id: number }> = {
     323: { kind: 'skill', id: 20018 }, // 傷害詛咒 2 → 憤怒衝擊
     494: { kind: 'cc', id: 23 },       // 無敵 → CC #23
+    277: { kind: 'cc', id: 23 },       // Boss 無敵 → CC #23
+    91000: { kind: 'cc', id: 23 },
 };
 
 export function ccIconUrl(_region: string, ccId: number): string {
@@ -95,6 +103,8 @@ const CC_NAME_OVERRIDE: Record<number, string> = {
     10001: '物防保減少瑪奇魔法陣',
     10002: '魔防保減少瑪奇魔法陣',
     900206: '戰吼',
+    277: 'Boss 無敵',
+    91000: 'BOSS無敵',
 };
 
 export function ccName(condNameMap: Record<number, string>, ccId: number): string {
@@ -177,19 +187,6 @@ export function prettyEntityName(entity: BaseActor | undefined, raceNameMap: Ref
     // for pet
     return entity.name;
 }
-// bossTargetLabel: target-select entry for a boss —
-// "yyyy-mm-dd hh:mm:ss name (raceId) -- maxHp". Missing time / hp segments
-// are omitted (old records predate the max-life event). raceNameMap values
-// carry a trailing " <id>", which would duplicate the (raceId) part.
-export function bossTargetLabel(appearAt: number | undefined, raceId: number,
-    raceName: string | undefined, maxLife: number | undefined): string {
-    const parts: string[] = [];
-    if (appearAt !== undefined) parts.push(formatUnixLocal(appearAt));
-    parts.push(`${stripRaceSuffix(raceId, raceName)} (${raceId})`);
-    if (maxLife !== undefined) parts.push(`-- ${humanReadableNumber(maxLife)}`);
-    return parts.join(' ');
-}
-
 // bossTitleLabel: screenshot title-bar variant — "time name - hp", no race
 // id. Missing segments are omitted.
 export function bossTitleLabel(appearAt: number | undefined, raceId: number,
@@ -203,7 +200,7 @@ export function bossTitleLabel(appearAt: number | undefined, raceId: number,
 
 // raceNameMap values carry a trailing " <id>"; both label forms place the
 // id (or nothing) themselves.
-function stripRaceSuffix(raceId: number, raceName: string | undefined): string {
+export function stripRaceSuffix(raceId: number, raceName: string | undefined): string {
     const name = raceName || `unknownRace:${raceId}`;
     return name.endsWith(` ${raceId}`) ? name.slice(0, -`${raceId}`.length - 1) : name;
 }
@@ -230,7 +227,7 @@ export function stackLayout(sizes: { w: number, h: number }[], gap = 0): { w: nu
     return { w, h: y, ys };
 }
 
-// resolveThemeBackground: Vuetify paints the page background on <body>, so
+// resolveThemeBackground: the page background is painted on <body>, so
 // an element-level screenshot needs the computed color re-applied or the
 // PNG comes out transparent-cornered.
 export function resolveThemeBackground(): string {

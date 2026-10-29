@@ -14,7 +14,7 @@ export const ENCHANT_MUSIC_EFFECT = 113;
 export const ENCHANT_MUSIC_DURATION = 114;
 
 export const ECHO_POCKETS = [62, 63, 64];
-export const WEAPON_SETS: Record<number, number[]> = { 10: [10, 13], 11: [11, 14] };
+export const WEAPON_SETS: Record<number, number[]> = { 10: [10, 12], 11: [11, 13] };
 
 // Rank index 0..14 = R1..RF, 15 = 練習.
 export const RANK_LABELS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F', '練習'];
