@@ -18,7 +18,7 @@ export type SimulStyle = Record<string, number | SimulSlot>;
 // Simulator slot -> pockets, costume first (the game renders the costume).
 const SLOT_POCKETS: [string, number[]][] = [
     ['Armor', [43, 5]], ['Head', [46, 8]], ['Glove', [44, 6]], ['Shoes', [45, 7]], ['Robe', [47, 9]],
-    ['FaceDeco', [48]], ['Tail', [90]], ['RightHand', [10]], ['LeftHand', [12]],
+    ['FaceDeco', [48]], ['Tail', [90]], ['RightHand', [10]], ['LeftHand', [13]],
 ];
 
 const clamp = (n: number) => Math.min(1.5, Math.max(0.5, n));

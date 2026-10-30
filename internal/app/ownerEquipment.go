@@ -13,7 +13,7 @@ import (
 // See iruneko analysis/20260905_equip-change-packets.md.
 var equipPockets = map[uint32]bool{
 	5: true, 6: true, 7: true, 8: true, 9: true, // 衣服 手部 腳部 頭部 長袍
-	10: true, 11: true, 12: true, 13: true, // 主手 背後主手 副手 背後副手
+	10: true, 11: true, 12: true, 13: true, // 主手 背後主手 背後副手 副手
 	16: true, 17: true, // 左右飾品
 	32: true, 33: true, 34: true, 35: true, // 遺物 1-4
 	51: true, 54: true, // 威光 星塵

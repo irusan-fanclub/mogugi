@@ -6,7 +6,7 @@ import { asHolder } from './tooltipDeps';
 
 export type WeaponArea = 'wl' | 'wr';
 // Index 0 = set I, 1 = set II.
-export const WEAPON_POCKETS: Record<WeaponArea, [number, number]> = { wl: [10, 11], wr: [12, 13] };
+export const WEAPON_POCKETS: Record<WeaponArea, [number, number]> = { wl: [10, 11], wr: [13, 12] };
 export const MAIN_AREAS: { area: string; pocket?: number; tall?: boolean }[] = [
     { area: 'accl', pocket: 16 }, { area: 'head', pocket: 8 }, { area: 'accr', pocket: 17 },
     { area: 'wl', tall: true }, { area: 'body', pocket: 5, tall: true }, { area: 'wr', tall: true },

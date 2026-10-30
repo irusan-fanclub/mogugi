@@ -28,10 +28,10 @@ const decode = (s: string) => {
 };
 
 describe('buildStyle', () => {
-    it('uses pocket 12 (副手) for the left hand, never 13 (背後副手)', () => {
+    it('uses pocket 13 (副手) for the left hand, never 12 (背後副手)', () => {
         const a = fixture();
-        a.equipItemMap[12] = it_(12, 41001);
-        a.equipItemMap[13] = it_(13, 42001);
+        a.equipItemMap[13] = it_(13, 41001);
+        a.equipItemMap[12] = it_(12, 42001);
         expect(buildStyle(a).LeftHand).toMatchObject({ Id: 41001 });
     });
     it('maps race, face, hair, body and eyes', () => {

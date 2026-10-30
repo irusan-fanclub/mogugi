@@ -45,9 +45,9 @@ export const EQUIP_SLOTS: EquipSlot[] = [
     { pocket: 16, label: '左邊飾品', group: 'armor', countsAttack: false },
     { pocket: 17, label: '右邊飾品', group: 'armor', countsAttack: false },
     { pocket: 10, label: '主手', group: 'weapon', countsAttack: true },
-    { pocket: 12, label: '副手', group: 'weapon', countsAttack: true },
+    { pocket: 13, label: '副手', group: 'weapon', countsAttack: true },
     { pocket: 11, label: '背後主手', group: 'weapon', countsAttack: false },
-    { pocket: 13, label: '背後副手', group: 'weapon', countsAttack: false },
+    { pocket: 12, label: '背後副手', group: 'weapon', countsAttack: false },
     { pocket: 32, label: '遺物 1', group: 'other', countsAttack: false },
     { pocket: 33, label: '遺物 2', group: 'other', countsAttack: false },
     { pocket: 34, label: '遺物 3', group: 'other', countsAttack: false },
@@ -152,6 +152,6 @@ export function panelValue(panel: ownerPanel, key: StatKey): { value: number; is
 }
 
 // SlotEntry is what one worn-gear cell renders; WeaponSet is the in-game
-// I/II weapon-set toggle (I = pocket 10/12, II = 11/13).
+// I/II weapon-set toggle (I = pocket 10/13, II = 11/12).
 export type WeaponSet = 'I' | 'II';
 export interface SlotEntry { item: IndexItem; name: string; brief: string; tip: Tip | null }

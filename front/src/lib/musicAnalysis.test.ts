@@ -326,10 +326,10 @@ describe('gearInputs: metalware merge rules', () => {
         const items = [
             it_(10, 1, { metalware: [{ id: 1000307, level: 3 }] }),
             it_(11, 1, { metalware: [{ id: 1000307, level: 9 }] }),
-            it_(13, 9, { metalware: [{ id: 1000307, level: 9 }] }),
+            it_(12, 9, { metalware: [{ id: 1000307, level: 9 }] }),
         ];
         expect(gearInputs(items, deps(10)).playEffect).toBe(3);
-        expect(gearInputs(items, deps(11)).playEffect).toBe(18);   // 11 + 13 are both active in set II
+        expect(gearInputs(items, deps(11)).playEffect).toBe(18);   // 11 + 12 are both active in set II
     });
     it('活潑板ＸＸ速度 is the max over the three speed lines; durations and march lines are levels', () => {
         const items = [

@@ -49,8 +49,8 @@ describe('contributionsOf', () => {
 
     it('a back-set weapon does not contribute defense/protection either', () => {
         const shield = item({ id: 40100, defense: 10, protection: 5 });
-        expect(contributionsOf(shield, 12).stats).toEqual({ defense: 10, protection: 5 });
-        expect(contributionsOf(shield, 13).stats).toEqual({});
+        expect(contributionsOf(shield, 13).stats).toEqual({ defense: 10, protection: 5 });
+        expect(contributionsOf(shield, 12).stats).toEqual({});
     });
 
     it('conditional effect lines are counted, not added; unknown codes go to unmapped', () => {
