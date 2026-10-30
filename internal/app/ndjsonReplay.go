@@ -50,6 +50,7 @@ var ndjsonDecoders = map[event.EventId]func() event.IEvent{
 	event.EventIdBardsongPulse:             func() event.IEvent { return &event.EventBardsongPulse{} },
 	event.EventIdEntityInvincible:          func() event.IEvent { return &event.EventEntityInvincible{} },
 	event.EventIdClockShift:                func() event.IEvent { return &event.EventClockShift{} },
+	event.EventIdOwnerProfile:              func() event.IEvent { return &event.EventOwnerProfile{} },
 }
 
 // decodeNdjsonEvent restores one packet-log line to its concrete event type.

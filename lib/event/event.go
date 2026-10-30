@@ -38,6 +38,7 @@ const (
 	EventIdEntityDeath
 	EventIdEntityInvincible
 	EventIdClockShift
+	EventIdOwnerProfile
 )
 
 // System-level events use negative IDs so they can be filtered out
@@ -344,6 +345,14 @@ type EventOwnerEquipment struct {
 type EventOwnerStats struct {
 	EventBase
 	Panel packet.Panel
+}
+
+// EventOwnerProfile carries the local character's titles, grandmaster talent
+// and arcana from the 0x5209 snapshot (whole-set replace; 0x8FC7 rewrites the
+// titles). Each section is null when it could not be read.
+type EventOwnerProfile struct {
+	EventBase
+	Profile packet.OwnerProfile
 }
 
 // SourceState describes where events come from: live capture or a replay.

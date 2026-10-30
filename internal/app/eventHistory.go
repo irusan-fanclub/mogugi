@@ -49,7 +49,7 @@ type eventHistory struct {
 func historyKeeps(e event.IEvent) bool {
 	switch id := e.GetEventId(); id {
 	case event.EventIdStatUpdate, event.EventIdCaptureStatus,
-		event.EventIdOwnerEquipment, event.EventIdOwnerStats:
+		event.EventIdOwnerEquipment, event.EventIdOwnerStats, event.EventIdOwnerProfile:
 		return false
 	default:
 		return id > 0

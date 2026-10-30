@@ -47,6 +47,11 @@ func sampleEvents() []event.IEvent {
 		&event.EventOwnerEquipment{EventBase: evBase(event.EventIdOwnerEquipment, "1"), Items: []event.EquipmentItem{{Pocket: 1, EID: "9", Item: map[string]any{"k": "v"}}}},
 		&event.EventOwnerStats{EventBase: evBase(event.EventIdOwnerStats, "1"), Panel: packet.Panel{}},
 		&event.EventBardsongPulse{EventBase: evBase(event.EventIdBardsongPulse, "1"), Targets: []string{"2", "3"}, Stop: true},
+		&event.EventOwnerProfile{EventBase: evBase(event.EventIdOwnerProfile, "1"), Profile: packet.OwnerProfile{
+			Titles:     &packet.OwnerTitles{TitleId: 10700, OptionTitleId: 9180},
+			Talent:     &packet.OwnerTalent{GrandmasterTalentId: 10, OwnedTitleIds: []uint16{20016}},
+			MultiClass: &packet.OwnerMultiClass{CurrentClassId: 10, Classes: []packet.OwnerClass{{ClassId: 10, Exp: 55455, ArcanaLevel: 10}}},
+		}},
 	}
 }
 
@@ -71,6 +76,9 @@ func TestNdjsonRoundTrip(t *testing.T) {
 		if !seen[id] {
 			t.Errorf("no sample for event id %d", id)
 		}
+	}
+	if !seen[event.EventIdOwnerProfile] {
+		t.Error("no sample for EventOwnerProfile")
 	}
 	if got, err := decodeNdjsonEvent([]byte(`{"EventId":26}`)); got != nil || err != nil {
 		t.Errorf("event id past the last known must be skipped, got %v %v", got, err)

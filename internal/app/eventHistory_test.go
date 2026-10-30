@@ -170,7 +170,7 @@ func TestHistoryFiltersSystemAndSnapshotEvents(t *testing.T) {
 	h.append([]event.IEvent{
 		mk(event.EventIdSessionReset), mk(event.EventIdSourceChanged),
 		mk(event.EventIdStatUpdate), mk(event.EventIdCaptureStatus),
-		mk(event.EventIdOwnerStats), mk(event.EventIdOwnerEquipment),
+		mk(event.EventIdOwnerStats), mk(event.EventIdOwnerEquipment), mk(event.EventIdOwnerProfile),
 		dmg(7),
 	})
 	cs := h.chunks()

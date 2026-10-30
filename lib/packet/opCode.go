@@ -48,6 +48,7 @@ const (
 	OpcodeSetFinisher2             OpCode = 31010 // 0x7922
 	OpcodeCombatAction             OpCode = 31014 // 0x7926
 	OpcodeCombatAttackRes          OpCode = 32001 // 0x7d01
+	OpcodeEquipTitleReply          OpCode = 36807 // 0x8fc7 server confirms an equipped-title change: (int first title, int second title)
 	OpcodeEffect                   OpCode = 37009 // 0x9091
 	OpcodeEffect2                  OpCode = 37011 // 0x9093 generic effect; first int is a kind discriminator, and each kind has its own element shape. Kind 806 is (int 806, short skillId, short) — a skill cast, including non-damaging ones (capture 1786105610)
 	OpcodeEffectDelayed            OpCode = 37013 // 0x9095

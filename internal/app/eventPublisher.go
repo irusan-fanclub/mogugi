@@ -72,6 +72,7 @@ type eventPublisher struct {
 	lastOwnerPanel   *packet.Panel                   // last EventOwnerStats payload, for dedupe
 	lastOwnerStatsAt int64                           // unix-second of lastOwnerPanel's publish, for the current-value throttle
 	lastOwnerEquip   []event.EquipmentItem           // last EventOwnerEquipment.Items published, for dedupe
+	ownerProfile     *packet.OwnerProfile            // last EventOwnerProfile payload (also its dedupe); nil until a snapshot
 	preparingSkill   uint16                          // skillId from the last 0x6984; consumed and cleared by 0x698B
 	// Last published skill use, for collapsing the server's double-send of
 	// one cast (two combat packs 0-3ms apart) into a single event.
@@ -353,6 +354,7 @@ drainLoop:
 	t.lastOwnerPanel = nil
 	t.lastOwnerStatsAt = 0
 	t.lastOwnerEquip = nil
+	t.ownerProfile = nil
 	t.clock = serverClock{}
 	t.bardsongBuffs = nil
 	t.bardsongNow = 0
@@ -776,6 +778,9 @@ func (t *eventPublisher) handlePacket(p *packet.GamePacket) {
 	case packet.OpcodeChannelCharacterInfoR:
 		t.handleChannelCharacterInfo(p)
 
+	case packet.OpcodeEquipTitleReply:
+		t.handleEquipTitleReply(p)
+
 	case packet.OpcodeBeautyRoomList:
 		t.handleBeautyRoom(p)
 
@@ -807,6 +812,7 @@ func (t *eventPublisher) handleChannelCharacterInfo(p *packet.GamePacket) {
 		if stats != nil {
 			t.publish(stats)
 		}
+		t.publishOwnerProfile(p)
 		// An empty snapshot keeps the previous set, like the item store does.
 		if len(snap.Items) > 0 {
 			t.Lock()
@@ -994,6 +1000,7 @@ func (t *eventPublisher) setOwnerCharacter(id uint64, name string) {
 		t.lastOwnerPanel = nil
 		t.lastOwnerStatsAt = 0
 		t.lastOwnerEquip = nil
+		t.ownerProfile = nil
 	}
 	t.ownerId = id
 	t.ownerName = name
@@ -2437,6 +2444,9 @@ func (t *eventPublisher) leadEventsLocked(playersOnly bool) []event.IEvent {
 	}
 	if ownerStats := t.ownerStatsLocked(now); ownerStats != nil {
 		initial = append(initial, ownerStats)
+	}
+	if t.ownerProfile != nil {
+		initial = append(initial, t.ownerProfileEventLocked(now))
 	}
 
 	// Seed a late-attaching client with the current capture status; live
