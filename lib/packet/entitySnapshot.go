@@ -113,18 +113,24 @@ func parseItemAt(msg Message, i int) (InventoryItem, int, bool) {
 	}
 	it.EID, _ = msg[i].Data().(uint64)
 	end := i + 2
-	// Enchants come from two sources: ext Bin(144)@i+3 holds enchants
-	// already applied to the equipment; OptionInfo string@i+4 holds
+	// Variant A (fashion clothes): an extra String sits between Bin80 and
+	// Bin144. Skip it so the ext Bin lines up at j.
+	j := i + 3
+	if j+1 < len(msg) && msg[j].Type() == MessageElemTypeString && msg[j+1].Type() == MessageElemTypeBin {
+		j++
+	}
+	// Enchants come from two sources: ext Bin(144)@j holds enchants
+	// already applied to the equipment; OptionInfo string@j+1 holds
 	// scroll-granted enchants (ENPFIX/ENSFIX). Merge per slot, string
 	// wins. Type/bounds mismatch means no enchant.
-	if i+3 < len(msg) && msg[i+3].Type() == MessageElemTypeBin {
-		if ext, ok := msg[i+3].Data().([]byte); ok {
+	if j < len(msg) && msg[j].Type() == MessageElemTypeBin {
+		if ext, ok := msg[j].Data().([]byte); ok {
 			it.EnchantPrefix, it.EnchantSuffix = parseExtEnchants(ext)
 			parseExtStats(ext, &it)
 		}
-		end = i + 3
-		if i+4 < len(msg) && msg[i+4].Type() == MessageElemTypeString {
-			if s, ok := msg[i+4].Data().(string); ok {
+		end = j
+		if j+1 < len(msg) && msg[j+1].Type() == MessageElemTypeString {
+			if s, ok := msg[j+1].Data().(string); ok {
 				it.Metadata = s
 				p, sfx := parseOptionInfo(s)
 				if p != 0 {
@@ -134,23 +140,23 @@ func parseItemAt(msg Message, i int) (InventoryItem, int, bool) {
 					it.EnchantSuffix = sfx
 				}
 			}
-			end = i + 4
+			end = j + 1
 		}
 		// After the two strings: Byte(count) + count x Bin(40)
 		// (Aura upgradeEffect): kind=7 metalware, kind=0 prefix effect
 		// line, kind=1 suffix effect line, kind=10 bless effect.
-		if i+6 < len(msg) && msg[i+5].Type() == MessageElemTypeString && msg[i+6].Type() == MessageElemTypeByte {
-			if cnt, ok := msg[i+6].Data().(uint8); ok {
-				end = i + 6
-				for k := 0; k < int(cnt) && i+7+k < len(msg); k++ {
-					if msg[i+7+k].Type() != MessageElemTypeBin {
+		if j+3 < len(msg) && msg[j+2].Type() == MessageElemTypeString && msg[j+3].Type() == MessageElemTypeByte {
+			if cnt, ok := msg[j+3].Data().(uint8); ok {
+				end = j + 3
+				for k := 0; k < int(cnt) && j+4+k < len(msg); k++ {
+					if msg[j+4+k].Type() != MessageElemTypeBin {
 						break
 					}
-					b, ok := msg[i+7+k].Data().([]byte)
+					b, ok := msg[j+4+k].Data().([]byte)
 					if !ok {
 						break
 					}
-					end = i + 7 + k
+					end = j + 4 + k
 					if mw, ok := parseMetalwareBin(b); ok {
 						it.Metalware = append(it.Metalware, mw)
 						continue

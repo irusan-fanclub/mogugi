@@ -453,3 +453,36 @@ func TestParseItemRecordAt_OwnerLastElement(t *testing.T) {
 		t.Fatalf("item=%+v", it)
 	}
 }
+
+// TestParseItemAt_VariantA covers the "fashion clothes" record (iruneko
+// itemrecord.md variant A): an extra String sits between Bin80 and Bin144.
+// Mirrors item 2201156 from capture packet_capture_20261031_025534.
+func TestParseItemAt_VariantA(t *testing.T) {
+	info := make([]byte, 80)
+	le.PutUint32(info[0:], 5)
+	le.PutUint32(info[4:], 2201156)
+	ext := make([]byte, 144)
+	le.PutUint32(ext[16:], 20000)
+	le.PutUint32(ext[20:], 20000)
+	le.PutUint32(ext[40:], 9)
+	mw := make([]byte, 40)
+	le.PutUint32(mw[0:], 7)
+	le.PutUint16(mw[14:], 3)
+	le.PutUint32(mw[36:], 5300001)
+	msg := Message{
+		NewMessageElemLong(22518904287119264), NewMessageElemByte(2),
+		NewMessageElemBin(info), NewMessageElemString(""), NewMessageElemBin(ext),
+		NewMessageElemString("MDEF:f:9;"), NewMessageElemString(""),
+		NewMessageElemByte(1), NewMessageElemBin(mw),
+	}
+	it, end, ok := parseItemAt(msg, 0)
+	if !ok {
+		t.Fatal("parseItemAt did not match")
+	}
+	if it.DurabilityMax != 20000 || it.Defense != 9 || it.Metadata != "MDEF:f:9;" || len(it.Metalware) != 1 {
+		t.Fatalf("variant A fields lost: %+v", it)
+	}
+	if end != len(msg)-1 {
+		t.Fatalf("end=%d want %d", end, len(msg)-1)
+	}
+}
