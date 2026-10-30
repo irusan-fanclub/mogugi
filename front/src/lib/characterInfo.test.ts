@@ -76,7 +76,7 @@ describe('buildCharacterInfo', () => {
         expect(row(i, '稱號').value).toBe('戰場的序曲大師');
         expect(row(i, '第二稱號').value).toBe('歐哈德');
         expect(row(i, '當前秘法').value).toBe('狂怒鬥士');
-        expect(row(i, '當前一代宗師').value).toBe('祝福');
+        expect(row(i, '當前一代宗師').value).toBe('聖職者');
         expect(row(i, '秘法等級')).toMatchObject({ value: '50/50', state: 'ok' });
         expect(row(i, '秘法同步等級')).toMatchObject({ value: '10/10', state: 'ok' });
         expect(row(i, '當前等級')).toMatchObject({ value: '200/200', state: 'ok' });

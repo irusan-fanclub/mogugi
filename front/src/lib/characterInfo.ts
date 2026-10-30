@@ -48,7 +48,7 @@ export function combatTalentsFor(race: Race): CombatTalent[] {
 }
 
 function talentName(id: number): string {
-    return COMBAT_TALENTS.find(t => t.id === id)?.name ?? TALENT_NAMES[id] ?? `#${id}`;
+    return TALENT_NAMES[id] ?? `#${id}`;
 }
 
 const titleName = (id: number): string => id ? (TITLE_NAMES[id] ?? `#${id}`) : '無';
