@@ -56,6 +56,14 @@ func TestParseOwnerProfile_TruncatedKeepsEarlierSections(t *testing.T) {
 	}
 }
 
+func TestParseStatSnapshot_LevelsAndType(t *testing.T) {
+	msg, _ := loadFixture(t, "testdata/0x5209_profile_tw166_giant.json")
+	p := ParseStatSnapshot(msg).Panel()
+	if p.Level != 200 || p.CumulatedLevel != 49460 || p.CharType != 8002 {
+		t.Errorf("level=%v cumulated=%v type=%v, want 200 / 49460 / 8002", p.Level, p.CumulatedLevel, p.CharType)
+	}
+}
+
 func TestParseOwnerProfile_NotASnapshot(t *testing.T) {
 	p, err := ParseOwnerProfile(Message{NewMessageElemByte(1)})
 	if err == nil || p.Titles != nil {

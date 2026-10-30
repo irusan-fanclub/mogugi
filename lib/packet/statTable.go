@@ -11,29 +11,34 @@ package packet
 // the equipped weapon's numbers. Verified against the character panel of
 // 地域磨菇 (capture 1785411156) and against Race.xml for eight pet races
 // (capture 1785312528). See MabiNotes Packets/op_0x7530_StatUpdatePrivate.md.
+// StatType is CType (race and sex, e.g. 8002 = giant male). It sits outside the
+// positional block, so the snapshot parser stores it from element 6.
+const StatType uint16 = 3
+
 const (
-	StatCombatPower   uint16 = 26
-	StatLife          uint16 = 28
-	StatLifeMaxBase   uint16 = 30
-	StatLifeMaxMod    uint16 = 31
-	StatMana          uint16 = 32
-	StatManaMaxBase   uint16 = 33
-	StatManaMaxMod    uint16 = 34
-	StatStamina       uint16 = 35
-	StatStaminaMaxBse uint16 = 36
-	StatStaminaMaxMod uint16 = 37
-	StatLevel         uint16 = 40
-	StatStr           uint16 = 47
-	StatStrMod        uint16 = 48
-	StatDex           uint16 = 49
-	StatDexMod        uint16 = 50
-	StatInt           uint16 = 51
-	StatIntMod        uint16 = 52
-	StatWill          uint16 = 53
-	StatWillMod       uint16 = 54
-	StatLuck          uint16 = 55
-	StatLuckMod       uint16 = 56
-	StatAbilityPoints uint16 = 65
+	StatCombatPower    uint16 = 26
+	StatLife           uint16 = 28
+	StatLifeMaxBase    uint16 = 30
+	StatLifeMaxMod     uint16 = 31
+	StatMana           uint16 = 32
+	StatManaMaxBase    uint16 = 33
+	StatManaMaxMod     uint16 = 34
+	StatStamina        uint16 = 35
+	StatStaminaMaxBse  uint16 = 36
+	StatStaminaMaxMod  uint16 = 37
+	StatLevel          uint16 = 40
+	StatCumulatedLevel uint16 = 41 // rebirth total; the window shows this + level
+	StatStr            uint16 = 47
+	StatStrMod         uint16 = 48
+	StatDex            uint16 = 49
+	StatDexMod         uint16 = 50
+	StatInt            uint16 = 51
+	StatIntMod         uint16 = 52
+	StatWill           uint16 = 53
+	StatWillMod        uint16 = 54
+	StatLuck           uint16 = 55
+	StatLuckMod        uint16 = 56
+	StatAbilityPoints  uint16 = 65
 
 	// Dual-wield block: populated only while two weapons are equipped, and
 	// zeroed the moment a single weapon is.
@@ -64,6 +69,7 @@ const (
 	statSnapshotIdOffset = 4
 	// The block runs well past this, but nothing above it is understood yet.
 	statSnapshotLastId = 210
+	snapshotTypeElem   = 6
 )
 
 // StatTable maps a stat id to its value.
@@ -114,6 +120,9 @@ func ParseStatSnapshot(msg Message) StatTable {
 		return nil
 	}
 	st := make(StatTable, statSnapshotLastId)
+	if msg[snapshotTypeElem].Type() == MessageElemTypeInt {
+		st[StatType] = float64(msg[snapshotTypeElem].Data().(uint32))
+	}
 	for i := statSnapshotFirst; i < len(msg); i++ {
 		id := uint16(i - statSnapshotIdOffset)
 		if id > statSnapshotLastId {
@@ -150,7 +159,10 @@ type Panel struct {
 	StaminaMax    float64 `json:"staminaMax"`
 	StaminaMaxMod float64 `json:"staminaMaxMod"`
 	Level         float64 `json:"level"`
-	AbilityPoints float64 `json:"abilityPoints"`
+	// CumulatedLevel is the rebirth total without the current level; CharType is CType.
+	CumulatedLevel float64 `json:"cumulatedLevel"`
+	CharType       float64 `json:"charType"`
+	AbilityPoints  float64 `json:"abilityPoints"`
 
 	// Base values — what the character window shows in parentheses.
 	Str  float64 `json:"str"`
@@ -188,18 +200,20 @@ type Panel struct {
 // Panel derives the character-window values from the stat table.
 func (t StatTable) Panel() Panel {
 	p := Panel{
-		CombatPower:   t[StatCombatPower],
-		Life:          t[StatLife],
-		LifeMax:       t[StatLifeMaxBase] + t[StatLifeMaxMod],
-		LifeMaxMod:    t[StatLifeMaxMod],
-		Mana:          t[StatMana],
-		ManaMax:       t[StatManaMaxBase] + t[StatManaMaxMod],
-		ManaMaxMod:    t[StatManaMaxMod],
-		Stamina:       t[StatStamina],
-		StaminaMax:    t[StatStaminaMaxBse] + t[StatStaminaMaxMod],
-		StaminaMaxMod: t[StatStaminaMaxMod],
-		Level:         t[StatLevel],
-		AbilityPoints: t[StatAbilityPoints],
+		CombatPower:    t[StatCombatPower],
+		Life:           t[StatLife],
+		LifeMax:        t[StatLifeMaxBase] + t[StatLifeMaxMod],
+		LifeMaxMod:     t[StatLifeMaxMod],
+		Mana:           t[StatMana],
+		ManaMax:        t[StatManaMaxBase] + t[StatManaMaxMod],
+		ManaMaxMod:     t[StatManaMaxMod],
+		Stamina:        t[StatStamina],
+		StaminaMax:     t[StatStaminaMaxBse] + t[StatStaminaMaxMod],
+		StaminaMaxMod:  t[StatStaminaMaxMod],
+		Level:          t[StatLevel],
+		CumulatedLevel: t[StatCumulatedLevel],
+		CharType:       t[StatType],
+		AbilityPoints:  t[StatAbilityPoints],
 
 		Str: t[StatStr], Dex: t[StatDex], Int: t[StatInt], Will: t[StatWill], Luck: t[StatLuck],
 		StrMod: t[StatStrMod], DexMod: t[StatDexMod], IntMod: t[StatIntMod],
