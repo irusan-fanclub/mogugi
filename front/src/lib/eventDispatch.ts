@@ -6,6 +6,7 @@ export interface EventSink {
     captureStatus(e: p.eventCaptureStatus): void;
     ownerEquipment(items: p.eventOwnerEquipment['Items']): void;
     ownerStats(panel: p.eventOwnerStats['Panel']): void;
+    ownerProfile(profile: p.ownerProfile): void;
     sessionReset(reason: string): void;
     configChanged(cfg: Record<string, unknown>): void;
     sourceChanged(state: p.sourceState): void;
@@ -47,6 +48,9 @@ export function dispatchEvents(events: p.eventBase[], sink: EventSink): void {
                 continue;
             case p.eventIdOwnerStats:
                 sink.ownerStats((event as p.eventOwnerStats).Panel);
+                continue;
+            case p.eventIdOwnerProfile:
+                sink.ownerProfile((event as p.eventOwnerProfile).Profile);
                 continue;
             case p.eventIdSessionReset:
 {

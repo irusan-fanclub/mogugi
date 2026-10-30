@@ -5,7 +5,7 @@ import { dispatchEvents } from '@/lib/eventDispatch';
 import type { eventBase, sourceState } from '@/protocols';
 import {
     actorManager, dcManager, appEvent, clearTimeRange,
-    captureStatus, ownerEquipment, ownerStats, timeRangeMin,
+    captureStatus, ownerCharacterName, ownerEquipment, ownerProfile, ownerStats, timeRangeMin,
 } from '@/store';
 
 export interface BackendSession {
@@ -77,7 +77,7 @@ export function createBackendSession(opts: {
     };
     socket.onEvent = (events) => dispatchEvents(events, {
         messageBox: (text) => { messageBox.value = (messageBox.value ?? '') + `${text}\n`; },
-        ownerName: (name) => { ownerName.value = name; },
+        ownerName: (name) => { ownerName.value = name; ownerCharacterName.value = name; },
         captureStatus: (e) => {
             captureStatus.value = {
                 npcapOk: e.NpcapOk,
@@ -88,10 +88,12 @@ export function createBackendSession(opts: {
         },
         ownerEquipment: (items) => { ownerEquipment.value = items; },
         ownerStats: (panel) => { ownerStats.value = panel; },
+        ownerProfile: (profile) => { ownerProfile.value = profile; },
         sessionReset: (reason) => {
             notice.value = { id: ++noticeId, text: noticeText(reason) };
             ownerEquipment.value = [];
             ownerStats.value = null;
+            ownerProfile.value = null;
         },
         configChanged: () => { /* callers read config on demand */ },
         sourceChanged: (state) => { source.value = state; },

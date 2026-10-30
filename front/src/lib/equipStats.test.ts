@@ -11,7 +11,7 @@ function item(partial: Partial<IndexItem>): IndexItem {
 function panel(partial: Partial<ownerPanel>): ownerPanel {
     return {
         combatPower: 0, life: 0, lifeMax: 0, lifeMaxMod: 0, mana: 0, manaMax: 0, manaMaxMod: 0,
-        stamina: 0, staminaMax: 0, staminaMaxMod: 0, level: 0, abilityPoints: 0,
+        stamina: 0, staminaMax: 0, staminaMaxMod: 0, level: 0, cumulatedLevel: 0, charType: 0, abilityPoints: 0,
         str: 0, dex: 0, int: 0, will: 0, luck: 0, strMod: 0, dexMod: 0, intMod: 0, willMod: 0, luckMod: 0,
         dualWield: false, attackMin: 0, attackMax: 0, offAttackMin: 0, offAttackMax: 0,
         injuryMin: 0, injuryMax: 0, critical: 0, balance: 0,

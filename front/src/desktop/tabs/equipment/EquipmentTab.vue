@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import {
     db, enchantInfoMap, enchantNameMap, itemNameMap, itemUpgradeMap, manualFormMap, metalwareMap,
-    ownerEquipment, ownerStats,
+    ownerCharacterName, ownerEquipment, ownerProfile, ownerStats,
 } from '@/store';
 import { isRelicPocket } from '@/lib/itemTooltip';
 import { loadSetting, saveSetting } from '@/lib/settingsStorage';
@@ -18,6 +18,7 @@ import DSelect from '../../ui/DSelect.vue';
 import DSwitch from '../../ui/DSwitch.vue';
 import { useContextMenu, type MenuItem } from '../../ui/useContextMenu';
 import { useToast } from '../../ui/useToast';
+import CharacterInfo from './CharacterInfo.vue';
 import EquipSlot from './EquipSlot.vue';
 import MusicAnalysisView from './MusicAnalysisView.vue';
 import { zhPunct } from '../../text/zhPunct';
@@ -33,12 +34,18 @@ const VIEWS = [
 const autoFetch = ref(loadSetting('equipmentAutoFetch', true, (v): v is boolean => typeof v === 'boolean'));
 const frozenEquipment = ref<typeof ownerEquipment.value>([]);
 const frozenStats = ref<typeof ownerStats.value>(null);
+const frozenProfile = ref<typeof ownerProfile.value>(null);
+const frozenName = ref('');
 function refresh() {
     frozenEquipment.value = ownerEquipment.value.slice();
     frozenStats.value = ownerStats.value;
+    frozenProfile.value = ownerProfile.value;
+    frozenName.value = ownerCharacterName.value;
 }
 const equipment = computed(() => autoFetch.value ? ownerEquipment.value : frozenEquipment.value);
 const stats = computed(() => autoFetch.value ? ownerStats.value : frozenStats.value);
+const profile = computed(() => autoFetch.value ? ownerProfile.value : frozenProfile.value);
+const charName = computed(() => autoFetch.value ? ownerCharacterName.value : frozenName.value);
 watch(autoFetch, (on, wasOn) => {
     if (wasOn && !on) refresh();
     saveSetting('equipmentAutoFetch', on);
@@ -143,6 +150,7 @@ function headMenu(e: MouseEvent, name: string) {
       <div class="col" :style="{ '--eq-n': right.length }">
         <EquipSlot v-for="c in right" :key="c.pocket" :cell="c" side @contextmenu="slotMenu($event, c)" />
       </div>
+      <CharacterInfo :name="charName" :panel="stats" :profile="profile" />
     </div>
 
     <label class="view">
@@ -211,7 +219,8 @@ function headMenu(e: MouseEvent, name: string) {
 .mt { margin-top: var(--space-3); }
 .foot { margin-top: var(--space-2); }
 /* --eq-h is the main grid's total height: rows 120 + 200 + 120 plus two gaps. */
-.board { --eq-gap: 6px; --eq-h: calc(120px * 2 + 200px + var(--eq-gap) * 2); display: flex; gap: var(--space-4); align-items: flex-start; }
+/* Wraps: a narrow window drops the info column under the board. */
+.board { --eq-gap: 6px; --eq-h: calc(120px * 2 + 200px + var(--eq-gap) * 2); display: flex; flex-wrap: wrap; gap: var(--space-4); align-items: flex-start; }
 .col { display: flex; flex-direction: column; gap: var(--eq-gap); }
 .col > :deep(.slot) { --eq-side: calc((var(--eq-h) - (var(--eq-n) - 1) * var(--eq-gap)) / var(--eq-n)); }
 .main {

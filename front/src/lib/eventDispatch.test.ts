@@ -5,7 +5,7 @@ import * as protocols from '@/protocols';
 function sink() {
     return {
         messageBox: vi.fn(), ownerName: vi.fn(), captureStatus: vi.fn(), ownerEquipment: vi.fn(),
-        ownerStats: vi.fn(), sessionReset: vi.fn(), configChanged: vi.fn(), sourceChanged: vi.fn(), clearData: vi.fn(), battle: vi.fn(),
+        ownerStats: vi.fn(), ownerProfile: vi.fn(), sessionReset: vi.fn(), configChanged: vi.fn(), sourceChanged: vi.fn(), clearData: vi.fn(), battle: vi.fn(),
         historyEvicted: vi.fn(), battleBoundary: vi.fn(),
     } satisfies EventSink;
 }
@@ -27,6 +27,14 @@ describe('dispatchEvents', () => {
         expect(s.sessionReset).toHaveBeenCalledWith('channel_switch');
         expect(s.battle).toHaveBeenCalledTimes(1);
         expect(s.battle).toHaveBeenCalledWith(dmg);
+    });
+
+    it('routes the owner profile to its sink only', () => {
+        const s = sink();
+        const profile = { titles: { titleId: 1, optionTitleId: 2 }, talent: null, multiClass: null };
+        dispatchEvents([{ EventId: protocols.eventIdOwnerProfile, At: 1, Id: '7', Profile: profile } as protocols.eventBase], s);
+        expect(s.ownerProfile).toHaveBeenCalledWith(profile);
+        expect(s.battle).not.toHaveBeenCalled();
     });
 
     it('owner character updates the name and still reaches the actor manager', () => {

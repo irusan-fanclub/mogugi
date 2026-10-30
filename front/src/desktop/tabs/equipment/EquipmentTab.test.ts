@@ -5,7 +5,7 @@ import { mount, VueWrapper } from '@vue/test-utils';
 import EquipmentTab from './EquipmentTab.vue';
 import DContextMenu from '../../ui/DContextMenu.vue';
 import { useContextMenu } from '../../ui/useContextMenu';
-import { db, itemNameMap, ownerEquipment, ownerStats } from '@/store';
+import { db, itemNameMap, ownerCharacterName, ownerEquipment, ownerProfile, ownerStats } from '@/store';
 import { loadManual, saveManual, defaultManual } from '@/lib/musicAnalysis';
 import { resetSettingsForTest, settingsStorage } from '@/lib/settingsStorage';
 
@@ -31,7 +31,8 @@ beforeEach(() => {
 });
 afterEach(() => {
     useContextMenu().close(); w?.unmount(); w = null; document.body.innerHTML = '';
-    ownerEquipment.value = []; ownerStats.value = null; vi.unstubAllGlobals(); vi.restoreAllMocks();
+    ownerEquipment.value = []; ownerStats.value = null; ownerProfile.value = null; ownerCharacterName.value = '';
+    vi.unstubAllGlobals(); vi.restoreAllMocks();
 });
 const q = (s: string) => document.querySelector<HTMLElement>(s)!;
 const qa = (s: string) => Array.from(document.querySelectorAll<HTMLElement>(s));
@@ -73,6 +74,41 @@ describe('EquipmentTab', () => {
         ownerEquipment.value = [worn(8, 1)];
         mountTab();
         expect(slot(8).textContent).toContain('無');
+    });
+    it('puts accessories either side of the head on the top row', () => {
+        mountTab();
+        const areas = qa('.main > [data-pocket]').slice(0, 3).map(e => e.dataset.pocket);
+        expect(areas).toEqual(['16', '8', '17']);
+    });
+    it('character info: waiting text, then rows coloured by cap', async () => {
+        mountTab();
+        expect(q('[data-character-info]').textContent).toContain('換頻後會出現');
+        ownerCharacterName.value = '地獄哞菇';
+        ownerStats.value = panel({ level: 200, cumulatedLevel: 100, charType: 8002 });
+        ownerProfile.value = {
+            titles: { titleId: 10700, optionTitleId: 9180 },
+            talent: { grandmasterTalentId: 255, ownedTitleIds: [] },
+            multiClass: null,
+        };
+        await nextTick();
+        const info = qa('[data-character-info] [data-info-row]');
+        expect(info).toHaveLength(12);
+        expect(info[0].textContent).toContain('地獄哞菇');
+        expect(info[2].textContent).toContain('戰場的序曲大師');
+        const state = (label: string) => info.find(r => r.textContent!.includes(label))!.querySelector('.val')!.getAttribute('data-state');
+        expect(state('當前等級')).toBe('ok');
+        expect(state('累積等級')).toBe('short');
+        expect(q('[data-info-missing]').textContent).toContain('近戰');
+    });
+    it('character info freezes with auto-update off', async () => {
+        ownerCharacterName.value = '甲';
+        ownerStats.value = panel({ level: 200 });
+        mountTab();
+        q('[role="switch"]').click(); await nextTick();
+        ownerCharacterName.value = '乙'; await nextTick();
+        expect(q('[data-character-info]').textContent).toContain('甲');
+        q('[data-refresh]').click(); await nextTick();
+        expect(q('[data-character-info]').textContent).toContain('乙');
     });
     it('weapon I/II toggle switches the left weapon pocket (10 -> 11), not remembered', async () => {
         ownerEquipment.value = [worn(10, 2, { attackMin: 1, attackMax: 2 }), worn(11, 3)];

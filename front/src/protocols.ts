@@ -31,6 +31,7 @@ export const eventIdEntityLife = 26;
 export const eventIdEntityDeath = 27;
 export const eventIdEntityInvincible = 28;
 export const eventIdClockShift = 29;
+export const eventIdOwnerProfile = 30;
 
 export const eventIdMessageBox = -1;
 export const eventIdSessionReset = -2;
@@ -254,7 +255,7 @@ export type ownerPanel = {
     life: number; lifeMax: number; lifeMaxMod: number;
     mana: number; manaMax: number; manaMaxMod: number;
     stamina: number; staminaMax: number; staminaMaxMod: number;
-    level: number; abilityPoints: number;
+    level: number; cumulatedLevel: number; charType: number; abilityPoints: number;
     str: number; dex: number; int: number; will: number; luck: number;
     strMod: number; dexMod: number; intMod: number; willMod: number; luckMod: number;
     dualWield: boolean;
@@ -267,6 +268,22 @@ export type ownerPanel = {
 export type eventOwnerStats = eventBase & {
     EventId: 24;
     Panel: ownerPanel;
+}
+
+/** packet.OwnerProfile; a section is null when the backend could not read it. */
+export type ownerProfile = {
+    titles: { titleId: number; optionTitleId: number } | null;
+    talent: { grandmasterTalentId: number; ownedTitleIds: number[] } | null;
+    multiClass: {
+        currentClassId: number;
+        classes: { classId: number; exp: number; arcanaLevel: number }[];
+    } | null;
+}
+
+/** The local character's titles, grandmaster talent and arcana; replaces, never patches. */
+export type eventOwnerProfile = eventBase & {
+    EventId: 30;
+    Profile: ownerProfile;
 }
 
 export type eventMessageBox = eventBase & {

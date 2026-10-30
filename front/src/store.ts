@@ -2,7 +2,7 @@ import { ref, shallowRef, computed } from 'vue';
 import { MabiDB } from '@/mabidb';
 import { ActorManager } from '@/eventActor';
 import { DamageCollectorManager } from '@/actionCollector';
-import type { ownerEquipmentItem, ownerPanel } from '@/protocols';
+import type { ownerEquipmentItem, ownerPanel, ownerProfile as OwnerProfile } from '@/protocols';
 import { effectiveBossRaces, addBossRace, removeBossRace, hasBossRaceOverrides, type BossRaceOverrides } from '@/lib/bossRaces';
 import { settingsStorage } from '@/lib/settingsStorage';
 
@@ -63,6 +63,8 @@ export const captureStatus = ref<CaptureStatus | null>(null);
 // socket (App.vue). Empty/null until the first 0x5209 snapshot.
 export const ownerEquipment = ref<ownerEquipmentItem[]>([]);
 export const ownerStats = ref<ownerPanel | null>(null);
+export const ownerProfile = ref<OwnerProfile | null>(null);
+export const ownerCharacterName = ref('');
 
 export const timeRangeMin = ref<number | null>(null);
 export const timeRangeMax = ref<number | null>(null);
