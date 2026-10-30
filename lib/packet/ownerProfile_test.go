@@ -56,6 +56,35 @@ func TestParseOwnerProfile_TruncatedKeepsEarlierSections(t *testing.T) {
 	}
 }
 
+// A live tw169 snapshot carried an ego-weapon tag the walker does not model
+// (0x08); the arcana block must still be recovered by signature.
+func TestParseOwnerProfile_UnmodelledEgoTagStillFindsArcana(t *testing.T) {
+	msg, _ := loadFixture(t, "testdata/0x5209_profile_tw166_giant.json")
+	tag := -1
+	for i := len(msg) - 54; i > 0; i-- {
+		if v, ok := msg[i].Data().(uint16); ok && v == 0xFFFF {
+			tag = i
+			break
+		}
+	}
+	if tag < 0 {
+		t.Fatal("ego tag not found in fixture")
+	}
+	broken := append(Message(nil), msg...)
+	broken[tag] = NewMessageElemShort(8)
+
+	p, err := ParseOwnerProfile(broken)
+	if err == nil {
+		t.Error("want the walker error to be reported")
+	}
+	if p.Titles == nil || p.Talent == nil {
+		t.Fatalf("earlier sections lost: %+v", p)
+	}
+	if p.MultiClass == nil || p.MultiClass.CurrentClassId != 10 || len(p.MultiClass.Classes) != 9 {
+		t.Errorf("multiClass = %+v, want current 10 with 9 classes", p.MultiClass)
+	}
+}
+
 func TestParseStatSnapshot_LevelsAndType(t *testing.T) {
 	msg, _ := loadFixture(t, "testdata/0x5209_profile_tw166_giant.json")
 	p := ParseStatSnapshot(msg).Panel()

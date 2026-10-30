@@ -88,6 +88,7 @@ func ParseOwnerProfile(msg Message) (OwnerProfile, error) {
 	w.skip("i")    // CDemiGodComponent
 	w.skip("bqfi") // CCommerceComponent
 	p.Talent = w.talent()
+	afterTalent := w.i
 	w.each(int(w.u32()), func() { w.skip("ibb") }) // CShapeShiftComponent
 	w.skip("i")                                    // feature 0x395
 	w.each(int(w.u32()), func() { w.skip("iq") })
@@ -97,6 +98,11 @@ func ParseOwnerProfile(msg Message) (OwnerProfile, error) {
 	w.skip("f") // CMagigraphComponent
 	w.each(int(w.u32()), func() { w.skip("if") })
 	p.MultiClass = w.multiClass()
+	if p.MultiClass == nil && p.Talent != nil {
+		// A component between them (e.g. an ego weapon jump-table branch not
+		// yet mapped) broke the walk; the arcana block is still findable.
+		p.MultiClass = scanMultiClass(msg, afterTalent)
+	}
 	return p, w.err
 }
 
@@ -371,4 +377,28 @@ func (w *profileWalker) multiClass() *OwnerMultiClass {
 		return nil
 	}
 	return &mc
+}
+
+// scanMultiClass looks for the CMultiClassComponent signature from index
+// from: Short, Int count, count x (Short, Int, Short) with ascending class
+// ids, then four (S,S,S,S,b,h) groups.
+func scanMultiClass(msg Message, from int) *OwnerMultiClass {
+	for i := from; i < len(msg); i++ {
+		w := &profileWalker{msg: msg, i: i}
+		mc := w.multiClass()
+		if mc == nil || len(mc.Classes) == 0 || len(mc.Classes) > 32 {
+			continue
+		}
+		ok := true
+		for k, c := range mc.Classes {
+			if c.ClassId == 0 || (k > 0 && c.ClassId <= mc.Classes[k-1].ClassId) {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			return mc
+		}
+	}
+	return nil
 }
