@@ -218,7 +218,7 @@ function headMenu(e: MouseEvent, name: string) {
     display: grid;
     grid-template-columns: repeat(3, 128px);
     grid-template-rows: 120px 200px 120px;
-    grid-template-areas: "head accl accr" "wl body wr" "hand foot robe";
+    grid-template-areas: "accl head accr" "wl body wr" "hand foot robe";
     gap: var(--eq-gap);
 }
 .view { display: flex; flex-direction: column; gap: var(--space-1); max-width: 260px; margin-top: var(--space-5); }

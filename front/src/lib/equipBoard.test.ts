@@ -15,6 +15,7 @@ describe('equipBoard', () => {
         expect(RIGHT_POCKETS).toEqual([51, 62, 63, 64]);
         expect(WEAPON_POCKETS).toEqual({ wl: [10, 11], wr: [12, 13] });
         expect(MAIN_AREAS).toHaveLength(9);
+        expect(MAIN_AREAS.slice(0, 3).map(a => a.area)).toEqual(['accl', 'head', 'accr']);
     });
     it('weaponSet.wl=1 resolves the left weapon cell to pocket 11, wr=0 to 12', () => {
         const cells = buildBoard([], { wl: 1, wr: 0 }, deps);
