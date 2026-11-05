@@ -5,6 +5,7 @@ export const OVERLAY_EVENT_IDS: readonly number[] = [
     p.eventIdEntityAppear, p.eventIdEntityDisappear, p.eventIdDamage,
     p.eventIdCharacterConditionEnable, p.eventIdCharacterConditionDisable, p.eventIdFinish,
     p.eventIdOwnerCharacter, p.eventIdSkillUse, p.eventIdMaxLife, p.eventIdEntityLife, p.eventIdEntityDeath,
+    p.eventIdBardsong, p.eventIdBardsongPulse,
 ];
 
 /** What the server lets an overlay socket through (system events, id < 0, always pass). */

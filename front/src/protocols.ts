@@ -32,6 +32,7 @@ export const eventIdEntityDeath = 27;
 export const eventIdEntityInvincible = 28;
 export const eventIdClockShift = 29;
 export const eventIdOwnerProfile = 30;
+export const eventIdTuairim = 31;
 
 export const eventIdMessageBox = -1;
 export const eventIdSessionReset = -2;
@@ -39,6 +40,7 @@ export const eventIdConfigChanged = -3;
 export const eventIdSourceChanged = -4;
 export const eventIdHistoryEvicted = -5;
 export const eventIdBattleBoundary = -6;
+export const eventIdZone = -7;
 
 export type eventBase = {
     EventId: eventId;
@@ -286,6 +288,13 @@ export type eventOwnerProfile = eventBase & {
     Profile: ownerProfile;
 }
 
+/** The local character's 信念值 gauge (stat 198) and its cap (0 when not seen yet). */
+export type eventTuairim = eventBase & {
+    EventId: 31;
+    Value: number;
+    Max: number;
+}
+
 export type eventMessageBox = eventBase & {
     EventId: -1;
     Message: string;
@@ -326,4 +335,9 @@ export type eventHistoryEvicted = eventBase & {
 export type eventBattleBoundary = eventBase & {
     EventId: -6;
     Present?: string[];
+}
+
+export type eventZone = eventBase & {
+    EventId: -7;
+    InDungeon: boolean;
 }

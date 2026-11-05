@@ -11,10 +11,12 @@ export const OV = {
     target: 'overlay:target',
     settings: 'overlay:settings',
     restartElevated: 'overlay:restart-elevated',
+    removeLayout: 'overlay:remove-layout',
 } as const;
 
 export type Anchor = 'tl' | 'tr' | 'bl' | 'br' | 'center';
-export type ComponentId = 'dps' | 'cc' | 'cooldown' | 'alerts';
+/** A component id: 'dps', 'alerts', a section or one of its units. */
+export type ComponentId = string;
 
 export interface OverlayLayout {
     enabled: boolean;
@@ -23,6 +25,10 @@ export interface OverlayLayout {
     y: number;
     width: number;
     maxRows: number;
+    /** The component this one hangs under ('' or absent: none); x is then the offset from its left edge. */
+    dock?: ComponentId | '';
+    /** Item ids of a section frame in display order (absent: default order). */
+    order?: string[];
 }
 
 export interface OverlayState {

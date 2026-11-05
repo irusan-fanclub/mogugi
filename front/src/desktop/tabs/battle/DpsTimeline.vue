@@ -12,6 +12,7 @@ import {
     actorManager, condNameMap, hpGuideStep, isBossRace, showCastTicks, showHpRuler, showInvincible, region, setTimeRange, clearTimeRange, timeRangeMin, timeRangeMax,
 } from '@/store';
 import { clipToWindow } from '@/lib/conditionCoverage';
+import { ccValueSummaries, type CcValueSummary } from '@/lib/ccValues';
 import { rollingDamageSeries } from '@/lib/dpsSeries';
 import { ccIconUrl, ccName } from '@/lib/util';
 import { invincibleOf } from '@/lib/activeDps';
@@ -40,6 +41,9 @@ import {
 } from './ccSettings';
 import CcIconGrid from './CcIconGrid.vue';
 import CoverageStrip from './CoverageStrip.vue';
+import BreakDefenseBox from './BreakDefenseBox.vue';
+import CcTip from './CcTip.vue';
+import DTooltip from '../../ui/DTooltip.vue';
 import DIconButton from '../../ui/DIconButton.vue';
 
 // Collapsing hides the plot and lanes but keeps the coverage strip; kept for this session.
@@ -69,7 +73,10 @@ const UPDATE_INTERVAL_MS = 250;
 const chart = ref<{ resetZoom(): void; snapshot(width: number): string | null }>();
 defineExpose({ snapshot: (width: number) => chart.value?.snapshot(width) ?? null });
 const option = shallowRef<Record<string, unknown>>({});
-const groups = shallowRef<{ key?: 'boss' | 'self'; label: string; accent?: boolean; rows: CoverageRow[] }[]>([]);
+type Values = Map<number, CcValueSummary>;
+const groups = shallowRef<{ key?: 'boss' | 'self'; label: string; accent?: boolean; rows: CoverageRow[]; values: Values }[]>([]);
+// Each CC's highest readings in the selected range, per group: the CC tooltips and 破防保最高.
+const values = shallowRef<{ boss: Values; self: Values }>({ boss: new Map(), self: new Map() });
 const laneCount = ref(0);
 const selfCount = ref(0);
 const rebuildKey = ref('');
@@ -86,21 +93,23 @@ let coverageInput: { boss: EntityConditionState[]; self: EntityConditionState[] 
 // Coverage over the selected time range when there is one, else the whole fight.
 function buildCoverage() {
     const c = coverageInput;
-    if (!c) { groups.value = []; return; }
+    if (!c) { groups.value = []; values.value = { boss: new Map(), self: new Map() }; return; }
     const start = Math.max(c.start, timeRangeMin.value ?? c.start);
     const end = Math.min(c.end, timeRangeMax.value ?? c.end);
     const rows = (tracked: number[], chartHidden: Set<number>, history: EntityConditionState[]) =>
         end > start ? coverageRows({ tracked, chartHidden, history, start, end }) : [];
+    const v = { boss: ccValueSummaries(c.boss, start, end), self: c.self ? ccValueSummaries(c.self, start, end) : new Map() };
+    values.value = v;
     groups.value = [
-        { key: 'boss' as const, label: 'BOSS', rows: rows(trackedCCIds.value, chartHiddenCCIds.value, c.boss) },
-        { key: 'self' as const, label: '自身', rows: c.self ? rows(selfTrackedCCIds.value, selfChartHiddenCCIds.value, c.self) : [], accent: true },
+        { key: 'boss' as const, label: 'BOSS', rows: rows(trackedCCIds.value, chartHiddenCCIds.value, c.boss), values: v.boss },
+        { key: 'self' as const, label: '自身', rows: c.self ? rows(selfTrackedCCIds.value, selfChartHiddenCCIds.value, c.self) : [], accent: true, values: v.self },
     ].filter(g => g.rows.length > 0);
 }
 
 function build() {
     const span = fightSpan(props.entities);
     if (!span) {
-        option.value = {}; groups.value = []; coverageInput = null; laneCount.value = 0; selfCount.value = 0; rebuildKey.value = ''; laneCcs.value = [];
+        option.value = {}; groups.value = []; values.value = { boss: new Map(), self: new Map() }; coverageInput = null; laneCount.value = 0; selfCount.value = 0; rebuildKey.value = ''; laneCcs.value = [];
         seenBoss.value = null; seenSelf.value = null;
         return;
     }
@@ -347,20 +356,23 @@ function addCc(group: 'boss' | 'self', id: number) {
       <div v-if="collapsed" class="collapsed-title">DPS 與狀態時間軸（已收合）</div>
       <EChart v-else ref="chart" :option="option" :rebuild-key="rebuildKey" :height="height" @zoom="onZoom" @legend="onLegend" />
       <template v-if="!collapsed">
-        <div
+        <DTooltip
           v-for="l in laneHits"
           :key="l.key"
+          bare
+          placement="right"
           class="lane-hit"
           :class="{ drop: ccDropKey === l.key }"
           data-html2canvas-ignore
           :data-lane-cc="l.id"
           :data-lane-group="l.group"
           draggable="true"
-          :title="`${ccName(condNameMap, l.id)} ${l.id}（右鍵選單，拖曳排序）`"
           :style="{ top: `${l.top}px`, left: `${ICON_LEFT}px`, width: `${ICON_W}px`, height: `${ICON_W}px` }"
           @contextmenu="onLaneMenu(l.group, l.id, $event)"
           v-on="ccIconDnd(l.group, l.id, false)"
-        />
+        >
+          <template #content><CcTip :cc-id="l.id" :summary="values[l.group].get(l.id)" hint="右鍵選單，拖曳排序" /></template>
+        </DTooltip>
         <template v-for="g in (['boss', 'self'] as const)" :key="g">
           <button
             v-if="(g === 'boss' ? seenBoss : seenSelf) !== null"
@@ -389,7 +401,9 @@ function addCc(group: 'boss' | 'self', id: number) {
         <CcIconGrid :ids="candidates" empty-text="沒有可加入的 CC" @pick="id => addCc(plusFor!, id)" />
       </div>
     </Teleport>
-      <CoverageStrip :groups="groups" :open-group="openPlus?.owner === uid && openPlus.strip ? openPlus.group : null" @plus="(g, e) => togglePlus(e, g, true)" />
+      <CoverageStrip :groups="groups" :open-group="openPlus?.owner === uid && openPlus.strip ? openPlus.group : null" @plus="(g, e) => togglePlus(e, g, true)">
+        <template v-if="target" #side><BreakDefenseBox :values="values.boss" /></template>
+      </CoverageStrip>
     </div>
   </div>
 </template>

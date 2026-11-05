@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
-import { ref } from 'vue';
+import { nextTick, ref } from 'vue';
 import { mount, VueWrapper } from '@vue/test-utils';
 import { defaultOverlaySettings, type AlertRule, type OverlaySettings } from '@/lib/overlaySettings';
 import { condNameMap } from '@/store';
@@ -20,7 +20,7 @@ import { ruleSummary, parseTimes } from './ruleSummary';
 
 const prelude: AlertRule = {
     id: 'a', enabled: true, kind: 'countdown', target: 'self', ccId: 680, times: [25, 15, 5], every: 30,
-    conds: [{ mode: 'absent', ccId: 1234 }], join: 'and', text: true, textMessage: '', voice: true, voiceMessage: '', textKeep: 5,
+    conds: [{ mode: 'absent', ccId: 1234 }], join: 'and', text: true, textMessage: '', voice: true, voiceMessage: '', textKeep: 5, loud: false,
     dismiss: { condFails: false, ccEnds: false, replaced: false },
 };
 
@@ -66,6 +66,11 @@ describe('ruleSummary', () => {
         expect(ruleSummary({ ...prelude, conds, join: 'or', text: false }, nameOf))
             .toBe('自身 戰場的序曲 剩 25／15／5 秒，沒有 圖安之魂 或 有 覺醒 時：語音');
     });
+    it('describes an appear rule and a loud text', () => {
+        const appear = { ...prelude, kind: 'appear' as const, ccId: 516, times: [], conds: [], loud: true };
+        expect(ruleSummary(appear, nameOf)).toBe('自身 覺醒 出現時：文字＋語音（醒目）');
+        expect(ruleSummary({ ...appear, text: false, voice: false }, nameOf)).toBe('自身 覺醒 出現時：不提醒');
+    });
     it('describes a periodic rule', () => {
         const periodic = { ...prelude, kind: 'periodic' as const, ccId: 0, times: [], every: 30, voice: false };
         expect(ruleSummary({ ...periodic, conds: [{ mode: 'absent', ccId: 1234 }, { mode: 'absent', ccId: 516 }], join: 'or' }, nameOf))
@@ -90,8 +95,8 @@ describe('AlertsSettings', () => {
         mountIt();
         await w!.get('[data-add-rule]').trigger('click');
         await w!.get('[data-add-rule]').trigger('click');
-        const ids = settings.value.rules.map(r => r.id);
-        expect(ids).toHaveLength(2);
+        const ids = settings.value.rules.map(r => r.id).slice(-2);
+        expect(settings.value.rules).toHaveLength(8);
         expect(ids.every(i => i !== '')).toBe(true);
         expect(new Set(ids).size).toBe(2);
         expect(w!.findAll('[data-rule-editor]')).toHaveLength(1);
@@ -159,11 +164,22 @@ describe('AlertsSettings', () => {
         expect(settings.value.voice.volume).toBe(40);
     });
 
+    it('restore puts back deleted default rules and then hides itself', async () => {
+        mountIt();
+        expect(w!.find('[data-restore-rules]').exists()).toBe(false);
+        settings.value = { ...settings.value, rules: settings.value.rules.filter(r => r.id !== 'd-def') };
+        await nextTick();
+        await w!.get('[data-restore-rules]').trigger('click');
+        expect(settings.value.rules.map(r => r.id)).toContain('d-def');
+        await nextTick();
+        expect(w!.find('[data-restore-rules]').exists()).toBe(false);
+    });
+
     it('adds countdown rules with the new defaults', async () => {
         mountIt();
         await w!.get('[data-add-rule]').trigger('click');
-        expect(settings.value.rules[0]).toMatchObject({
-            kind: 'countdown', conds: [], join: 'and', textMessage: '', voiceMessage: '', textKeep: 5, every: 30,
+        expect(settings.value.rules.at(-1)).toMatchObject({
+            kind: 'countdown', conds: [], join: 'and', textMessage: '', voiceMessage: '', textKeep: 5, loud: false, every: 30,
             dismiss: { condFails: false, ccEnds: false, replaced: false },
         });
     });

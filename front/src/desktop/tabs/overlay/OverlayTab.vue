@@ -1,38 +1,36 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import type { ComponentId } from '@/lib/overlayProtocol';
-import { COMPONENTS, layoutOf } from '@/lib/overlayComponents';
+import { onBeforeUnmount, onMounted, ref } from 'vue';
+import type { CcSectionId } from '@/lib/overlaySections';
 import { useOverlayState } from '../../overlay/useOverlayState';
-import DSwitch from '../../ui/DSwitch.vue';
 import DButton from '../../ui/DButton.vue';
 import LockBar from './LockBar.vue';
+import GeneralSettings from './GeneralSettings.vue';
 import DpsOverlaySettings from './DpsOverlaySettings.vue';
-import CcOverlaySettings from './CcOverlaySettings.vue';
-import CooldownOverlaySettings from './CooldownOverlaySettings.vue';
+import CcSectionSettings from './CcSectionSettings.vue';
+import CooldownSettings from './CooldownSettings.vue';
 import AlertsSettings from './AlertsSettings.vue';
 import { overlaySettings, updateOverlaySettings } from '../../overlay/overlayLink';
+import './settingsPage.css';
+
+type Page = 'general' | 'dps' | CcSectionId | 'cooldown' | 'alerts';
+const PAGES: { id: Page; label: string }[] = [
+    { id: 'general', label: '通用' }, { id: 'dps', label: '簡易戰鬥資訊' }, { id: 'ccBoss', label: 'BOSS CC' },
+    { id: 'ccSelf', label: '自己 CC' }, { id: 'ccParty', label: '隊伍 CC' }, { id: 'cooldown', label: '技能冷卻' },
+    { id: 'misc', label: '雜項' }, { id: 'burst', label: '爆發提示（開發中）' }, { id: 'alerts', label: '提醒（開發中）' },
+];
+const isCc = (p: Page): p is CcSectionId => p === 'ccBoss' || p === 'ccSelf' || p === 'ccParty' || p === 'burst' || p === 'misc';
 
 const NARROW_PX = 720;
-const { state, setLayout, setLocked, setHotkey, restartElevated, setHidden, setVisibleHotkey } = useOverlayState();
+const { state, setLocked, setHotkey, restartElevated, setHidden, setVisibleHotkey } = useOverlayState();
 
-const ITEMS: { id: ComponentId; label: string }[] = COMPONENTS.map(c => ({ id: c.id, label: c.name }));
-const selected = ref<ComponentId>('dps');
+const selected = ref<Page>('general');
 const narrow = ref(false);
 // Narrow mode only: whether the settings page is open instead of the list.
 const detail = ref(false);
 const root = ref<HTMLElement | null>(null);
 let ro: ResizeObserver | undefined;
 
-const title = computed(() => ITEMS.find(i => i.id === selected.value)!.label);
-const MIN_ROWS = 1;
-const MAX_ROWS = 20;
-const rows = computed(() => layoutOf(selected.value, state.value?.layout).maxRows);
-function stepRows(d: number) {
-    const lay = layoutOf(selected.value, state.value?.layout);
-    const next = Math.min(MAX_ROWS, Math.max(MIN_ROWS, lay.maxRows + d));
-    if (next !== lay.maxRows) setLayout(selected.value, { ...lay, maxRows: next });
-}
-const pick = (id: ComponentId) => { selected.value = id; detail.value = true; };
+const pick = (id: Page) => { selected.value = id; detail.value = true; };
 
 onMounted(() => {
     if (root.value && typeof ResizeObserver !== 'undefined') {
@@ -78,37 +76,28 @@ onBeforeUnmount(() => ro?.disconnect());
     <div class="body">
       <nav v-if="!narrow || !detail" class="list" :class="{ full: narrow }" data-overlay-list>
         <div
-          v-for="it in ITEMS"
-          :key="it.id"
+          v-for="p in PAGES"
+          :key="p.id"
           class="item"
-          :class="{ on: !narrow && selected === it.id }"
+          :class="{ on: !narrow && selected === p.id }"
           data-overlay-item
-          @click="pick(it.id)"
+          @click="pick(p.id)"
         >
-          <span class="name">{{ it.label }}</span>
-          <span class="sw" @click.stop>
-            <DSwitch
-              :model-value="layoutOf(it.id, state?.layout).enabled"
-              @update:model-value="v => setLayout(it.id, { ...layoutOf(it.id, state?.layout), enabled: v })"
-            />
-          </span>
+          {{ p.label }}
         </div>
       </nav>
       <section v-if="!narrow || detail" class="pane" data-overlay-settings>
-        <div class="phead">
-          <DButton v-if="narrow" size="sm" @click="detail = false">‹ 返回</DButton>
-          <span class="ptitle">{{ title }}</span>
+        <div v-if="narrow" class="phead">
+          <DButton size="sm" @click="detail = false">‹ 返回</DButton>
         </div>
-        <div class="rows">
-          <span>顯示列數</span>
-          <DButton size="sm" data-rows-dec aria-label="減少列數" :disabled="rows <= MIN_ROWS" @click="stepRows(-1)">−</DButton>
-          <span class="rows-val" data-rows-val>{{ rows }}</span>
-          <DButton size="sm" data-rows-inc aria-label="增加列數" :disabled="rows >= MAX_ROWS" @click="stepRows(1)">＋</DButton>
-        </div>
-        <DpsOverlaySettings v-if="selected === 'dps'" />
-        <CcOverlaySettings v-else-if="selected === 'cc'" />
-        <CooldownOverlaySettings v-else-if="selected === 'cooldown'" />
-        <AlertsSettings v-else />
+        <GeneralSettings v-if="selected === 'general'" />
+        <DpsOverlaySettings v-else-if="selected === 'dps'" />
+        <CcSectionSettings v-else-if="isCc(selected)" :key="selected" :section="selected" />
+        <CooldownSettings v-else-if="selected === 'cooldown'" />
+        <template v-else>
+          <div class="ovs-page"><h2>提醒</h2></div>
+          <AlertsSettings />
+        </template>
       </section>
     </div>
   </div>
@@ -123,15 +112,13 @@ onBeforeUnmount(() => ro?.disconnect());
 .scale .val { width: 3em; color: var(--c-text-dim); }
 .scale .grow { flex: 1; }
 .scale .hint { color: var(--c-text-dim); font-size: var(--fs-xs); }
-.body { flex: 1; min-height: 0; display: flex; }
-.list { width: 220px; flex: none; border-right: 1px solid var(--c-line); overflow-y: auto; }
+/* The item picker covers the nav and the page. */
+.body { position: relative; flex: 1; min-height: 0; display: flex; }
+.list { width: 150px; flex: none; border-right: 1px solid var(--c-line); overflow-y: auto; }
 .list.full { width: 100%; border-right: 0; }
-.item { display: flex; align-items: center; justify-content: space-between; min-height: calc(var(--row-h) + 6px); padding: 0 var(--space-4); cursor: pointer; }
+.item { display: flex; align-items: center; min-height: calc(var(--row-h) + 6px); padding: 0 var(--space-4); cursor: pointer; font-size: var(--fs-sm); }
 .item:hover { background: var(--c-surface-2); }
 .item.on { background: var(--c-surface-2); box-shadow: inset 2px 0 0 var(--c-accent); }
 .pane { flex: 1; min-width: 0; padding: var(--space-4); overflow-y: auto; scrollbar-gutter: stable; }
 .phead { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4); }
-.rows { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4); font-size: var(--fs-sm); }
-.rows-val { min-width: 2em; text-align: center; font-variant-numeric: tabular-nums; }
-.ptitle { font-size: var(--fs-lg, 16px); font-weight: 600; }
 </style>

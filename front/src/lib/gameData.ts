@@ -1,5 +1,5 @@
 import {
-    db, raceNameMap, skillNameMap, condNameMap, itemNameMap,
+    db, raceNameMap, skillNameMap, playerSkillIds, condNameMap, itemNameMap,
     enchantNameMap, enchantInfoMap, metalwareMap, manualFormMap, itemUpgradeMap,
 } from '@/store';
 
@@ -20,6 +20,12 @@ export async function loadNameMaps(): Promise<void> {
         for (const v of list) {
             skillNameMap.value[v.Id] = db.value.getCurLangString(v.Name);
         }
+    }
+    try {
+        playerSkillIds.value = new Set(await db.value.getPlayerSkillIds());
+    } catch (e) {
+        console.warn('skill available_race unavailable (old bundled db?)', e);
+        playerSkillIds.value = new Set(); // empty: pickers list every skill
     }
     {
         const list = await db.value.getSortedListData('CharCondList');

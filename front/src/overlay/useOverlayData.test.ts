@@ -12,12 +12,18 @@ vi.mock('@/lib/desktopBridge', () => ({
     },
     emitDesktop: async (name: string, data?: unknown) => { bridge.emitted.push({ name, data }); },
 }));
-const sessionMock = vi.hoisted(() => ({ created: 0, close: vi.fn(), opts: null as { url: string; onBattleBoundary?: (at: number, present?: string[]) => void } | null }));
+const sessionMock = vi.hoisted(() => ({
+    created: 0, close: vi.fn(), opts: null as { url: string; onBattleBoundary?: (at: number, present?: string[]) => void; onSourceReset?: () => void } | null,
+    inDungeon: null as unknown as { value: boolean },
+    source: null as unknown as { value: { Mode: string } | null },
+}));
 vi.mock('@/lib/backendSession', () => ({
-    createBackendSession: (o: { url: string; onBattleBoundary?: (at: number, present?: string[]) => void }) => {
+    createBackendSession: (o: { url: string; onBattleBoundary?: (at: number, present?: string[]) => void; onSourceReset?: () => void }) => {
         sessionMock.opts = o;
         sessionMock.created++;
-        return { source: ref(null), connect: vi.fn(), close: sessionMock.close };
+        sessionMock.inDungeon = ref(false);
+        sessionMock.source = ref(null);
+        return { source: sessionMock.source, connect: vi.fn(), close: sessionMock.close, inDungeon: sessionMock.inDungeon };
     },
 }));
 vi.mock('@/lib/gameData', () => ({ loadNameMaps: async () => {} }));
@@ -29,7 +35,8 @@ import type { AlertFire } from '@/lib/alertRules';
 import type { AlertRule } from '@/lib/overlaySettings';
 import { appear, hit, cc, BOSS_RACE } from './testSupport';
 import { overlayWants } from '@/lib/overlayEvents';
-import type { eventBase } from '@/protocols';
+import type { SectionId } from '@/lib/overlaySections';
+import { eventIdEntityDown, type eventBase } from '@/protocols';
 
 const speechMock = vi.hoisted(() => ({ say: vi.fn(), cancel: vi.fn() }));
 vi.mock('./speechQueue', () => ({ createSpeechQueue: () => speechMock }));
@@ -37,6 +44,8 @@ vi.mock('./speechQueue', () => ({ createSpeechQueue: () => speechMock }));
 const fire = (name: string, data: unknown) => (bridge.handlers.get(name) ?? []).forEach(h => h(data));
 let w: VueWrapper | null = null;
 let data: OverlayData;
+const tilesOf = (sec: SectionId, key: string) => data.tiles.value[sec]?.get(key) ?? [];
+const tilesJson = () => JSON.parse(JSON.stringify(Object.entries(data.tiles.value).map(([s, m]) => [s, [...m]])));
 
 async function mountHook() {
     w = mount(defineComponent({ setup() { data = useOverlayData(); return () => h('div'); } }));
@@ -127,7 +136,7 @@ describe('useOverlayData', () => {
             await mountHook();
             list.forEach(x => actorManager.value.onEvent(e(x)));
             await tick(250);
-            out.cc = JSON.parse(JSON.stringify(data.cc.value));
+            out.tiles = tilesJson();
             return out;
         };
         const full = await run(stream);
@@ -144,10 +153,18 @@ describe('useOverlayData', () => {
 
     it('normalizes an overlay:settings payload', async () => {
         await mountHook();
-        fire('overlay:settings', { dps: { opacity: 500, fontSize: 'l' } });
-        expect(data.settings.value.dps.opacity).toBe(100);
-        expect(data.settings.value.dps.fontSize).toBe('l');
-        expect(data.settings.value.cc.opacity).toBe(0);
+        fire('overlay:settings', { scale: 500, dpsLook: { font: 'l' } });
+        expect(data.settings.value.scale).toBe(150);
+        expect(data.settings.value.dpsLook.font).toBe('l');
+        expect(data.settings.value.ccBoss.items.length).toBeGreaterThan(0);
+    });
+
+    it('builds tile maps from the section items of an overlay:settings payload', async () => {
+        await mountHook();
+        fire('overlay:settings', { ccBoss: { items: [{ id: 803 }, { id: 1164, enabled: false }] } });
+        await tick(250);
+        expect([...data.tiles.value.ccBoss.keys()]).toEqual(['803']);
+        expect([...data.tiles.value.cooldown.keys()]).toEqual(['59005', '59143', '59123']);
     });
 
     it('ignores a non-OverlayState overlay:state', async () => {
@@ -196,31 +213,64 @@ describe('useOverlayData', () => {
             appear('p1', 8001, 100, 'Alice');
             appear('p2', 8001, 100, 'Bob');
             appear('b1', BOSS_RACE, 100);
+            fire('overlay:settings', { ccParty: { items: [{ id: 680 }] } });
             hit('p1', 'b1', 1000, 100);
             hit('p2', 'b1', 1001, 100);
-            cc('p2', 516, 1000, Date.now() / 1000 + 100);
+            cc('p2', 680, 1000, Date.now() / 1000 + 100);
             await tick(250);
-            expect(data.cc.value.party.map(r => r.id)).toEqual(['p2']);
+            expect(tilesOf('ccParty', '680').map(t => [t.holderId, t.label])).toEqual([['p2', 'Bob']]);
         });
 
         it('forgets attackers after the session is cleared', async () => {
             await mountHook();
             appear('p2', 8001, 100, 'Bob');
             appear('b1', BOSS_RACE, 100);
+            fire('overlay:settings', { ccParty: { items: [{ id: 680 }] } });
             hit('p2', 'b1', 1001, 100);
-            cc('p2', 516, 1000, Date.now() / 1000 + 100);
+            cc('p2', 680, 1000, Date.now() / 1000 + 100);
             await tick(250);
-            expect(data.cc.value.party.length).toBe(1);
+            expect(tilesOf('ccParty', '680').length).toBe(1);
             actorManager.value.clear();
             await tick(250);
-            expect(data.cc.value.party).toEqual([]);
+            expect(tilesOf('ccParty', '680')).toEqual([]);
+        });
+
+        it('a boss CC near its end is warn; once the boss is down an absent item has no tile', async () => {
+            vi.setSystemTime(2_000_000_000_000);
+            await mountHook();
+            const now = Date.now() / 1000;
+            // The latest boss to appear is the one watched.
+            appear('b9', BOSS_RACE, now - 10);
+            cc('b9', 1164, now - 5, now + 20);
+            await tick(250);
+            expect(data.bossAlive.value).toBe(true);
+            expect(tilesOf('ccBoss', '1164').map(t => t.state)).toEqual(['warn']);
+            expect(tilesOf('ccBoss', '1165').map(t => t.state)).toEqual(['gone']);
+            actorManager.value.onEvent({ EventId: eventIdEntityDown, At: now, Id: 'b9' } as unknown as eventBase);
+            await tick(250);
+            expect(data.bossAlive.value).toBe(false);
+            expect(tilesOf('ccBoss', '1165')).toEqual([]);
+        });
+
+        it('own CCs count as gone only inside a dungeon', async () => {
+            await mountHook();
+            appear('me', 8001, 100, 'Me');
+            actorManager.value.onEvent({ EventId: 14, At: 100, Id: 'me', Name: 'Me' } as unknown as eventBase);
+            await tick(250);
+            expect(tilesOf('ccSelf', '680')).toEqual([]);
+            sessionMock.inDungeon.value = true;
+            await tick(250);
+            expect(data.inDungeon.value).toBe(true);
+            expect(tilesOf('ccSelf', '680').map(t => [t.holderId, t.state])).toEqual([['me', 'gone']]);
+            // 覺醒 and 戰吼 never count as gone.
+            expect(tilesOf('burst', '516')).toEqual([]);
         });
 
         it('does not replace the view model when nothing changed', async () => {
             await mountHook();
             appear('b1', BOSS_RACE, 100);
             let n = 0;
-            watch(() => data.cc.value, () => { n++; });
+            watch(() => data.tiles.value, () => { n++; });
             await tick(250);
             const after = n;
             await tick(250);
@@ -251,10 +301,17 @@ describe('useOverlayData', () => {
         const settingsWith = (voice: object = {}) => ({
             rules: [{
                 id: 'r1', enabled: true, kind: 'countdown', target: 'self', ccId: 680, times: [25], every: 30,
-                conds: [], join: 'and', text: true, textMessage: '{CC} {秒}', voice: true, voiceMessage: '', textKeep: 5,
+                conds: [], join: 'and', text: true, textMessage: '{CC} {秒}', voice: true, voiceMessage: '', textKeep: 5, loud: false,
                 dismiss: { condFails: false, ccEnds: false, replaced: false },
             }],
             voice,
+        });
+
+        // The alerts component is off by default; turn it on.
+        const alertsOn = () => fire('overlay:state', {
+            locked: true, hotkey: 'Ctrl+Alt+L', hotkeyError: '', licensed: true, elevated: true, elevateError: '',
+            hidden: false, visibleHotkey: 'Ctrl+Alt+O', visibleHotkeyError: '', gameFound: true,
+            layout: { alerts: { enabled: true, anchor: 'center', x: 0, y: -170, width: 320, maxRows: 4 } },
         });
 
         async function prelude(voice: object = {}) {
@@ -262,6 +319,7 @@ describe('useOverlayData', () => {
             await mountHook();
             appear('me', 8001, 100, 'Me');
             actorManager.value.onEvent({ EventId: 14, At: 100, Id: 'me', Name: 'Me' } as unknown as eventBase);
+            alertsOn();
             fire('overlay:settings', settingsWith(voice));
             cc('me', 680, 1000, Date.now() / 1000 + 26);
             await tick(250);
@@ -328,6 +386,7 @@ describe('useOverlayData', () => {
             await mountHook();
             appear('me', 8001, 100, 'Me');
             actorManager.value.onEvent({ EventId: 14, At: 100, Id: 'me', Name: 'Me' } as unknown as eventBase);
+            alertsOn();
             fire('overlay:settings', { rules: [{ ...settingsWith().rules[0], times: [25, 10, 5] }] });
             cc('me', 680, 1000, Date.now() / 1000 + 30);
             await tick(250);
@@ -336,14 +395,6 @@ describe('useOverlayData', () => {
             expect(data.alerts.value).toHaveLength(1);
             expect(data.alerts.value[0].text).toContain('5');
             expect(speechMock.say).toHaveBeenCalledTimes(1);
-        });
-
-        it('the cc icon of a rule in its alert window is red', async () => {
-            await prelude();
-            await tick(1000);
-            fire('overlay:settings', { cc: { sections: { boss: [], self: [680], party: [] } }, ...settingsWith() });
-            await tick(250);
-            expect(data.cc.value.self!.icons[0].expiring).toBe(true);
         });
 
         it('lists cooldown rows with the owner marked', async () => {
@@ -357,7 +408,70 @@ describe('useOverlayData', () => {
                 EventId: 4, At: now - 100, Id: 'b1', CCId: 803, DisableAt: now - 40, AttackerId: 'me', Params: {},
             } as unknown as eventBase);
             await tick(250);
-            expect(data.cooldown.value.map(r => [r.id, r.isSelf])).toEqual([['me', true]]);
+            expect(tilesOf('cooldown', '59005').map(t => [t.holderId, t.isSelf])).toEqual([['me', true]]);
+        });
+
+        it('a replay source shows and fires nothing; back to live shows again', async () => {
+            await prelude();
+            sessionMock.source.value = { Mode: 'replay' };
+            // A boss newer than any other test's, so it is the one watched.
+            appear('bReplay', BOSS_RACE, Date.now() / 1000);
+            hit('me', 'bReplay', Date.now() / 1000, 100);
+            await tick(1000);
+            expect(data.replaying.value).toBe(true);
+            expect(data.alerts.value).toEqual([]);
+            expect(speechMock.say).not.toHaveBeenCalled();
+            expect(data.dps.value.rows).toEqual([]);
+            expect(Object.values(data.tiles.value).every(m => m.size === 0)).toBe(true);
+            sessionMock.source.value = { Mode: 'live' };
+            sessionMock.opts!.onSourceReset!();
+            await tick(250);
+            expect(data.replaying.value).toBe(false);
+            expect(data.dps.value.rows.map(r => r.total)).toEqual([100]);
+        });
+
+        it('a CC cast seen only during a replay never starts a cooldown back in live', async () => {
+            vi.setSystemTime(2_000_000_000_000);
+            await mountHook();
+            appear('me', 8001, 100, 'Me');
+            appear('b1', BOSS_RACE, 100);
+            actorManager.value.onEvent({ EventId: 14, At: 100, Id: 'me', Name: 'Me' } as unknown as eventBase);
+            await tick(250);
+            sessionMock.source.value = { Mode: 'replay' };
+            const now = Date.now() / 1000;
+            const cast = (At: number) => actorManager.value.onEvent({
+                EventId: 4, At, Id: 'b1', CCId: 803, DisableAt: At + 60, AttackerId: 'me', Params: {},
+            } as unknown as eventBase);
+            cast(now - 10);
+            await tick(250);
+            // Arrives after the last replay tick, before the switch.
+            cast(now - 5);
+            actorManager.value.clear();
+            sessionMock.source.value = { Mode: 'live' };
+            sessionMock.opts!.onSourceReset!();
+            await tick(250);
+            expect(tilesOf('cooldown', '59005')).toEqual([]);
+        });
+
+        it('a source reset drops the cooldown rows from before', async () => {
+            vi.setSystemTime(2_000_000_000_000);
+            await mountHook();
+            appear('me', 8001, 100, 'Me');
+            appear('b1', BOSS_RACE, 100);
+            actorManager.value.onEvent({ EventId: 14, At: 100, Id: 'me', Name: 'Me' } as unknown as eventBase);
+            const now = Date.now() / 1000;
+            actorManager.value.onEvent({
+                EventId: 4, At: now - 100, Id: 'b1', CCId: 803, DisableAt: now - 40, AttackerId: 'me', Params: {},
+            } as unknown as eventBase);
+            await tick(250);
+            expect(tilesOf('cooldown', '59005').map(t => t.holderId)).toEqual(['me']);
+            // The new source re-sends the same player with no casts.
+            actorManager.value.clear();
+            sessionMock.opts!.onSourceReset!();
+            appear('me', 8001, 100, 'Me');
+            actorManager.value.onEvent({ EventId: 14, At: 100, Id: 'me', Name: 'Me' } as unknown as eventBase);
+            await tick(250);
+            expect(tilesOf('cooldown', '59005')).toEqual([]);
         });
     });
 });
@@ -365,14 +479,14 @@ describe('useOverlayData', () => {
 describe('applyAlerts', () => {
     const base: AlertRule = {
         id: 'r1', enabled: true, kind: 'countdown', target: 'self', ccId: 680, times: [25], every: 30,
-        conds: [{ mode: 'absent', ccId: 1 }], join: 'and', text: true, textMessage: '', voice: false, voiceMessage: '', textKeep: 5,
+        conds: [{ mode: 'absent', ccId: 1 }], join: 'and', text: true, textMessage: '', voice: false, voiceMessage: '', textKeep: 5, loud: false,
         dismiss: { condFails: false, ccEnds: false, replaced: false },
     };
     const item = (key: number, p: Partial<AlertItem> = {}): AlertItem => ({
         key, text: `t${key}`, at: 1000, ruleId: 'r1', actorId: 'me', castKey: 'r1:me:130', expireAt: 6000, ...p,
     });
     const fireOf = (p: Partial<AlertFire> = {}): AlertFire => ({
-        ruleId: 'r1', actorId: 'me', sec: 25, text: 'new', voiceText: 'new', voice: false, showText: true, castKey: 'r1:me:130', ...p,
+        ruleId: 'r1', actorId: 'me', sec: 25, text: 'new', voiceText: 'new', voice: false, showText: true, loud: false, castKey: 'r1:me:130', ...p,
     });
     const live = { holding: new Set(['r1:me']), ccLive: new Set(['r1:me:130']) };
     const run = (items: AlertItem[], o: { rules?: AlertRule[]; step?: typeof live; now?: number; fires?: AlertFire[] } = {}) => {
@@ -390,7 +504,7 @@ describe('applyAlerts', () => {
 
     it('adds a fired alert that lives textKeep seconds', () => {
         const out = run([], { rules: [{ ...base, textKeep: 8 }], fires: [fireOf()] });
-        expect(out).toEqual([{ key: 101, text: 'new', at: 2000, ruleId: 'r1', actorId: 'me', castKey: 'r1:me:130', expireAt: 10000 }]);
+        expect(out).toEqual([{ key: 101, text: 'new', at: 2000, ruleId: 'r1', actorId: 'me', castKey: 'r1:me:130', expireAt: 10000, loud: false }]);
     });
 
     it('skips fires whose text is off', () => {

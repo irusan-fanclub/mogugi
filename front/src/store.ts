@@ -2,6 +2,7 @@ import { ref, shallowRef, computed } from 'vue';
 import { MabiDB } from '@/mabidb';
 import { ActorManager } from '@/eventActor';
 import { DamageCollectorManager } from '@/actionCollector';
+import type { TuairimReading } from '@/lib/tuairim';
 import type { ownerEquipmentItem, ownerPanel, ownerProfile as OwnerProfile } from '@/protocols';
 import { effectiveBossRaces, addBossRace, removeBossRace, hasBossRaceOverrides, type BossRaceOverrides } from '@/lib/bossRaces';
 import { settingsStorage } from '@/lib/settingsStorage';
@@ -26,6 +27,8 @@ export const db = computed(() => {
 
 export const raceNameMap = ref<Record<number, string>>({});
 export const skillNameMap = ref<Record<number, string>>({});
+// Skills a player can use (`available_race & 7`); what the overlay's 新增技能 picker lists.
+export const playerSkillIds = ref<Set<number>>(new Set());
 export const condNameMap = ref<Record<number, string>>({});
 export const itemNameMap = ref<Record<number, string>>({});
 // enchant (OptionSet) id -> plain localized name, e.g. 11107 -> 生命.
@@ -64,6 +67,8 @@ export const captureStatus = ref<CaptureStatus | null>(null);
 export const ownerEquipment = ref<ownerEquipmentItem[]>([]);
 export const ownerStats = ref<ownerPanel | null>(null);
 export const ownerProfile = ref<OwnerProfile | null>(null);
+/** The local character's latest 信念值 reading; null until the server sends one. */
+export const tuairim = ref<TuairimReading | null>(null);
 export const ownerCharacterName = ref('');
 
 export const timeRangeMin = ref<number | null>(null);

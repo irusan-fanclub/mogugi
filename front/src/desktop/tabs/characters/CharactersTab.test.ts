@@ -128,6 +128,57 @@ describe('CharactersTab', () => {
         const next = document.querySelector('.pname')!.nextElementSibling!;
         expect(next.matches('[aria-label="角色模擬"]') || next.querySelector('[aria-label="角色模擬"]') !== null).toBe(true);
     });
+    describe('search', () => {
+        const search = async (q: string) => {
+            const i = document.querySelector<HTMLInputElement>('input[placeholder="搜尋角色名、公會、種族或裝備"]')!;
+            i.value = q;
+            i.dispatchEvent(new Event('input'));
+            await nextTick();
+        };
+        const setup = () => {
+            raceNameMap.value = { 8001: '人類 8001', 8002: '精靈 8002' };
+            itemNameMap.value = { 500: '長劍 500', 501: '盾 501', 503: '法杖 503', 502: '臉 502' };
+            setActors(
+                pc('1', 'Alice'),
+                pc('2', 'Bob', { guildName: 'Knights', raceId: 8002, equipItemMap: { 1: { PocketType: 4, ItemId: 503 } } }),
+                pc('3', 'Carol', { equipItemMap: { 1: { PocketType: 4, ItemId: 500 } } }),
+            );
+            mountTab();
+        };
+        it('matches name case-insensitively and trims', async () => {
+            setup();
+            await search('  aLIc ');
+            expect(names()).toEqual(['Alice']);
+        });
+        it('matches guild and race', async () => {
+            setup();
+            await search('knight');
+            expect(names()).toEqual(['Bob']);
+            await search('精靈');
+            expect(names()).toEqual(['Bob']);
+        });
+        it('matches equipped item names without expanding rows', async () => {
+            setup();
+            await search('法杖');
+            expect(names()).toEqual(['Bob']);
+            expect(document.querySelector('[data-body]')).toBeNull();
+        });
+        it('shows count while filtering and the no-match message', async () => {
+            setup();
+            expect(document.querySelector('[data-count]')).toBeNull();
+            await search('bob');
+            expect(document.querySelector('[data-count]')!.textContent).toBe('1／3');
+            await search('zzz');
+            expect(document.querySelector('.empty')!.textContent).toBe('找不到符合的角色');
+            await search('');
+            expect(names()).toHaveLength(3);
+        });
+        it('keeps the no-data message when there are no PCs', () => {
+            setActors();
+            mountTab();
+            expect(document.querySelector('.empty')!.textContent).toBe('尚無角色資料');
+        });
+    });
     it('context menus copy names and ids', async () => {
         const writeText = vi.fn(async () => {});
         vi.stubGlobal('navigator', { clipboard: { writeText } });

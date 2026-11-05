@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { condNameMap } from '@/store';
 import { ccName } from '@/lib/util';
 import { fillMessage } from '@/lib/alertRules';
-import type { AlertKind, AlertRule, AlertsOverlaySettings, SizeStep, VoiceSettings } from '@/lib/overlaySettings';
+import { defaultRules, type AlertKind, type AlertRule, type AlertsOverlaySettings, type SizeStep, type VoiceSettings } from '@/lib/overlaySettings';
 import { createSpeechQueue } from '@/overlay/speechQueue';
 import { overlaySettings, updateOverlaySettings } from '../../overlay/overlayLink';
 import DSegmented from '../../ui/DSegmented.vue';
@@ -12,6 +12,7 @@ import DButton from '../../ui/DButton.vue';
 import DIconButton from '../../ui/DIconButton.vue';
 import DSelect from '../../ui/DSelect.vue';
 import OpacityRange from './OpacityRange.vue';
+import BgColorField from './BgColorField.vue';
 import AlertRuleEditor from './AlertRuleEditor.vue';
 import { DEFAULT_CC_ID, ruleSummary } from './ruleSummary';
 
@@ -37,11 +38,14 @@ const addRule = () => {
     const rule: AlertRule = {
         id: newId(), enabled: true, kind: 'countdown', target: 'self', ccId: DEFAULT_CC_ID, times: [10], every: 30,
         conds: [], join: 'and', text: true, textMessage: '', voice: true, voiceMessage: '', textKeep: 5,
-        dismiss: { condFails: false, ccEnds: false, replaced: false },
+        dismiss: { condFails: false, ccEnds: false, replaced: false }, loud: false,
     };
     updateOverlaySettings(s => { s.rules.push(rule); });
     editing.value = rule.id;
 };
+// Puts back the default rules that were deleted; edited ones stay as they are.
+const missingDefaults = computed(() => defaultRules().filter(d => !rules.value.some(r => r.id === d.id)));
+const restoreDefaults = () => updateOverlaySettings(s => { s.rules.push(...missingDefaults.value); });
 const patchRule = (rule: AlertRule) =>
     updateOverlaySettings(s => { s.rules = s.rules.map(r => r.id === rule.id ? rule : r); });
 const removeRule = (id: string) => {
@@ -83,6 +87,14 @@ const preview = (message: string, ccId: number, kind: AlertKind = 'countdown') =
         data-alerts-opacity
         :model-value="overlaySettings.alerts.opacity"
         @update:model-value="v => setAlerts(a => { a.opacity = v; })"
+      />
+    </div>
+    <div class="setting">
+      <div class="lbl">底色</div>
+      <BgColorField
+        data-alerts-bg
+        :model-value="overlaySettings.alerts.bg"
+        @update:model-value="v => setAlerts(a => { a.bg = v; })"
       />
     </div>
     <div class="setting">
@@ -145,6 +157,7 @@ const preview = (message: string, ccId: number, kind: AlertKind = 'countdown') =
       <div class="head">
         <span class="title">提醒規則</span>
         <span class="grow" />
+        <DButton v-if="missingDefaults.length" size="sm" data-restore-rules @click="restoreDefaults">恢復預設規則</DButton>
         <DButton size="sm" data-add-rule @click="addRule">新增規則</DButton>
       </div>
       <div v-if="rules.length === 0" class="note" data-no-rules>尚未設定任何規則</div>

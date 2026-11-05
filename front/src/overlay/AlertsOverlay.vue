@@ -15,6 +15,6 @@ const shown = computed(() => {
 
 <template>
   <div class="ov-alerts" :style="{ fontSize: FONT_PX[settings.fontSize] + 'px' }">
-    <div v-for="a in shown" :key="a.key" class="ov-alert" data-alert>{{ a.text }}</div>
+    <div v-for="a in shown" :key="a.key" class="ov-alert" :class="{ loud: a.loud }" data-alert>{{ a.text }}</div>
   </div>
 </template>

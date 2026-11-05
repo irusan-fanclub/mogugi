@@ -48,6 +48,22 @@ describe('conditionStateChanged', () => {
         }
     });
 
+    // The battle tab's CC tooltips read these; a 1176 stack growth must reach the history.
+    it('tracks the CC tooltip value keys', () => {
+        expect(SIGNIFICANT_PARAM_KEYS[1176]).toEqual(expect.arrayContaining(['MCSTCT', 'SBDD', 'SBPD']));
+        expect(SIGNIFICANT_PARAM_KEYS[1164]).toEqual(['MCDDDV', 'MCDDPV']);
+        // A source-only change is not a new state: it would add thousands of entries per log.
+        expect(conditionStateChanged(
+            [cc(1164, { MCDDDV: '103', MCDCASI: '24201' })],
+            [cc(1164, { MCDDDV: '103', MCDCASI: '27205' })],
+        )).toBe(false);
+        expect(SIGNIFICANT_PARAM_KEYS[680]).toEqual(['MCMBAMIN', 'MCMBAMAX', 'MCMBAC']);
+        expect(conditionStateChanged(
+            [cc(1176, { MCSTCT: '2', SBDD: '30', SBPD: '7', SBT: '1' })],
+            [cc(1176, { MCSTCT: '3', SBDD: '45', SBPD: '11', SBT: '1' })],
+        )).toBe(true);
+    });
+
     it('reports a change when a tracked key appears or disappears', () => {
         expect(conditionStateChanged([cc(516, {})], [cc(516, { SOP_CRITICAL: '15' })])).toBe(true);
         expect(conditionStateChanged([cc(516, { SOP_CRITICAL: '15' })], [cc(516, {})])).toBe(true);

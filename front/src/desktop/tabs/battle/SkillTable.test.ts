@@ -93,12 +93,18 @@ describe('SkillTable detail block', () => {
         expect(g.findAll('.fill')).toHaveLength(1);
     });
 
-    it('hides unseen CCs and formats title and one-decimal text', () => {
+    it('hides unseen CCs and formats the tip hint and one-decimal text', async () => {
         const w = mountTable();
         const chips = w.get('.skill-detail').findAll('.cc-sec[data-sec="boss"] .chip');
         expect(chips).toHaveLength(1); // 11 never seen
         // boss CC 10 is active at At 1 and 2 only (cleared at 3): 2 / 4
-        expect(chips[0].attributes('title')).toBe('崩壞：2 / 4 下（50.0%）');
+        vi.useFakeTimers();
+        try {
+            await chips[0].trigger('mouseenter');
+            vi.advanceTimersByTime(300);
+            await w.vm.$nextTick();
+            expect(document.body.querySelector('.cc-tip .hint')?.textContent).toBe('崩壞：2 / 4 下（50.0%）');
+        } finally { vi.useRealTimers(); }
         expect(chips[0].text()).toBe('50.0%');
         expect(chips[0].get('.pct').classes()).toContain('warn');
     });

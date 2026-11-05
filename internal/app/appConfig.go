@@ -74,7 +74,17 @@ type OverlayLayout struct {
 	Y       int    `toml:"y" json:"y"`
 	Width   int    `toml:"width" json:"width"`
 	MaxRows int    `toml:"maxRows" json:"maxRows"`
+	// Dock names the component this one hangs under; X is then the offset from its left edge.
+	Dock string `toml:"dock" json:"dock"`
+	// Order lists the item ids of a section frame in display order.
+	Order []string `toml:"order,omitempty" json:"order,omitempty"`
 }
+
+const maxOverlayOrder = 64
+
+// overlayLayoutVersion is written next to [overlays]; layouts saved under an
+// older version are dropped on load so everyone starts from the new defaults.
+const overlayLayoutVersion = 2
 
 // ValidOverlayLayout reports whether l has a known anchor and in-range size.
 func ValidOverlayLayout(l OverlayLayout) bool {
@@ -82,6 +92,17 @@ func ValidOverlayLayout(l OverlayLayout) bool {
 	case "tl", "tr", "bl", "br", "center":
 	default:
 		return false
+	}
+	if l.Dock != "" && !ValidOverlayID(l.Dock) {
+		return false
+	}
+	if len(l.Order) > maxOverlayOrder {
+		return false
+	}
+	for _, id := range l.Order {
+		if !ValidOverlayID(id) {
+			return false
+		}
 	}
 	return l.Width >= 120 && l.Width <= 800 && l.MaxRows >= 1 && l.MaxRows <= 20
 }
@@ -135,7 +156,8 @@ func parseAppConfig(text string) (appConfig, string) {
 			Hotkey        string `toml:"hotkey"`
 			VisibleHotkey string `toml:"visibleHotkey"`
 		} `toml:"overlay"`
-		Overlays map[string]OverlayLayout `toml:"overlays"`
+		Overlays             map[string]OverlayLayout `toml:"overlays"`
+		OverlayLayoutVersion int                      `toml:"overlayLayoutVersion"`
 	}
 	if _, err := toml.Decode(text, &raw); err != nil {
 		return defaultAppConfig(), fmt.Sprintf("設定檔格式錯誤:%v", err)
@@ -174,7 +196,7 @@ func parseAppConfig(text string) (appConfig, string) {
 		cfg.OverlayVisibleHotkey = raw.Overlay.VisibleHotkey
 	}
 	for id, l := range raw.Overlays {
-		if ValidOverlayLayout(l) {
+		if raw.OverlayLayoutVersion == overlayLayoutVersion && ValidOverlayLayout(l) {
 			if cfg.Overlays == nil {
 				cfg.Overlays = map[string]OverlayLayout{}
 			}
@@ -247,6 +269,7 @@ memoryLimitMB = %d
 
 # 以下由 mogugi 自動維護，不需要手動修改。
 trayHintShown = %t
+overlayLayoutVersion = %d
 `
 
 // dpsMode maps an unset value to the default mode.
@@ -267,7 +290,7 @@ func memoryLimitOrDefault(mb int) int {
 
 // renderAppConfig prints the file from the template with CRLF line endings.
 func renderAppConfig(c appConfig) string {
-	s := fmt.Sprintf(appConfigTemplate, c.SavePcapng, c.SavePacketLog, c.AutoOpenBrowser, c.AutoPort, c.Port, c.AllowLan, dpsMode(c.DpsDisplay), memoryLimitOrDefault(c.MemoryLimitMB), c.TrayHintShown)
+	s := fmt.Sprintf(appConfigTemplate, c.SavePcapng, c.SavePacketLog, c.AutoOpenBrowser, c.AutoPort, c.Port, c.AllowLan, dpsMode(c.DpsDisplay), memoryLimitOrDefault(c.MemoryLimitMB), c.TrayHintShown, overlayLayoutVersion)
 	if w := c.Window; w.Width > 0 {
 		s += fmt.Sprintf("\n[window]\nx = %d\ny = %d\nwidth = %d\nheight = %d\nmaximized = %t\n", w.X, w.Y, w.Width, w.Height, w.Maximized)
 	}
@@ -308,9 +331,24 @@ func renderAppConfig(c appConfig) string {
 	for _, id := range ids {
 		o := c.Overlays[id]
 		s += fmt.Sprintf("\n[overlays.%s]\nenabled = %t\nanchor = %q\nx = %d\ny = %d\nwidth = %d\nmaxRows = %d\n", id, o.Enabled, o.Anchor, o.X, o.Y, o.Width, o.MaxRows)
+		if o.Dock != "" {
+			s += fmt.Sprintf("dock = %q\n", o.Dock)
+		}
+		if len(o.Order) > 0 {
+			s += fmt.Sprintf("order = [%s]\n", quoteJoin(o.Order))
+		}
 	}
 	s += renderUiSettings(c.UI)
 	return strings.ReplaceAll(s, "\n", "\r\n")
+}
+
+// quoteJoin renders strings as a comma-separated list of TOML basic strings.
+func quoteJoin(ss []string) string {
+	q := make([]string, len(ss))
+	for i, s := range ss {
+		q[i] = fmt.Sprintf("%q", s)
+	}
+	return strings.Join(q, ", ")
 }
 
 // bareTomlKey limits chartWindows and overlays keys to ones safe to print unquoted.

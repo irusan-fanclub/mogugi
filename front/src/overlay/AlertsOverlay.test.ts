@@ -25,4 +25,9 @@ describe('AlertsOverlay', () => {
         const w = mount(AlertsOverlay, { props: { items: many, settings, anchor: 'tl', maxRows: 2 } });
         expect(w.findAll('[data-alert]').map(a => a.text())).toEqual(['m5', 'm4']);
     });
+
+    it('a loud alert gets the loud class', () => {
+        const w = mount(AlertsOverlay, { props: { items: [{ key: 1, text: '覺醒', ...meta, loud: true }, items[0]], settings, anchor: 'bl', maxRows: 4 } });
+        expect(w.findAll('[data-alert]').map(a => a.classes().includes('loud'))).toEqual([true, false]);
+    });
 });

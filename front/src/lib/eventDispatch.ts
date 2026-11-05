@@ -1,4 +1,5 @@
 import * as p from '@/protocols';
+import type { TuairimReading } from '@/lib/tuairim';
 
 export interface EventSink {
     messageBox(text: string): void;
@@ -7,6 +8,7 @@ export interface EventSink {
     ownerEquipment(items: p.eventOwnerEquipment['Items']): void;
     ownerStats(panel: p.eventOwnerStats['Panel']): void;
     ownerProfile(profile: p.ownerProfile): void;
+    tuairim(r: TuairimReading): void;
     sessionReset(reason: string): void;
     configChanged(cfg: Record<string, unknown>): void;
     sourceChanged(state: p.sourceState): void;
@@ -16,6 +18,8 @@ export interface EventSink {
     historyEvicted(at: number, present?: string[]): void;
     /** A new battle segment started at `at` (unix seconds). */
     battleBoundary(at: number, present?: string[]): void;
+    /** Whether the local player is inside a dungeon. */
+    zone(inDungeon: boolean): void;
     battle(e: p.eventBase): void;
 }
 
@@ -43,6 +47,9 @@ export function dispatchEvents(events: p.eventBase[], sink: EventSink): void {
             case p.eventIdBattleBoundary:
                 sink.battleBoundary(event.At, (event as p.eventBattleBoundary).Present);
                 continue;
+            case p.eventIdZone:
+                sink.zone((event as p.eventZone).InDungeon);
+                continue;
             case p.eventIdOwnerEquipment:
                 sink.ownerEquipment((event as p.eventOwnerEquipment).Items);
                 continue;
@@ -52,6 +59,11 @@ export function dispatchEvents(events: p.eventBase[], sink: EventSink): void {
             case p.eventIdOwnerProfile:
                 sink.ownerProfile((event as p.eventOwnerProfile).Profile);
                 continue;
+            case p.eventIdTuairim: {
+                const e = event as p.eventTuairim;
+                sink.tuairim({ value: e.Value, max: e.Max, at: e.At });
+                continue;
+            }
             case p.eventIdSessionReset:
 {
                 const reason = (event as p.eventSessionReset).Reason;

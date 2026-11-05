@@ -394,6 +394,14 @@ export class ActorManager {
         }
     }
 
+    /** clear() plus dropping every entity, for a full event stream about to be fed again;
+     *  clear() alone keeps condition/life histories, so the stream would append a second copy. */
+    public reset() {
+        this.clear();
+        for (const k of Object.keys(this.entityMap)) delete this.entityMap[k];
+        for (const k of Object.keys(this.groupMap)) delete this.groupMap[k];
+    }
+
     private static groupTargetKey(event: protocols.eventEntityAppear): string {
         // pc 일 경우 group안에 entity가 여러개 생기지 않도록
         // Placeholders group per entity too — their race is a stand-in, so
@@ -839,9 +847,9 @@ export class EntityActor extends BaseActor {
 
         // Re-enabling a CC that is already on, at the same magnitudes, cannot
         // change the state — and that is nearly all of these events: one
-        // 50-minute log had 75,243 enables, 72,040 of them repeats and only
-        // 161 on a CC whose values are read at all. Deciding it from this one
-        // condition avoids rebuilding and sorting the whole active set.
+        // 50-minute log had 75,243 enables, 72,040 of them repeats. The CCs
+        // whose values are read (conditionChange) are a small share of them.
+        // Deciding it from this one condition avoids rebuilding the active set.
         if (wasOn && !significantValuesChanged(wasOn, now)) {
             return;
         }

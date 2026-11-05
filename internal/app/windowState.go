@@ -71,6 +71,19 @@ func SaveOverlayLayout(id string, l OverlayLayout) error {
 	})
 }
 
+// RemoveOverlayLayout drops one component's stored layout.
+func RemoveOverlayLayout(id string) error {
+	return updateAppConfig(func(c *appConfig) {
+		m := make(map[string]OverlayLayout, len(c.Overlays))
+		for k, v := range c.Overlays {
+			if k != id {
+				m[k] = v
+			}
+		}
+		c.Overlays = m
+	})
+}
+
 // SaveOverlayHotkey persists the lock-toggle hotkey.
 func SaveOverlayHotkey(h string) error {
 	return updateAppConfig(func(c *appConfig) { c.OverlayHotkey = h })

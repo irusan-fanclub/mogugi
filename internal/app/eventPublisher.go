@@ -73,6 +73,7 @@ type eventPublisher struct {
 	lastOwnerStatsAt int64                           // unix-second of lastOwnerPanel's publish, for the current-value throttle
 	lastOwnerEquip   []event.EquipmentItem           // last EventOwnerEquipment.Items published, for dedupe
 	ownerProfile     *packet.OwnerProfile            // last EventOwnerProfile payload (also its dedupe); nil until a snapshot
+	lastTuairim      *event.EventTuairim             // last published 信念值; nil until the owner's stat 198 is seen
 	preparingSkill   uint16                          // skillId from the last 0x6984; consumed and cleared by 0x698B
 	// Last published skill use, for collapsing the server's double-send of
 	// one cast (two combat packs 0-3ms apart) into a single event.
@@ -86,9 +87,12 @@ type eventPublisher struct {
 	onPacket      func(*packet.GamePacket) // test hook, runs before handlePacket
 	onReplayBatch func()                   // test hook, runs inside PublishReplayEvents
 	readOnly      atomic.Bool
+	overlayGated  atomic.Bool // true while a replay source hides regular events from overlays
 	liveClient    atomic.Pointer[string]
 	importBattles atomic.Bool
 	sourceEvt     atomic.Pointer[event.EventSourceChanged]
+	zoneEvt       atomic.Pointer[event.EventZone] // latest zone, sent to new clients
+	liveZoneEvt   atomic.Pointer[event.EventZone] // latest live-capture zone, restored on return to live
 
 	// hist is the bounded event history of the current source (guarded by the mutex).
 	hist eventHistory
@@ -110,6 +114,8 @@ type eventClient struct {
 	skipReadOnly bool
 	// filter, when set, drops events it rejects (negative system ids always pass).
 	filter func(event.IEvent) bool
+	// overlay marks overlay-scope clients (reseeded when a replay ends).
+	overlay bool
 }
 
 // historyOpts selects what a history client receives: only the current
@@ -117,20 +123,55 @@ type eventClient struct {
 type historyOpts struct {
 	currentOnly bool
 	filter      func(event.IEvent) bool
+	overlay     bool
 }
 
 // overlayWants keeps the types the overlay page consumes via ActorManager: appear/disappear
 // (names, races, owners), damage, CC enable/disable/finish, life/max life/death, skill use
-// and owner character. Equip, stats, chat, bardsong, casts etc. are never read by overlays.
+// owner character, the bard song (戰吼 is built from its pulses) and the 信念值 gauge. Equip, stats, chat,
+// casts etc. are never read by overlays.
 func overlayWants(e event.IEvent) bool {
 	switch e.GetEventId() {
 	case event.EventIdEntityAppear, event.EventIdEntityDisappear, event.EventIdDamage,
 		event.EventIdCharacterConditionEnable, event.EventIdCharacterConditionDisable,
 		event.EventIdFinish, event.EventIdOwnerCharacter, event.EventIdSkillUse,
-		event.EventIdMaxLife, event.EventIdEntityLife, event.EventIdEntityDeath:
+		event.EventIdMaxLife, event.EventIdEntityLife, event.EventIdEntityDeath,
+		event.EventIdBardsong, event.EventIdBardsongPulse, event.EventIdTuairim:
 		return true
 	}
 	return false
+}
+
+// overlayFilter is overlayWants, but passes no regular events while overlayGated
+// (a replay source; overlays only show live data). System events still pass.
+func (t *eventPublisher) overlayFilter(e event.IEvent) bool {
+	return !t.overlayGated.Load() && overlayWants(e)
+}
+
+// SetOverlayGated hides regular events from overlay clients while a replay runs.
+func (t *eventPublisher) SetOverlayGated(on bool) { t.overlayGated.Store(on) }
+
+// reseedOverlays re-sends owner/entity state to overlay clients that connected
+// during a replay and so missed it. Call right after the gate is lifted.
+func (t *eventPublisher) reseedOverlays() {
+	t.Lock()
+	defer t.Unlock()
+	for k, c := range t.clientMap {
+		if !c.overlay || c.ctx.Err() != nil {
+			continue
+		}
+		snap := append(t.leadEventsLocked(false), dedupeSnapshotConditions(t.entityEventsLocked(false, true), nil, 0)...)
+		send := filterEvents(snap, c.filter)
+		if len(send) == 0 {
+			continue
+		}
+		select {
+		case c.ch <- send:
+		default:
+			delete(t.clientMap, k)
+			logger.Println("queue full... force close socket", k)
+		}
+	}
 }
 
 // dedupeSnapshotConditions drops snapshot condition enables that the chunks re-enable (the
@@ -355,6 +396,7 @@ drainLoop:
 	t.lastOwnerStatsAt = 0
 	t.lastOwnerEquip = nil
 	t.ownerProfile = nil
+	t.lastTuairim = nil
 	t.clock = serverClock{}
 	t.bardsongBuffs = nil
 	t.bardsongNow = 0
@@ -362,6 +404,9 @@ drainLoop:
 		t.hist.reset()
 		t.inWhitelistRun.Store(false)
 	}
+	// Forget the region so the next SetLocation publishes its zone again.
+	t.lastRegion = 0
+	t.lastRegionName = ""
 	t.Unlock()
 
 	logger.Printf("SessionReset: reason=%s", reason)
@@ -373,6 +418,18 @@ drainLoop:
 		},
 		Reason: reason,
 	})
+	// A new source starts outside a dungeon until it reports a region; the live
+	// game only does so on a map change, so returning to live restores its zone.
+	zone := &event.EventZone{
+		EventBase: event.EventBase{EventId: event.EventIdZone, At: time.Now().Unix()},
+	}
+	if lz := t.liveZoneEvt.Load(); reason == "live" && lz != nil {
+		zone.InDungeon = lz.InDungeon
+	} else if reason != "replay" {
+		t.liveZoneEvt.Store(zone) // a new live connection
+	}
+	t.zoneEvt.Store(zone)
+	t.publish(zone)
 }
 
 // SetReaderFilter updates the current reader's live capture filter.
@@ -1001,6 +1058,7 @@ func (t *eventPublisher) setOwnerCharacter(id uint64, name string) {
 		t.lastOwnerStatsAt = 0
 		t.lastOwnerEquip = nil
 		t.ownerProfile = nil
+		t.lastTuairim = nil
 	}
 	t.ownerId = id
 	t.ownerName = name
@@ -1871,14 +1929,41 @@ func (t *eventPublisher) handleStatTable(p *packet.GamePacket) {
 		t.statTables[id] = cur
 	}
 	cur.Merge(st)
-	var stats *event.EventOwnerStats
+	var (
+		stats   *event.EventOwnerStats
+		tuairim *event.EventTuairim
+	)
 	if id == t.ownerId {
 		stats = t.ownerStatsIfChangedLocked(p.At.Unix())
+		if _, has := st[packet.StatTuairim]; has {
+			tuairim = t.tuairimIfChangedLocked(cur, p.At.Unix())
+		}
 	}
 	t.Unlock()
 	if stats != nil {
 		t.publish(stats)
 	}
+	if tuairim != nil {
+		t.publish(tuairim)
+	}
+}
+
+// tuairimIfChangedLocked returns the 信念值 event when it is worth sending: the
+// first reading, a drop (fired or reset), a full point of gain (about 6 s) or
+// reaching the cap. The client extrapolates in between. Caller holds t.Lock.
+func (t *eventPublisher) tuairimIfChangedLocked(st packet.StatTable, at int64) *event.EventTuairim {
+	v, mx := st[packet.StatTuairim], st[packet.StatTuairimMax]
+	if last := t.lastTuairim; last != nil && last.Max == mx &&
+		v >= last.Value && v-last.Value < 1 && (v < mx || last.Value >= mx) {
+		return nil
+	}
+	e := &event.EventTuairim{
+		EventBase: event.EventBase{EventId: event.EventIdTuairim, At: at, Id: strconv.FormatUint(t.ownerId, 10)},
+		Value:     v,
+		Max:       mx,
+	}
+	t.lastTuairim = e
+	return e
 }
 
 // panelOf returns the character-window values derived from an entity's stat
@@ -1985,6 +2070,17 @@ func (t *eventPublisher) handleSetLocation(p *packet.GamePacket) {
 		t.markBattleBoundary(p.At.Unix(), whitelisted)
 	}
 	t.inWhitelistRun.Store(whitelisted)
+
+	// Published after the boundary so it lands in the new segment's history.
+	zone := &event.EventZone{
+		EventBase: event.EventBase{EventId: event.EventIdZone, At: p.At.Unix()},
+		InDungeon: region >= 35000,
+	}
+	t.zoneEvt.Store(zone)
+	if !t.readOnly.Load() {
+		t.liveZoneEvt.Store(zone)
+	}
+	t.publish(zone)
 
 	// mission kind: only meaningful inside a dungeon (dynamic region).
 	mission := ""
@@ -2448,6 +2544,10 @@ func (t *eventPublisher) leadEventsLocked(playersOnly bool) []event.IEvent {
 	if t.ownerProfile != nil {
 		initial = append(initial, t.ownerProfileEventLocked(now))
 	}
+	// Keeps its own At: the client extrapolates the gauge from it.
+	if t.lastTuairim != nil {
+		initial = append(initial, t.lastTuairim)
+	}
 
 	// Seed a late-attaching client with the current capture status; live
 	// publishes only fire on change (mirrors the maxLifeSeen ride-along above).
@@ -2456,6 +2556,9 @@ func (t *eventPublisher) leadEventsLocked(playersOnly bool) []event.IEvent {
 	}
 	if src := t.sourceEvt.Load(); src != nil && !playersOnly {
 		initial = append(initial, src)
+	}
+	if z := t.zoneEvt.Load(); z != nil && !playersOnly {
+		initial = append(initial, z)
 	}
 	return initial
 }
@@ -2542,7 +2645,7 @@ func (t *eventPublisher) addClientWithHistory(ctx context.Context, ch chan<- []e
 		}
 	}
 	logger.Printf("send initial data with history: client=%d batches=%d", clientId, len(backlog))
-	t.clientMap[clientId] = &eventClient{ctx: ctx, ch: ch, filter: o.filter}
+	t.clientMap[clientId] = &eventClient{ctx: ctx, ch: ch, filter: o.filter, overlay: o.overlay}
 }
 
 func toEventEntityAppear(now int64, p *packet.EntityInfo) *event.EventEntityAppear {

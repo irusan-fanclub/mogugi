@@ -18,7 +18,7 @@ const ALL_TABS: TabDef[] = [
     { id: 'characters', label: '角色', component: CharactersTab },
     { id: 'items', label: '物品', component: ItemsTab },
     { id: 'equipment', label: '裝備（開發中）', component: EquipmentTab },
-    { id: 'overlay', label: 'Overlay（開發中）', component: OverlayTab },
+    { id: 'overlay', label: 'Overlay（測試中）', component: OverlayTab },
 ];
 
 // Overlays are desktop-only, so the browser has no overlay tab.

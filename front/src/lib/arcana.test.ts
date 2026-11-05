@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { deriveArcana, arcanaIconUrl, arcanaTitle } from './arcana';
+import { deriveArcana, arcanaIconUrl, arcanaTitle, createArcanaTracker } from './arcana';
 import { ARCANA_NAMES } from './arcanaTable';
 
 // 59165 is real (旋律人偶師, block 59160-59169) — kept accurate so a later
@@ -70,5 +70,66 @@ describe('arcana icon files on disk', () => {
     // screen, since most characters never use a detectable arcana skill.
     it('has the placeholder icon that arcanaIconUrl(null) points at', () => {
         expect(presentIds.has(0)).toBe(true);
+    });
+});
+
+describe('createArcanaTracker', () => {
+    const pc = (id: string, applyDamages: any[] = [], skillUses: any[] = [], isPC = true) =>
+        ({ id, isPC, applyDamages, skillUses });
+    it('takes the latest arcana by At across hits and skill uses', () => {
+        const t = createArcanaTracker(map);
+        t.observe([pc('a', [{ At: 10, SkillId: 59004 }], [{ At: 20, SkillId: 59083 }])]);
+        expect(t.of('a')).toBe(5);
+        t.observe([pc('b', [{ At: 30, SkillId: 59165 }], [{ At: 20, SkillId: 59004 }])]);
+        expect(t.of('b')).toBe(9);
+    });
+    it('ignores unknown skills and unseen players', () => {
+        const t = createArcanaTracker(map);
+        t.observe([pc('a', [{ At: 1, SkillId: 1 }])]);
+        expect(t.of('a')).toBeNull();
+        expect(t.of('nobody')).toBeNull();
+    });
+    it('remembers after the lists are emptied and picks up new entries', () => {
+        const t = createArcanaTracker(map);
+        const hits = [{ At: 10, SkillId: 59004 }];
+        t.observe([pc('a', hits)]);
+        t.observe([pc('a', [])]);
+        expect(t.of('a')).toBe(2);
+        hits.push({ At: 50, SkillId: 59165 });
+        t.observe([pc('a', hits)]);
+        expect(t.of('a')).toBe(9);
+    });
+    it('does not let older events override a newer arcana', () => {
+        const t = createArcanaTracker(map);
+        t.observe([pc('a', [{ At: 50, SkillId: 59165 }])]);
+        t.observe([pc('a', [{ At: 10, SkillId: 59004 }])]);
+        expect(t.of('a')).toBe(9);
+    });
+    it('ignores non-PCs', () => {
+        const t = createArcanaTracker(map);
+        t.observe([pc('npc', [{ At: 1, SkillId: 59004 }], [], false)]);
+        expect(t.of('npc')).toBeNull();
+    });
+    it('skip marks lists read without taking an arcana from them', () => {
+        const t = createArcanaTracker(map);
+        const hits = [{ At: 50, SkillId: 59165 }];
+        t.skip([pc('a', hits)]);
+        t.observe([pc('a', hits)]);
+        expect(t.of('a')).toBeNull();
+        hits.push({ At: 60, SkillId: 59004 });
+        t.observe([pc('a', hits)]);
+        expect(t.of('a')).toBe(2);
+    });
+    it('reset forgets every player, keeps old entries read, and picks up new ones', () => {
+        const t = createArcanaTracker(map);
+        const hits = [{ At: 50, SkillId: 59165 }];
+        t.observe([pc('a', hits)]);
+        t.reset();
+        expect(t.of('a')).toBeNull();
+        t.observe([pc('a', hits)]);
+        expect(t.of('a')).toBeNull();
+        hits.push({ At: 60, SkillId: 59004 });
+        t.observe([pc('a', hits)]);
+        expect(t.of('a')).toBe(2);
     });
 });

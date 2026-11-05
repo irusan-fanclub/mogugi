@@ -2,6 +2,7 @@ package desktop
 
 import (
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -24,6 +25,7 @@ type fakeOverlay struct {
 	emits      []OverlayStateMsg
 	elevated   bool
 	savedIDs   []string
+	removedIDs []string
 	saved      []app.OverlayLayout
 	savedKeys  []string
 	savedVis   []string
@@ -58,6 +60,7 @@ func (f *fakeOverlay) deps() overlayDeps {
 			f.saved = append(f.saved, l)
 			return nil
 		},
+		removeLayout:      func(id string) error { f.removedIDs = append(f.removedIDs, id); return nil },
 		saveHotkey:        func(h string) error { f.savedKeys = append(f.savedKeys, h); return nil },
 		saveVisibleHotkey: func(h string) error { f.savedVis = append(f.savedVis, h); return nil },
 	}
@@ -278,18 +281,32 @@ func TestSetLayoutSavesAndEmits(t *testing.T) {
 	c := newTestCore(f, nil)
 	l := app.OverlayLayout{Enabled: true, Anchor: "tr", X: 10, Y: 20, Width: 300, MaxRows: 6}
 	c.SetLayout("cc", l)
-	if len(f.saved) != 1 || f.savedIDs[0] != "cc" || f.saved[0] != l {
+	if len(f.saved) != 1 || f.savedIDs[0] != "cc" || !reflect.DeepEqual(f.saved[0], l) {
 		t.Fatalf("saved=%v %+v", f.savedIDs, f.saved)
 	}
-	if len(f.emits) != 1 || f.emits[0].Layout["cc"] != l {
+	if len(f.emits) != 1 || !reflect.DeepEqual(f.emits[0].Layout["cc"], l) {
 		t.Fatalf("emits=%+v", f.emits)
 	}
 	bad := l
 	bad.Anchor = "x"
 	c.SetLayout("cc", bad)
 	c.SetLayout("bad key]", l)
-	if len(f.saved) != 1 || len(f.emits) != 1 || c.State().Layout["cc"] != l {
+	if len(f.saved) != 1 || len(f.emits) != 1 || !reflect.DeepEqual(c.State().Layout["cc"], l) {
 		t.Fatalf("invalid accepted: saved=%d emits=%d", len(f.saved), len(f.emits))
+	}
+}
+
+func TestRemoveLayoutDropsSavesAndEmits(t *testing.T) {
+	f := &fakeOverlay{}
+	l := app.OverlayLayout{Enabled: true, Anchor: "tl", Width: 200, MaxRows: 8}
+	c := newTestCore(f, map[string]app.OverlayLayout{"w1": l})
+	c.RemoveLayout("w1")
+	if _, ok := c.State().Layout["w1"]; ok || len(f.removedIDs) != 1 || len(f.emits) != 1 {
+		t.Fatalf("removed=%v emits=%d", f.removedIDs, len(f.emits))
+	}
+	c.RemoveLayout("w1")
+	if len(f.removedIDs) != 1 || len(f.emits) != 1 {
+		t.Fatalf("unknown id acted on: removed=%v", f.removedIDs)
 	}
 }
 
@@ -298,7 +315,7 @@ func TestStateLayoutIsACopy(t *testing.T) {
 	l := app.OverlayLayout{Enabled: true, Anchor: "tl", Width: 200, MaxRows: 8}
 	c := newTestCore(f, map[string]app.OverlayLayout{"dps": l})
 	c.State().Layout["dps"] = app.OverlayLayout{}
-	if c.State().Layout["dps"] != l {
+	if !reflect.DeepEqual(c.State().Layout["dps"], l) {
 		t.Fatal("State leaks the internal map")
 	}
 }

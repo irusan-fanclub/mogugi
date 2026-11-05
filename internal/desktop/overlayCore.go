@@ -57,6 +57,7 @@ type overlayDeps struct {
 	licensed        func() bool
 	elevated        func() bool
 	saveLayout      func(id string, l app.OverlayLayout) error
+	removeLayout    func(id string) error
 	saveHotkey      func(string) error
 	// saveVisibleHotkey persists the show/hide hotkey.
 	saveVisibleHotkey func(string) error
@@ -276,6 +277,23 @@ func (c *overlayCore) SetLayout(id string, l app.OverlayLayout) {
 		logger.Printf("save overlay layout failed: %v", err)
 	}
 	c.saveMu.Unlock()
+}
+
+// RemoveLayout forgets a deleted component's layout; an unknown id is ignored.
+func (c *overlayCore) RemoveLayout(id string) {
+	c.saveMu.Lock()
+	defer c.saveMu.Unlock()
+	c.mu.Lock()
+	_, ok := c.layouts[id]
+	delete(c.layouts, id)
+	c.mu.Unlock()
+	if !ok {
+		return
+	}
+	c.emitState()
+	if err := c.d.removeLayout(id); err != nil {
+		logger.Printf("remove overlay layout failed: %v", err)
+	}
 }
 
 func (c *overlayCore) SetLocked(on bool) {

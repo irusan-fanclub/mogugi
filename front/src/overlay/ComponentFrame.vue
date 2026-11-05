@@ -9,13 +9,18 @@ const props = defineProps<{
     top: number;
     width: number;
     anchor: Anchor;
-    opacity: number;
+    /** A ready CSS colour, e.g. rgba(). */
+    bg: string;
     fontPx: number;
     editing: boolean;
     enabled: boolean;
     sample: boolean;
     clamped: boolean;
     dragging: boolean;
+    docked?: boolean;
+    dockTarget?: boolean;
+    /** Shows the 「↩ 收回」 button of a unit frame. */
+    back?: boolean;
 }>();
 const emit = defineEmits<{
     down: [e: PointerEvent, mode: 'move' | 'width'];
@@ -24,7 +29,9 @@ const emit = defineEmits<{
     cancel: [e: PointerEvent];
     anchor: [];
     toggle: [];
+    undock: [];
     height: [h: number];
+    back: [];
 }>();
 
 const el = ref<HTMLElement | null>(null);
@@ -52,8 +59,10 @@ function down(e: PointerEvent, mode: 'move' | 'width') {
     emit('down', e, mode);
 }
 
-const handleLeft = () => props.anchor === 'tr' || props.anchor === 'br';
-const badgePos = () => props.anchor === 'center'
+const handleLeft = () => !props.docked && (props.anchor === 'tr' || props.anchor === 'br');
+const badgePos = () => props.docked
+    ? { left: 'calc(var(--ov-badge) / -2)', top: 'calc(var(--ov-badge) / -2)' }
+    : props.anchor === 'center'
     ? { left: '50%', top: '50%', transform: 'translate(-50%, -50%)' }
     : {
         [props.anchor[1] === 'l' ? 'left' : 'right']: 'calc(var(--ov-badge) / -2)',
@@ -65,12 +74,12 @@ const badgePos = () => props.anchor === 'center'
   <div
     ref="el"
     class="ov-frame"
-    :class="{ editing, off: !enabled, clamped: clamped && !dragging, dragging }"
+    :class="{ editing, off: !enabled, clamped: clamped && !dragging, dragging, docked, 'dock-target': dockTarget }"
     :data-component="id"
     :style="{
       left: left + 'px', top: top + 'px', width: width + 'px',
       fontSize: fontPx + 'px',
-      background: `rgba(14,16,19,${opacity / 100})`,
+      background: bg,
       pointerEvents: editing ? 'auto' : 'none',
     }"
     @pointerdown="down($event, 'move')"
@@ -82,14 +91,22 @@ const badgePos = () => props.anchor === 'center'
     <template v-if="editing">
       <span v-if="sample" class="ov-sample">範例</span>
       <div class="ov-tag" data-tag>
-        <span>{{ name }}</span><i>{{ NAME[anchor] }}{{ enabled ? '' : '・已關閉' }}</i>
+        <span>{{ name }}</span><i>{{ docked ? '黏合' : NAME[anchor] }}{{ enabled ? '' : '・已關閉' }}</i>
+        <button
+          v-if="back" type="button" class="ov-back" data-back title="收回群組"
+          @pointerdown.stop @click.stop="emit('back')"
+        >↩ 收回</button>
         <button
           type="button" class="ov-switch" :class="{ on: enabled }" data-toggle
           :title="enabled ? '關閉' : '開啟'" @pointerdown.stop @click.stop="emit('toggle')"
         />
       </div>
       <button
-        type="button" class="ov-badge" data-anchor-badge title="切換錨點" :style="badgePos()"
+        v-if="docked" type="button" class="ov-badge" data-undock title="解除黏合" :style="badgePos()"
+        @pointerdown.stop @click.stop="emit('undock')"
+      >⛓</button>
+      <button
+        v-else type="button" class="ov-badge" data-anchor-badge title="切換錨點" :style="badgePos()"
         @pointerdown.stop @click.stop="emit('anchor')"
       >{{ GLYPH[anchor] }}</button>
       <div

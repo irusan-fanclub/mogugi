@@ -51,6 +51,7 @@ func setupOverlays(wapp *application.App, port int) *overlayCore {
 		licensed:          license.Status,
 		elevated:          isElevated,
 		saveLayout:        app.SaveOverlayLayout,
+		removeLayout:      app.RemoveOverlayLayout,
 		saveHotkey:        app.SaveOverlayHotkey,
 		saveVisibleHotkey: app.SaveOverlayVisibleHotkey,
 	}
@@ -77,6 +78,15 @@ func setupOverlays(wapp *application.App, port int) *overlayCore {
 			return
 		}
 		core.SetLayout(id, l)
+	})
+	wapp.Event.On("overlay:remove-layout", func(e *application.CustomEvent) {
+		p, _ := e.Data.(map[string]any)
+		id, ok := p["id"].(string)
+		if !ok {
+			logger.Printf("overlay:remove-layout ignored: invalid payload %v", e.Data)
+			return
+		}
+		core.RemoveLayout(id)
 	})
 	wapp.Event.On("overlay:set-locked", func(e *application.CustomEvent) {
 		p, _ := e.Data.(map[string]any)
@@ -129,7 +139,22 @@ func parseLayout(m map[string]any) (app.OverlayLayout, bool) {
 	if !(ok1 && ok2 && ok3 && ok4 && ok5 && ok6) {
 		return app.OverlayLayout{}, false
 	}
-	return app.OverlayLayout{Enabled: en, Anchor: anchor, X: int(x), Y: int(y), Width: int(w), MaxRows: int(rows)}, true
+	dock, _ := m["dock"].(string)
+	var order []string
+	if raw, present := m["order"]; present {
+		arr, isArr := raw.([]any)
+		if !isArr {
+			return app.OverlayLayout{}, false
+		}
+		for _, v := range arr {
+			s, isStr := v.(string)
+			if !isStr {
+				return app.OverlayLayout{}, false
+			}
+			order = append(order, s)
+		}
+	}
+	return app.OverlayLayout{Enabled: en, Anchor: anchor, X: int(x), Y: int(y), Width: int(w), MaxRows: int(rows), Dock: dock, Order: order}, true
 }
 
 const overlayExStyle = w32.WS_EX_CONTROLPARENT | w32.WS_EX_NOREDIRECTIONBITMAP | w32.WS_EX_TOPMOST |

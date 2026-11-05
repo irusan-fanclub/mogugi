@@ -6,13 +6,16 @@ export const TARGET_LABEL: Record<AlertTarget, string> = { boss: 'BOSS', self: '
 export const DEFAULT_CC_ID = 680;
 
 export function ruleSummary(rule: AlertRule, nameOf: (ccId: number) => string): string {
-    const when = rule.kind === 'periodic' ? `每 ${rule.every} 秒` : `${nameOf(rule.ccId)} 剩 ${rule.times.join('／')} 秒`;
+    const when = rule.kind === 'periodic' ? `每 ${rule.every} 秒`
+        : rule.kind === 'appear' ? `${nameOf(rule.ccId)} 出現時`
+            : `${nameOf(rule.ccId)} 剩 ${rule.times.join('／')} 秒`;
     const conds = rule.conds
         .map(c => `${c.mode === 'absent' ? '沒有' : '有'} ${nameOf(c.ccId)}`)
         .join(rule.join === 'or' ? ' 或 ' : ' 且 ');
     const cond = conds ? `，${conds} 時` : '';
-    const none = rule.kind === 'periodic' ? '不提醒' : '只轉紅';
-    const how = rule.text && rule.voice ? '文字＋語音' : rule.text ? '文字' : rule.voice ? '語音' : none;
+    const none = rule.kind === 'countdown' ? '只轉紅' : '不提醒';
+    const how = (rule.text && rule.voice ? '文字＋語音' : rule.text ? '文字' : rule.voice ? '語音' : none)
+        + (rule.text && rule.loud ? '（醒目）' : '');
     return `${TARGET_LABEL[rule.target]} ${when}${cond}：${how}`;
 }
 

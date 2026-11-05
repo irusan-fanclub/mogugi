@@ -471,3 +471,58 @@ describe('DpsTimeline lane and coverage icons', () => {
         expect(trackedCCIds.value).toEqual([803, 494, 1026, 777]);
     });
 });
+
+describe('DpsTimeline CC values', () => {
+    let prev: number[];
+    let prevHidden: Set<number>;
+    beforeEach(() => { prev = trackedCCIds.value; prevHidden = chartHiddenCCIds.value; setTrackedCCIds([1164]); setChartHiddenCCIds(new Set()); });
+    afterEach(() => { setTrackedCCIds(prev); setChartHiddenCCIds(prevHidden); clearTimeRange(); });
+    const p = (CCId: number, Params: Record<string, string>) => ({ ...cond(CCId, 100), Params });
+    const hover = async (w: VueWrapper, sel: string) => {
+        await w.get(sel).trigger('mouseenter');
+        vi.advanceTimersByTime(300);
+        await nextTick();
+        return document.body.querySelector('.cc-tip')!;
+    };
+
+    it('shows 破防保最高 with four zeros for a target without break CCs, none without a target', () => {
+        const w = mount(DpsTimeline, { props: { ...props, target: actor('t', 'Boss') }, attachTo: document.body });
+        expect(w.findAll('.break-box [data-break-cc]').map(e => e.text())).toEqual(['0', '0', '0', '0']);
+        expect(w.find('.dps-timeline').element.contains(w.get('.break-box').element)).toBe(true);
+        expect(mount(DpsTimeline, { props }).find('.break-box').exists()).toBe(false);
+    });
+
+    it('lane and box tooltips read the highest values within the time range', async () => {
+        vi.useFakeTimers();
+        try {
+            const h = [
+                { At: 100, List: [p(1164, { MCDDDV: '80', MCDDPV: '20' }), p(1166, { MCDDMBPV: '40' })] },
+                { At: 110, List: [p(1164, { MCDDDV: '103', MCDDPV: '28' }), p(1166, { MCDDMBPV: '61' })] },
+                { At: 120, List: [p(1164, { MCDDDV: '90', MCDDPV: '25' })] },
+            ];
+            const w = mount(DpsTimeline, { props: { ...props, target: actor('t', 'Boss', h) }, attachTo: document.body });
+            const box = () => w.findAll('.break-box [data-break-cc]').map(e => e.text());
+            expect(box()).toEqual(['−28', '+61%', '0', '0']);
+            const tip = await hover(w, '[data-lane-cc="1164"]');
+            expect([...tip.querySelectorAll('.n')].map(e => e.textContent)).toEqual(['−103', '−28', '100%']);
+            await w.get('[data-lane-cc="1164"]').trigger('mouseleave');
+            setTimeRange(120, 130);
+            await nextTick();
+            expect(box()).toEqual(['−25', '0', '0', '0']);
+        } finally { vi.useRealTimers(); }
+    });
+
+    it('clears the box when the next target has no fight span', async () => {
+        vi.useFakeTimers();
+        try {
+            const h = [{ At: 100, List: [p(1164, { MCDDPV: '28' })] }];
+            const w = mount(DpsTimeline, { props: { ...props, target: actor('t', 'Boss', h) }, attachTo: document.body });
+            const box = () => w.findAll('.break-box [data-break-cc]').map(e => e.text());
+            expect(box()).toEqual(['−28', '0', '0', '0']);
+            await w.setProps({ target: actor('u', 'Other'), entities: [{ name: 'A', damages: [] }] });
+            vi.advanceTimersByTime(300);
+            await nextTick();
+            expect(box()).toEqual(['0', '0', '0', '0']);
+        } finally { vi.useRealTimers(); }
+    });
+});

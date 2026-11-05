@@ -12,6 +12,7 @@ vi.mock('@/lib/socketClient', () => ({
 
 import { createBackendSession, loadJsonData } from '@/lib/backendSession';
 import { appEvent, actorManager, dcManager, setTimeRange, timeRangeMin } from '@/store';
+import { computeCCCoverage } from '@/lib/conditionCoverage';
 
 beforeEach(() => { sockets.length = 0; });
 
@@ -86,6 +87,48 @@ describe('createBackendSession', () => {
         expect(s.source.value).toBeTruthy();
     });
 
+    it('inDungeon follows zone events and starts false', () => {
+        const s = createBackendSession({ url: 'u', history: false });
+        expect(s.inDungeon.value).toBe(false);
+        sockets[0].onEvent([{ EventId: -7, At: 0, Id: '0', InDungeon: true }]);
+        expect(s.inDungeon.value).toBe(true);
+        sockets[0].onEvent([{ EventId: -7, At: 0, Id: '0', InDungeon: false }]);
+        expect(s.inDungeon.value).toBe(false);
+    });
+
+    it('clearData drops a stale dungeon flag', () => {
+        const s = createBackendSession({ url: 'u', history: false });
+        sockets[0].onEvent([{ EventId: -7, At: 0, Id: '0', InDungeon: true }]);
+        expect(s.inDungeon.value).toBe(true);
+        s.clearData();
+        expect(s.inDungeon.value).toBe(false);
+    });
+
+    it('onSourceReset fires when the source changes, not on a reconnect or progress', () => {
+        const fn = vi.fn();
+        createBackendSession({ url: 'u', history: true, onSourceReset: fn });
+        const src = (Mode: string, File: string, Done = 0) =>
+            sockets[0].onEvent([{ EventId: -4, At: 0, Id: '0', Mode, File, Done, Total: 9, Finished: false, Err: '', Notice: '' }]);
+        sockets[0].onConnect(true);
+        src('live', '');
+        expect(fn).toHaveBeenCalledTimes(0);
+        sockets[0].onEvent([{ EventId: -2, At: 0, Id: '0', Reason: 'replay' }]);
+        expect(fn).toHaveBeenCalledTimes(1);
+        src('replay', 'a.pcapng');
+        src('replay', 'a.pcapng', 5);
+        sockets[0].onConnect(false);
+        sockets[0].onConnect(true);
+        src('replay', 'a.pcapng', 6);
+        expect(fn).toHaveBeenCalledTimes(2);
+        // Switched while disconnected: only the lead source event tells.
+        sockets[0].onConnect(false);
+        sockets[0].onConnect(true);
+        src('live', '');
+        expect(fn).toHaveBeenCalledTimes(3);
+        sockets[0].onEvent([{ EventId: -2, At: 0, Id: '0', Reason: 'channel_switch' }]);
+        expect(fn).toHaveBeenCalledTimes(3);
+    });
+
     it('historyEvicted evicts and clears a time range reaching into dropped history', () => {
         createBackendSession({ url: 'u', history: false });
         const a = vi.spyOn(actorManager.value, 'evictBefore');
@@ -115,5 +158,26 @@ describe('createBackendSession', () => {
         expect(a).toHaveBeenCalledWith(100, undefined);
         a.mockRestore();
         vi.unstubAllGlobals();
+    });
+
+    it('a loaded record replaces, not extends, the condition history of entities already on screen', async () => {
+        const fight = [
+            { EventId: 1, At: 100, Id: '9', Name: 'boss', RaceId: 7603, Height: 1, Weight: 1, Upper: 1, Lower: 1, GuildName: '', OwnerId: '' },
+            { EventId: 4, At: 100, Id: '9', CCId: 803, DisableAt: 0, AttackerId: '', Params: {} },
+            { EventId: 5, At: 110, Id: '9', CCId: 803 },
+        ];
+        const s = createBackendSession({ url: 'u', history: false });
+        s.clearData();
+        // The same fight is still in the live data when its record is loaded (or a record loads twice).
+        sockets[0].onEvent(fight);
+        const text = fight.map(e => JSON.stringify(e)).join('\n');
+        vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, text: async () => text })));
+        await s.loadBattleRecord('x.ndjson');
+        await s.loadBattleRecord('x.ndjson');
+        const hist = actorManager.value.entityMap['9'].conditionHistory;
+        expect(hist.map(st => st.At)).toEqual([100, 110]);
+        expect(computeCCCoverage(hist, [803], 100, 120).onSec).toBe(10);
+        vi.unstubAllGlobals();
+        s.clearData();
     });
 });

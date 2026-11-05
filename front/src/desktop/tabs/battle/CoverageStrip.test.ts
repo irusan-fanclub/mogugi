@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { mount } from '@vue/test-utils';
 import CoverageStrip from './CoverageStrip.vue';
 import source from './CoverageStrip.vue?raw';
@@ -106,5 +106,39 @@ describe('CoverageStrip', () => {
         await btns[1].trigger('click');
         expect(w.emitted('plus')![0][0]).toBe('self');
         expect(w.emitted('plus')![0][1]).toBeInstanceOf(MouseEvent);
+    });
+    it('shows the CC value tooltip on hover instead of a native title', async () => {
+        vi.useFakeTimers();
+        try {
+            const values = new Map([[1164, { values: { MCDDPV: '28' }, coveragePct: 50 }]]);
+            const w = mount(CoverageStrip, {
+                props: { groups: [{ key: 'boss' as const, label: 'BOSS', rows: [row(1164), row(2)], values }] }, attachTo: document.body,
+            });
+            const cell = w.get('[data-cov-cc="1164"]');
+            expect(cell.attributes('title')).toBeUndefined();
+            await cell.trigger('mouseenter');
+            vi.advanceTimersByTime(300);
+            await w.vm.$nextTick();
+            const tip = document.body.querySelector('.cc-tip')!;
+            expect(tip.querySelector('.n')!.textContent).toBe('−28');
+            expect(tip.querySelector('.hint')!.textContent).toBe('右鍵選單，拖曳排序');
+            await cell.trigger('mouseleave');
+            await w.get('[data-cov-cc="2"]').trigger('mouseenter');
+            vi.advanceTimersByTime(300);
+            await w.vm.$nextTick();
+            expect(document.body.querySelector('.cc-tip .none')!.textContent).toBe('這場沒有觸發');
+            w.unmount();
+        } finally { vi.useRealTimers(); }
+    });
+
+    it('puts the side slot in a third column spanning every strip row, even with no rows', () => {
+        const groups = [{ label: 'BOSS', rows: [row(1), row(2, false)] }, { label: '自身', rows: [row(3)] }];
+        const w = mount(CoverageStrip, { props: { groups }, slots: { side: '<div class="box">B</div>' } });
+        const side = w.get('.coverage > .side');
+        expect(side.find('.box').exists()).toBe(true);
+        expect(side.attributes('style')).toContain('grid-row: 2 / span 3');
+        const empty = mount(CoverageStrip, { props: { groups: [] }, slots: { side: '<div class="box">B</div>' } });
+        expect(empty.find('.coverage .box').exists()).toBe(true);
+        expect(mount(CoverageStrip, { props: { groups: [] } }).find('.coverage').exists()).toBe(false);
     });
 });

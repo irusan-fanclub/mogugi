@@ -10,18 +10,22 @@ export interface AlertFire {
     voiceText: string;
     voice: boolean;
     showText: boolean;
+    loud: boolean;
     /** `${ruleId}:${actorId}:${DisableAt}` of the cast that fired; '' for periodic rules. */
     castKey: string;
 }
 
 export interface AlertStep {
     fires: AlertFire[];
-    red: Set<string>;
     /** `${ruleId}:${actorId}` whose condition group holds now. */
     holding: Set<string>;
     /** `${ruleId}:${actorId}:${DisableAt}` of watched casts that are active now. */
     ccLive: Set<string>;
 }
+
+// An appear rule fires only for a cast first seen within this of its start: one first seen
+// later (overlay opened, reconnect, time jump) was already running.
+export const APPEAR_FRESH_SEC = 3;
 
 export interface AlertStepInput {
     now: number;
@@ -37,6 +41,7 @@ export interface AlertStepInput {
 const DEFAULT_MESSAGE: Record<AlertKind, string> = {
     countdown: '{名字} {CC} 剩 {秒} 秒',
     periodic: '{名字} 條件成立',
+    appear: '{名字} {CC}',
 };
 
 export function fillMessage(
@@ -46,7 +51,7 @@ export function fillMessage(
     return (tpl || DEFAULT_MESSAGE[kind])
         .replaceAll('{名字}', v.name)
         .replaceAll('{CC}', periodic ? '' : v.cc)
-        .replaceAll('{秒}', periodic ? '' : String(v.sec));
+        .replaceAll('{秒}', kind === 'countdown' ? String(v.sec) : '');
 }
 
 function targetIds(rule: AlertRule, i: AlertStepInput): string[] {
@@ -68,14 +73,15 @@ function condsHold(rule: AlertRule, actor: EntityActor, now: number): boolean {
 export function createAlertTracker() {
     let lastNow = -Infinity;
     const previous = new Map<string, number>();
+    // Appear cast key → whether it was fresh when the tracker first saw it.
+    const appearFresh = new Map<string, boolean>();
     const lastPeriodic = new Map<string, number>();
 
     function step(i: AlertStepInput): AlertStep {
-        if (i.now < lastNow) { previous.clear(); lastPeriodic.clear(); }
+        if (i.now < lastNow) { previous.clear(); lastPeriodic.clear(); appearFresh.clear(); }
         lastNow = i.now;
 
         const fires: AlertFire[] = [];
-        const red = new Set<string>();
         const holding = new Set<string>();
         const ccLive = new Set<string>();
         const seen = new Set<string>();
@@ -84,8 +90,8 @@ export function createAlertTracker() {
         for (const rule of i.rules) {
             if (!rule.enabled) continue;
             const periodic = rule.kind === 'periodic';
-            if (!periodic && rule.times.length === 0) continue;
-            const maxTime = periodic ? 0 : Math.max(...rule.times);
+            const appear = rule.kind === 'appear';
+            if (rule.kind === 'countdown' && rule.times.length === 0) continue;
             for (const actorId of targetIds(rule, i)) {
                 const actor = i.actors[actorId];
                 if (!actor) continue;
@@ -104,13 +110,13 @@ export function createAlertTracker() {
                     fires.push({
                         ruleId: rule.id, actorId, sec: 0, text,
                         voiceText: rule.voiceMessage ? fillMessage(rule.voiceMessage, { sec: 0, name, cc: '' }, 'periodic') : text,
-                        voice: rule.voice, showText: rule.text, castKey: '',
+                        voice: rule.voice, showText: rule.text, loud: rule.loud, castKey: '',
                     });
                     continue;
                 }
 
                 const cast = activeCondition(actor.conditionMap, rule.ccId, i.now);
-                if (!cast || cast.DisableAt === 0) continue;
+                if (!cast || (cast.DisableAt === 0 && !appear)) continue;
 
                 const key = `${pairKey}:${Math.round((cast.DisableAt - (cast.Shifted ?? 0)) * 1000) / 1000}`;
                 seen.add(key);
@@ -119,7 +125,21 @@ export function createAlertTracker() {
                 const prev = previous.get(key);
                 previous.set(key, remaining);
 
-                if (condOk && remaining <= maxTime) red.add(`${actorId}:${rule.ccId}`);
+                // Appear: once per cast fresh at first sight, the first tick its conditions hold.
+                if (appear) {
+                    if (prev !== undefined) continue;
+                    if (!appearFresh.has(key)) appearFresh.set(key, i.now - cast.At <= APPEAR_FRESH_SEC);
+                    if (!condOk || !appearFresh.get(key)) { previous.delete(key); continue; }
+                    const cc = i.ccNameOf(rule.ccId);
+                    const text = fillMessage(rule.textMessage, { sec: 0, name, cc }, 'appear');
+                    fires.push({
+                        ruleId: rule.id, actorId, sec: 0, text,
+                        voiceText: rule.voiceMessage ? fillMessage(rule.voiceMessage, { sec: 0, name, cc }, 'appear') : text,
+                        voice: rule.voice, showText: rule.text, loud: rule.loud, castKey: key,
+                    });
+                    continue;
+                }
+
                 if (prev === undefined || !condOk) continue;
 
                 const cc = i.ccNameOf(rule.ccId);
@@ -129,7 +149,7 @@ export function createAlertTracker() {
                         fires.push({
                             ruleId: rule.id, actorId, sec: t, text,
                             voiceText: rule.voiceMessage ? fillMessage(rule.voiceMessage, { sec: t, name, cc }) : text,
-                            voice: rule.voice, showText: rule.text, castKey: key,
+                            voice: rule.voice, showText: rule.text, loud: rule.loud, castKey: key,
                         });
                     }
                 }
@@ -137,9 +157,13 @@ export function createAlertTracker() {
         }
 
         for (const key of previous.keys()) if (!seen.has(key)) previous.delete(key);
+        for (const key of appearFresh.keys()) if (!seen.has(key)) appearFresh.delete(key);
         for (const key of lastPeriodic.keys()) if (!seenPeriodic.has(key)) lastPeriodic.delete(key);
-        return { fires, red, holding, ccLive };
+        return { fires, holding, ccLive };
     }
 
-    return { step };
+    /** Forgets every seen cast, for a new event source. */
+    function reset() { lastNow = -Infinity; previous.clear(); lastPeriodic.clear(); appearFresh.clear(); }
+
+    return { step, reset };
 }

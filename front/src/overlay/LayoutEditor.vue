@@ -2,7 +2,7 @@
 import type { Guide, Rect, Size } from '@/lib/overlayLayout';
 import type { Anchor } from '@/lib/overlayProtocol';
 
-export interface EditorComp { id: string; enabled: boolean; anchor: Anchor; rect: Rect }
+export interface EditorComp { id: string; enabled: boolean; anchor: Anchor; rect: Rect; docked?: boolean }
 
 const props = defineProps<{
     active: boolean;
@@ -34,7 +34,7 @@ function refPoint(c: EditorComp) {
         y: t + (a === 'tl' || a === 'tr' ? 0 : a === 'center' ? h / 2 : h),
     };
 }
-const used = (a: Anchor) => props.comps.some(c => c.enabled && c.anchor === a);
+const used = (a: Anchor) => props.comps.some(c => c.enabled && !c.docked && c.anchor === a);
 </script>
 
 <template>
@@ -59,7 +59,7 @@ const used = (a: Anchor) => props.comps.some(c => c.enabled && c.anchor === a);
       />
       <template v-for="c in comps" :key="c.id">
         <line
-          v-if="c.enabled && !(dragId === c.id && dragMode === 'move')" class="ov-link" data-link
+          v-if="c.enabled && !c.docked && !(dragId === c.id && dragMode === 'move')" class="ov-link" data-link
           :x1="anchorPoint(c.anchor).x" :y1="anchorPoint(c.anchor).y" :x2="refPoint(c).x" :y2="refPoint(c).y"
         />
       </template>

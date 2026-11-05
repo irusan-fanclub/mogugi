@@ -53,7 +53,7 @@ describe('useOverlayState', () => {
         await flushPromises();
         const lay = { enabled: true, anchor: 'tl' as const, x: 24, y: 24, width: 300, maxRows: 6 };
         o.setLocked(false);
-        o.setLayout('cc', lay);
+        o.setLayout('ccBoss', lay);
         o.setHotkey('Ctrl+Shift+K');
         o.setHidden(true);
         const before = o.visibleHotkeyAttempts.value;
@@ -61,7 +61,7 @@ describe('useOverlayState', () => {
         expect(o.visibleHotkeyAttempts.value).toBe(before + 1);
         const by = (n: string) => bridge.emitted.filter(e => e.name === n).map(e => e.data);
         expect(by(OV.setLocked)).toEqual([{ locked: false }]);
-        expect(by(OV.setLayout)).toEqual([{ id: 'cc', layout: lay }]);
+        expect(by(OV.setLayout)).toEqual([{ id: 'ccBoss', layout: lay }]);
         expect(by(OV.setHotkey)).toEqual([{ hotkey: 'Ctrl+Shift+K' }]);
         expect(by(OV.setHidden)).toEqual([{ hidden: true }]);
         expect(by(OV.setVisibleHotkey)).toEqual([{ hotkey: 'Ctrl+Alt+H' }]);

@@ -7,6 +7,7 @@ import { buildStyle, encodeB64Url, noginogiUrl, prilusUrl } from '@/lib/charSimu
 import { openExternal } from '@/lib/openExternal';
 import type { EntityActor, EntityItem } from '@/eventActor';
 import DIconButton from '../../ui/DIconButton.vue';
+import DTextField from '../../ui/DTextField.vue';
 import { useContextMenu } from '../../ui/useContextMenu';
 import { useToast } from '../../ui/useToast';
 
@@ -27,7 +28,17 @@ const raceOf = (p: EntityActor) => stripId(raceNameMap.value[p.raceId], `${p.rac
 const itemLabel = (it: EntityItem) => stripId(itemNameMap.value[it.ItemId], `Item ${it.ItemId}`);
 const equipOf = (p: EntityActor) => sortByCharSlot(Object.values(p.equipItemMap));
 // Chips: display code, plus the raw value for the title.
-const chipsOf = (it: EntityItem) => {
+const query = ref('');
+const needle = computed(() => query.value.trim().toLowerCase());
+const filtering = computed(() => needle.value !== '');
+const shown = computed(() => {
+    const n = needle.value;
+    if (!n) return pcs.value;
+    const hit = (s: string | undefined) => (s ?? '').toLowerCase().includes(n);
+    return pcs.value.filter(p =>
+        hit(p.name) || hit(p.guildName) || hit(raceOf(p)) || Object.values(p.equipItemMap).some(it => hit(itemLabel(it))));
+});
+const chipsOf =(it: EntityItem) => {
     const rec = it as unknown as Record<string, string>;
     return COLOR_KEYS.filter(k => rec[k] !== undefined).map(k => ({ key: k, raw: rec[k], code: colorCode(rec[k]) }));
 };
@@ -66,8 +77,13 @@ function simulMenu(e: MouseEvent, p: EntityActor) {
 
 <template>
   <div class="chars">
+    <div v-if="pcs.length" class="bar">
+      <DTextField v-model="query" class="q" clearable placeholder="搜尋角色名、公會、種族或裝備" aria-label="搜尋角色" />
+      <span v-if="filtering" class="count" data-count>{{ shown.length }}／{{ pcs.length }}</span>
+    </div>
     <div v-if="!pcs.length" class="empty">尚無角色資料</div>
-    <section v-for="p in pcs" :key="p.id" class="pc" data-pc>
+    <div v-else-if="!shown.length" class="empty">找不到符合的角色</div>
+    <section v-for="p in shown" :key="p.id" class="pc" data-pc>
       <div
         class="hd"
         role="button"
@@ -118,6 +134,9 @@ function simulMenu(e: MouseEvent, p: EntityActor) {
 
 <style scoped>
 .chars { height: 100%; overflow-y: auto; padding: var(--space-3); scrollbar-gutter: stable; }
+.bar { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
+.q { flex: 1; max-width: 360px; }
+.count { color: var(--c-text-dim); font-family: var(--font-num); font-size: var(--fs-sm); white-space: nowrap; }
 .empty { padding: var(--space-5); color: var(--c-text-dim); }
 .pc { margin-bottom: var(--space-2); border-radius: var(--radius); background: var(--c-surface); }
 .hd {

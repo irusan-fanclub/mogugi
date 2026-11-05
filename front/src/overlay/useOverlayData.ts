@@ -1,21 +1,25 @@
-import { onBeforeUnmount, onMounted, ref, type Ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, type Ref } from 'vue';
 import type { DamageCollectorBase, DualGroupedDamageCollector, GroupedDamageCollector } from '@/actionCollector';
 import type { EntityActor } from '@/eventActor';
 import { createBackendSession } from '@/lib/backendSession';
 import { createAlertTracker, type AlertFire, type AlertStep } from '@/lib/alertRules';
 import { buildPlayerRows } from '@/lib/battleStats';
 import { emitDesktop, onDesktopEvent } from '@/lib/desktopBridge';
-import {
-    buildCcOverlay, buildDpsOverlay, formatRemaining, resolveOverlayTarget, type CcOverlayVM, type DpsOverlayVM,
-} from '@/lib/overlayModel';
+import { createArcanaTracker } from '@/lib/arcana';
+import { ARCANA_BY_SKILL } from '@/lib/arcanaTable';
+import { activeCondition, buildDpsOverlay, resolveOverlayTarget, type DpsOverlayVM } from '@/lib/overlayModel';
 import { layoutOf } from '@/lib/overlayComponents';
 import { isOverlayState, OV, type OverlayState } from '@/lib/overlayProtocol';
 import { loadOverlaySettings, normalizeOverlaySettings, type AlertRule, type OverlaySettings } from '@/lib/overlaySettings';
+import { CC_SECTION_IDS, type CcSectionId, type SectionId } from '@/lib/overlaySections';
+import { buildCcTiles, buildCooldownTiles, type Holder, type TileVM } from '@/lib/overlayTiles';
 import { wsUrl } from '@/lib/runtimeEnv';
-import { buildCooldownRows, type CooldownRowVM } from '@/lib/skillCooldown';
-import { titleBoss } from '@/lib/targets';
-import { ccName, prettyEntityName } from '@/lib/util';
-import { actorManager, condNameMap, dcManager, isBossRace, raceNameMap } from '@/store';
+import { createCooldownTracker } from '@/lib/skillCooldown';
+import { isKilled, titleBoss } from '@/lib/targets';
+import { warcryConditions, withConditions } from '@/lib/warcryLive';
+import { gaugeNow, TUAIRIM_GAIN_CC, type Gauge } from '@/lib/tuairim';
+import { ccName, prettyEntityName, stripRaceSuffix } from '@/lib/util';
+import { actorManager, condNameMap, dcManager, isBossRace, raceNameMap, tuairim } from '@/store';
 import { createSpeechQueue } from './speechQueue';
 
 const TICK_MS = 250;
@@ -25,9 +29,30 @@ export interface OverlayData {
     settings: Ref<OverlaySettings>;
     state: Ref<OverlayState | null>;
     dps: Ref<DpsOverlayVM>;
-    cc: Ref<CcOverlayVM>;
-    cooldown: Ref<CooldownRowVM[]>;
+    /** Per section: tiles by item key, settings order, shown items only. */
+    tiles: Ref<SectionTiles>;
+    /** A boss is present and not down. */
+    bossAlive: Ref<boolean>;
+    /** A boss is present, alive or dead. */
+    bossPresent: Ref<boolean>;
+    inDungeon: Ref<boolean>;
     alerts: Ref<AlertItem[]>;
+    /** The backend replays a file: the overlay shows and tracks nothing. */
+    replaying: Readonly<Ref<boolean>>;
+}
+
+export type SectionTiles = Record<SectionId, Map<string, TileVM[]>>;
+
+export const emptyTiles = (): SectionTiles => ({
+    ccBoss: new Map(), ccSelf: new Map(), ccParty: new Map(), burst: new Map(), misc: new Map(), cooldown: new Map(),
+});
+
+/** Not killed, not at 0 life, and not flagged dead by the latest death toggle. */
+export function isAlive(a: EntityActor): boolean {
+    if (isKilled(a)) return false;
+    const life = a.lifeAt(null);
+    if (life !== undefined && life <= 0) return false;
+    return !a.deathHistory.at(-1)?.Dead;
 }
 
 export interface AlertItem {
@@ -38,6 +63,7 @@ export interface AlertItem {
     actorId: string;
     castKey: string;
     expireAt: number;
+    loud?: boolean;
 }
 
 /**
@@ -64,12 +90,12 @@ export function applyAlerts(o: {
         const rule = ruleOf.get(a.ruleId);
         if (!rule) return true;
         if (rule.dismiss.condFails && rule.conds.length > 0 && !o.step.holding.has(pair)) return false;
-        if (rule.dismiss.ccEnds && rule.kind === 'countdown' && !o.step.ccLive.has(a.castKey)) return false;
+        if (rule.dismiss.ccEnds && rule.kind !== 'periodic' && !o.step.ccLive.has(a.castKey)) return false;
         return true;
     });
     if (added.length === 0 && kept.length === o.items.length) return o.items;
     return [...kept, ...added.map(f => ({
-        key: o.nextKey(), text: f.text, at: o.nowMs, ruleId: f.ruleId, actorId: f.actorId, castKey: f.castKey,
+        key: o.nextKey(), text: f.text, at: o.nowMs, ruleId: f.ruleId, actorId: f.actorId, castKey: f.castKey, loud: f.loud,
         expireAt: o.nowMs + (ruleOf.get(f.ruleId)?.textKeep ?? 5) * 1000,
     }))];
 }
@@ -89,10 +115,13 @@ export function useOverlayData(): OverlayData {
     const settings = ref(loadOverlaySettings());
     const state = ref<OverlayState | null>(null);
     const dps = ref<DpsOverlayVM>({ boss: null, fightSec: null, partyDps: 0, rows: [] });
-    const cc = ref<CcOverlayVM>({ boss: null, self: null, party: [] });
-    const cooldown = ref<CooldownRowVM[]>([]);
+    const tiles = ref<SectionTiles>(emptyTiles());
+    const bossAlive = ref(false);
+    const bossPresent = ref(false);
     const alerts = ref<AlertItem[]>([]);
     const tracker = createAlertTracker();
+    const cooldowns = createCooldownTracker();
+    const arcana = createArcanaTracker(ARCANA_BY_SKILL);
     const speech = createSpeechQueue(globalThis.speechSynthesis ?? null, Date.now);
     let alertKey = 0;
     // null until the main window announces; '' means all targets.
@@ -103,7 +132,17 @@ export function useOverlayData(): OverlayData {
         url: wsUrl() + '?history=current&scope=overlay',
         history: true,
         onBattleBoundary: (at, present) => { actorManager.value.evictBefore(at, present); dcManager.value.evictBefore(at); },
+        onSourceReset: () => {
+            skipAll(); // actor cast lists outlive clear(): the old source's must never be counted
+            tracker.reset(); cooldowns.reset(); arcana.reset(); alerts.value = []; speech.cancel();
+        },
     });
+    function skipAll() {
+        const map = actorManager.value.entityMap;
+        cooldowns.skip(map);
+        arcana.skip(Object.values(map));
+    }
+    const replaying = computed(() => session.source.value?.Mode === 'replay');
     const collectors: Record<string, DamageCollectorBase> = {};
     const dcOf = (attackerId: string) => (collectors[attackerId] ??= dcManager.value.getDualGroupedDamageCollector(
         v => v.Id == attackerId, v => v.TargetId, v => `${v.SkillId}`)) as DualGroupedDamageCollector;
@@ -115,14 +154,14 @@ export function useOverlayData(): OverlayData {
         return prettyEntityName(a, raceNameMap) ?? a?.name ?? aid;
     };
 
-    // Replay time is the latest damage seen; live (or unknown source) is the wall clock.
-    function nowSec(): number {
-        if (session.source.value?.Mode === 'replay') {
-            const list = actorManager.value.damages;
-            if (list.length) return list[list.length - 1].At;
-        }
-        return Date.now() / 1000;
-    }
+    // The boss line shows the race name alone: no race id, no entity id suffix.
+    const bossName = (a: EntityActor) => {
+        const race = raceNameMap.value[a.raceId];
+        return race ? stripRaceSuffix(a.raceId, race) : 'BOSS';
+    };
+
+    // Only live data is shown, so the wall clock is the time.
+    const nowSec = () => Date.now() / 1000;
 
     const targetId = () => resolveOverlayTarget({
         announced, actors: actorManager.value.entityMap, isBoss: isBossRace,
@@ -168,13 +207,10 @@ export function useOverlayData(): OverlayData {
 
     // Skip the assignment when what is shown is unchanged, so an idle overlay does not re-render.
     let dpsSig = '';
-    let ccSig = '';
-    let cdSig = '';
-    const ccSigOf = (v: CcOverlayVM) => JSON.stringify([
-        [v.boss, v.self, ...v.party].map(r => r && [
-            r.id, r.name, r.icons.map(i => [i.ccId, i.remaining === null ? '' : formatRemaining(i.remaining), i.expiring]),
-        ]),
-    ]);
+    let tileSig = '';
+    // The mask moves every tick; two decimals are enough for the sweep.
+    const sigOf = (t: SectionTiles) => JSON.stringify(Object.entries(t).map(([s, m]) => [s, [...m].map(([k, list]) =>
+        [k, list.map(x => [x.holderId, x.label, x.icon.id, x.sec, x.state, x.hl, x.faint, Math.round(x.mask * 100), x.isSelf])])]));
 
     function computeDps() {
         const tid = targetId();
@@ -184,7 +220,7 @@ export function useOverlayData(): OverlayData {
             ownerId: actorManager.value.ownerEntityId,
             nameOf,
             boss: b && {
-                name: nameOf(b.id),
+                name: bossName(b),
                 maxLife: b.maxLife ?? 0,
                 life: b.lifeAt(null),
                 dealt: targetDC().groupedTotalDamages[b.id] ?? b.totalTakeDamage,
@@ -199,26 +235,57 @@ export function useOverlayData(): OverlayData {
     function computeCc() {
         const b = bossActor(targetId());
         const now = nowSec();
-        const actors = actorManager.value.entityMap;
-        const ownerId = actorManager.value.ownerEntityId;
+        const am = actorManager.value;
+        const real = am.entityMap;
+        const ownerId = am.ownerEntityId;
+        // 戰吼 has no CC of its own; it is built from the song's pulse lists.
+        const actors = withConditions(real, warcryConditions(am.bardsongPulses, am.bardsongEvents, ownerId, now));
         const party = partyIds();
         const step = tracker.step({
             now, actors, ownerId, partyIds: party, bossId: b?.id ?? '', rules: settings.value.rules,
             nameOf, ccNameOf: id => ccName(condNameMap.value, id),
         });
-        const next = buildCcOverlay({
-            actors, bossId: b?.id ?? '', ownerId, partyIds: party,
-            sections: settings.value.cc.sections, now, nameOf, red: step.red,
-        });
-        const sig = ccSigOf(next);
-        if (sig !== ccSig) { ccSig = sig; cc.value = next; }
-
-        const rows = buildCooldownRows({ actors, now, nameOf })
-            .map(r => ({ ...r, isSelf: r.id === ownerId }));
-        const cdNext = JSON.stringify(rows.map(r => [r.id, r.name, r.isSelf, r.remaining > 0 ? Math.ceil(r.remaining) : 0]));
-        if (cdNext !== cdSig) { cdSig = cdNext; cooldown.value = rows; }
+        arcana.observe(Object.values(real));
+        const alive = !!b && isAlive(b);
+        if (bossAlive.value !== alive) bossAlive.value = alive;
+        if (bossPresent.value !== !!b) bossPresent.value = !!b;
+        const next = buildTiles({ now, actors, ownerId, party, boss: alive ? b : null });
+        const sig = sigOf(next);
+        if (sig !== tileSig) { tileSig = sig; tiles.value = next; }
 
         announce(dedupeFires(step.fires), step);
+    }
+
+    function buildTiles(o: {
+        now: number; actors: Record<string, EntityActor>; ownerId: string; party: string[]; boss: EntityActor | null;
+    }): SectionTiles {
+        const s = settings.value;
+        const own = arcana.of(o.ownerId);
+        const holder = (id: string): Holder => ({ id, name: nameOf(id), isSelf: id === o.ownerId });
+        const self = o.ownerId ? [holder(o.ownerId)] : [];
+        const holders: Record<CcSectionId, Holder[]> = {
+            ccBoss: o.boss ? [holder(o.boss.id)] : [],
+            ccSelf: self,
+            ccParty: o.party.filter(id => id !== o.ownerId).map(holder),
+            burst: self,
+            misc: self,
+        };
+        const owner = o.actors[o.ownerId];
+        const reading = tuairim.value;
+        const gauge = (id: string): Gauge | null => id === o.ownerId && reading
+            ? gaugeNow(reading, o.now, !!owner && !!activeCondition(owner.conditionMap, TUAIRIM_GAIN_CC, o.now))
+            : null;
+        const dungeon = session.inDungeon.value;
+        const judge = { ccBoss: !!o.boss, ccSelf: dungeon, ccParty: dungeon, burst: false, misc: false };
+        const out = emptyTiles();
+        for (const id of CC_SECTION_IDS) {
+            out[id] = buildCcTiles(s[id], { holders: holders[id], actors: o.actors, now: o.now, ownArcana: own, judgeGone: judge[id], arcanaOf: arcana.of, gauge });
+        }
+        const skills = s.cooldown.items.filter(i => i.enabled);
+        cooldowns.observe(actorManager.value.entityMap, skills, nameOf);
+        const rows = cooldowns.rows(o.now, skills, o.ownerId);
+        out.cooldown = buildCooldownTiles(s.cooldown, rows, { ownerId: o.ownerId, partyIds: o.party, ownArcana: own });
+        return out;
     }
 
     function announce(fires: AlertFire[], step: AlertStep) {
@@ -231,8 +298,21 @@ export function useOverlayData(): OverlayData {
         for (const f of fires) if (f.voice) speech.say(f.voiceText, settings.value.voice);
     }
 
+    // Replay data never reaches the overlay or its trackers.
+    function blank() {
+        skipAll();
+        if (dps.value.rows.length || dps.value.boss) { dpsSig = ''; dps.value = { boss: null, fightSec: null, partyDps: 0, rows: [] }; }
+        const empty = emptyTiles();
+        const sig = sigOf(empty);
+        if (sig !== tileSig) { tileSig = sig; tiles.value = empty; }
+        if (bossAlive.value) bossAlive.value = false;
+        if (bossPresent.value) bossPresent.value = false;
+        if (alerts.value.length) alerts.value = [];
+    }
+
     let ticks = 0;
     function tick() {
+        if (replaying.value) { blank(); return; }
         computeCc();
         if (ticks++ % DPS_EVERY === 0) computeDps();
     }
@@ -269,5 +349,5 @@ export function useOverlayData(): OverlayData {
         for (const c of Object.values(collectors)) dcManager.value.removeDamageCollector(c);
     });
 
-    return { settings, state, dps, cc, cooldown, alerts };
+    return { settings, state, dps, tiles, bossAlive, bossPresent, inDungeon: session.inDungeon, alerts, replaying };
 }

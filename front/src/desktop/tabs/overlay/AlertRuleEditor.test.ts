@@ -7,7 +7,7 @@ import AlertRuleEditor from './AlertRuleEditor.vue';
 
 const rule: AlertRule = {
     id: 'a', enabled: true, kind: 'countdown', target: 'self', ccId: 680, times: [25, 15, 5], every: 30,
-    conds: [], join: 'and', text: true, textMessage: '', voice: true, voiceMessage: '', textKeep: 5,
+    conds: [], join: 'and', text: true, textMessage: '', voice: true, voiceMessage: '', textKeep: 5, loud: false,
     dismiss: { condFails: false, ccEnds: false, replaced: false },
 };
 const periodic: AlertRule = { ...rule, kind: 'periodic', ccId: 0, times: [] };

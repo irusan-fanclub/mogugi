@@ -117,7 +117,7 @@ func (c *SourceController) fail(file string, err error) error {
 func (c *SourceController) leaveReplayLocked() {
 	c.gen++
 	c.stopFeederLocked()
-	if !c.pub.readOnly.Load() && !c.paused {
+	if !c.pub.readOnly.Load() && !c.pub.overlayGated.Load() && !c.paused {
 		return
 	}
 	// Flags flip only after the replay forwarder is gone and the loop has
@@ -126,6 +126,8 @@ func (c *SourceController) leaveReplayLocked() {
 	c.pub.syncLoop()
 	c.pub.flushNow()
 	c.pub.SetReadOnly(false)
+	c.pub.SetOverlayGated(false)
+	c.pub.reseedOverlays()
 	c.pub.SetImportBattles(false)
 	if c.paused {
 		c.paused = false
@@ -206,6 +208,7 @@ func (c *SourceController) StartReplay(path string, opt ReplayOptions) error {
 		}
 	}
 	c.pub.SetReadOnly(true)
+	c.pub.SetOverlayGated(true)
 	c.pub.SetImportBattles(doImport)
 	c.state = SourceState{Mode: "replay", File: base, Notice: notice}
 	c.importSum, c.importFile, c.importReg = pendSum, base, reg

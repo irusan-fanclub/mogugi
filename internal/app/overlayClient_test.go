@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
 	"github.com/irusan-fanclub/mogugi/lib/event"
@@ -139,7 +140,7 @@ func TestOverlayFilterKeepsSystemEvents(t *testing.T) {
 
 // Pinned against front/src/lib/overlayEvents.test.ts.
 func TestOverlayWantsIds(t *testing.T) {
-	want := []event.EventId{1, 2, 3, 4, 5, 6, 14, 17, 20, 26, 27}
+	want := []event.EventId{1, 2, 3, 4, 5, 6, 14, 16, 17, 20, 25, 26, 27, 31}
 	for id := event.EventId(1); id <= 40; id++ {
 		w := false
 		for _, x := range want {
@@ -198,5 +199,105 @@ func TestTruncatedHistoryBacklogKeepsActiveCondition(t *testing.T) {
 	}
 	if len(ats[516]) != 1 || ats[516][0] != oldest {
 		t.Fatalf("516 enables = %v, want one at the oldest kept start %d", ats[516], oldest)
+	}
+}
+
+func TestOverlayGetsNoPositiveEventsDuringReplay(t *testing.T) {
+	p, _ := newBoundaryPublisher(t)
+	p.clientMap = make(map[uint32]*eventClient)
+	ov := make(chan []event.IEvent, 100)
+	full := make(chan []event.IEvent, 100)
+	p.addClientWithHistory(context.Background(), ov, historyOpts{currentOnly: true, overlay: true, filter: p.overlayFilter})
+	p.addClientWithHistory(context.Background(), full, historyOpts{})
+
+	p.SetOverlayGated(true)
+	p.publish(&event.EventSessionReset{EventBase: event.EventBase{EventId: event.EventIdSessionReset}})
+	p.publish(dmgAt(500))
+	p.publish(&event.EventCharacterConditionEnable{EventBase: event.EventBase{EventId: event.EventIdCharacterConditionEnable, At: 501, Id: "7"}})
+	p.flushNow()
+
+	if got := idsOf(drainAll(ov)...); len(got) != 1 || got[0] != event.EventIdSessionReset {
+		t.Fatalf("overlay got %v, want [SessionReset]", got)
+	}
+	if got := idsOf(drainAll(full)...); len(got) != 3 {
+		t.Fatalf("full client got %v, want 3 events", got)
+	}
+}
+
+func TestOverlayConnectingDuringReplayGetsNoHistory(t *testing.T) {
+	p, _ := newBoundaryPublisher(t)
+	p.publish(dmgAt(500))
+	p.flushNow()
+	p.SetOverlayGated(true)
+
+	ov := make(chan []event.IEvent, 100)
+	p.addClientWithHistory(context.Background(), ov, historyOpts{currentOnly: true, overlay: true, filter: p.overlayFilter})
+	for _, id := range idsOf(drainAll(ov)...) {
+		if id > 0 {
+			t.Fatalf("overlay got positive event %d during replay", id)
+		}
+	}
+}
+
+func TestOverlayReceivesLiveEventsAfterReplay(t *testing.T) {
+	p, _ := newBoundaryPublisher(t)
+	p.clientMap = make(map[uint32]*eventClient)
+	ov := make(chan []event.IEvent, 100)
+	p.addClientWithHistory(context.Background(), ov, historyOpts{currentOnly: true, overlay: true, filter: p.overlayFilter})
+
+	p.SetOverlayGated(true)
+	p.publish(dmgAt(500))
+	p.flushNow()
+	p.SetOverlayGated(false)
+	p.publish(dmgAt(600))
+	p.flushNow()
+
+	var pos []event.EventId
+	for _, id := range idsOf(drainAll(ov)...) {
+		if id > 0 {
+			pos = append(pos, id)
+		}
+	}
+	if len(pos) != 1 || pos[0] != event.EventIdDamage {
+		t.Fatalf("overlay got %v, want one live Damage", pos)
+	}
+}
+
+func TestOverlayReseededAfterReplayViaController(t *testing.T) {
+	c, pub, _ := sourceFixture(t)
+	pub.setOwnerCharacter(42, "Hero")
+	pub.Lock()
+	pub.entityCache[7] = &entityInfoExtend{EntityInfo: &packet.EntityInfo{Id: 7, Name: "Boss"}, appearAt: 100}
+	pub.Unlock()
+	file := filepath.Join(t.TempDir(), "cap.pcapng")
+	synthPcapng(t, file, snapshotPacket())
+	t.Cleanup(c.StopReplay)
+
+	if err := c.StartReplay(file, ReplayOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	waitFinished(t, c)
+	ov := make(chan []event.IEvent, 100)
+	pub.addClientWithHistory(context.Background(), ov, historyOpts{currentOnly: true, overlay: true, filter: pub.overlayFilter})
+	pub.publish(dmgAt(500))
+	pub.flushNow()
+	for _, id := range idsOf(drainAll(ov)...) {
+		if id > 0 {
+			t.Fatalf("overlay got positive event %d during replay", id)
+		}
+	}
+
+	c.StopReplay()
+	got := idsOf(drainAll(ov)...)
+	has := func(id event.EventId) bool {
+		for _, x := range got {
+			if x == id {
+				return true
+			}
+		}
+		return false
+	}
+	if !has(event.EventIdOwnerCharacter) || !has(event.EventIdEntityAppear) {
+		t.Fatalf("overlay not reseeded after replay: %v", got)
 	}
 }

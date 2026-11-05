@@ -3,6 +3,9 @@ import { condNameMap, region } from '@/store';
 import { ccIconUrl, ccName } from '@/lib/util';
 import { coverageColor } from '@/lib/effectTimeline';
 import type { CcCover } from '@/lib/skillCcCoverage';
+import type { CcValueSummary } from '@/lib/ccValues';
+import DTooltip from '../../ui/DTooltip.vue';
+import CcTip from './CcTip.vue';
 
 export interface DetailLine {
     key: string;
@@ -11,7 +14,11 @@ export interface DetailLine {
     sections: { key: string; chips: CcCover[] }[];
 }
 
-defineProps<{ lines: DetailLine[] }>();
+defineProps<{
+    lines: DetailLine[];
+    /** Highest readings in the selected range, per section (boss = selected target). */
+    values?: { boss: Map<number, CcValueSummary>; self: Map<number, CcValueSummary> };
+}>();
 const emit = defineEmits<{ chipMenu: [e: MouseEvent, section: string, ccId: number] }>();
 
 const pctOf = (c: CcCover) => (c.total > 0 ? (100 * c.covered) / c.total : 0);
@@ -31,10 +38,20 @@ const title = (c: CcCover) => `${ccName(condNameMap.value, c.ccId)}：${c.covere
         <span class="cc-sec" :data-sec="s.key">
           <template v-for="c in s.chips" :key="c.ccId">
             <span v-if="c.total === 0" class="chip empty" :data-cc="c.ccId" />
-            <span v-else class="chip" :data-cc="c.ccId" :title="title(c)" @contextmenu="emit('chipMenu', $event, s.key, c.ccId)">
+            <DTooltip
+              v-else
+              bare
+              placement="top"
+              class="chip"
+              :data-cc="c.ccId"
+              @contextmenu="emit('chipMenu', $event, s.key, c.ccId)"
+            >
               <img :src="ccIconUrl(region, c.ccId)" width="14" height="14" alt="">
               <span class="pct" :class="coverageColor(Math.round(pctOf(c)))">{{ fmtPct(pctOf(c)) }}</span>
-            </span>
+              <template #content>
+                <CcTip :cc-id="c.ccId" :summary="values?.[s.key as 'boss' | 'self']?.get(c.ccId)" :hint="title(c)" />
+              </template>
+            </DTooltip>
           </template>
         </span>
       </template>

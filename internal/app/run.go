@@ -122,7 +122,8 @@ func websocketHandler(pub *eventPublisher) func(*websocket.Conn) {
 		} else if h == "current" {
 			o := historyOpts{currentOnly: true}
 			if q.Get("scope") == "overlay" {
-				o.filter = overlayWants
+				o.filter = pub.overlayFilter
+				o.overlay = true
 			}
 			go pub.addClientWithHistory(wsCtx, ch, o)
 		} else {

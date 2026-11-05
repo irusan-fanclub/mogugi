@@ -15,6 +15,7 @@ const emit = defineEmits<{ 'update:rule': [rule: AlertRule]; preview: [] }>();
 
 const KINDS: { value: AlertKind; label: string }[] = [
     { value: 'countdown', label: '倒數提醒' },
+    { value: 'appear', label: '出現時' },
     { value: 'periodic', label: '定時檢查' },
 ];
 const TARGETS: { value: AlertTarget; label: string }[] = [
@@ -34,9 +35,11 @@ const JOINS = [
 
 const patch = (p: Partial<AlertRule>) => emit('update:rule', { ...props.rule, ...p });
 const isCountdown = computed(() => props.rule.kind === 'countdown');
+const watchesCc = computed(() => props.rule.kind !== 'periodic');
 
 const setKind = (kind: AlertKind) => {
     if (kind === 'periodic') patch({ kind, ccId: 0, times: [] });
+    else if (kind === 'appear') patch({ kind, ccId: props.rule.ccId || DEFAULT_CC_ID, times: [] });
     else patch({ kind, ccId: props.rule.ccId || DEFAULT_CC_ID, times: props.rule.times.length ? props.rule.times : [10] });
 };
 
@@ -56,8 +59,8 @@ const editCond = (i: number, p: Partial<AlertCond>) =>
 const removeCond = (i: number) => setConds(props.rule.conds.filter((_, j) => j !== i));
 
 const patchDismiss = (p: Partial<AlertRule['dismiss']>) => patch({ dismiss: { ...props.rule.dismiss, ...p } });
-const placeholders = computed(() => isCountdown.value ? '{名字}、{CC}、{秒}' : '{名字}');
-const defaultSentence = computed(() => isCountdown.value ? '{名字} {CC} 剩 {秒} 秒' : '{名字} 條件成立');
+const placeholders = computed(() => isCountdown.value ? '{名字}、{CC}、{秒}' : watchesCc.value ? '{名字}、{CC}' : '{名字}');
+const defaultSentence = computed(() => isCountdown.value ? '{名字} {CC} 剩 {秒} 秒' : watchesCc.value ? '{名字} {CC}' : '{名字} 條件成立');
 </script>
 
 <template>
@@ -70,12 +73,12 @@ const defaultSentence = computed(() => isCountdown.value ? '{名字} {CC} 剩 {�
       <span class="lbl">對象</span>
       <DSegmented :model-value="rule.target" :options="TARGETS" @update:model-value="(v: AlertTarget) => patch({ target: v })" />
     </div>
-    <template v-if="isCountdown">
+    <template v-if="watchesCc">
       <div class="field">
         <span class="lbl">CC</span>
         <CcPicker :model-value="rule.ccId" @update:model-value="(v: number) => patch({ ccId: v })" />
       </div>
-      <div class="field">
+      <div v-if="isCountdown" class="field">
         <span class="lbl">時間點</span>
         <DTextField
           data-rule-times
@@ -87,7 +90,7 @@ const defaultSentence = computed(() => isCountdown.value ? '{名字} {CC} 剩 {�
         />
       </div>
     </template>
-    <div v-else class="field">
+    <div v-if="rule.kind === 'periodic'" class="field">
       <span class="lbl">間隔</span>
       <span class="inline">
         每
@@ -129,6 +132,13 @@ const defaultSentence = computed(() => isCountdown.value ? '{名字} {CC} 剩 {�
       <div class="how">
         <DCheckbox label="文字" :model-value="rule.text" @update:model-value="(v: boolean) => patch({ text: v })" />
         <DCheckbox label="語音" :model-value="rule.voice" @update:model-value="(v: boolean) => patch({ voice: v })" />
+        <DCheckbox
+          v-if="rule.text"
+          label="醒目"
+          data-rule-loud
+          :model-value="rule.loud"
+          @update:model-value="(v: boolean) => patch({ loud: v })"
+        />
         <span v-if="isCountdown" class="hint">都不勾：只把圖示轉紅</span>
       </div>
     </div>
@@ -172,7 +182,7 @@ const defaultSentence = computed(() => isCountdown.value ? '{名字} {CC} 剩 {�
           @update:model-value="(v: boolean) => patchDismiss({ condFails: v })"
         />
         <DCheckbox
-          v-if="isCountdown"
+          v-if="watchesCc"
           label="監測的 CC 結束時"
           :model-value="rule.dismiss.ccEnds"
           @update:model-value="(v: boolean) => patchDismiss({ ccEnds: v })"

@@ -246,8 +246,9 @@ func TestOverlayConfigRoundTrip(t *testing.T) {
 	want.OverlayHotkey = "Ctrl+Shift+F9"
 	want.OverlayVisibleHotkey = "Alt+F2"
 	want.Overlays = map[string]OverlayLayout{
-		"dps":    {true, "tr", -24, 24, 260, 8},
-		"alerts": {false, "center", 0, -170, 320, 4},
+		"dps":     {true, "tr", -24, 24, 260, 8, "", nil},
+		"alerts":  {false, "center", 0, -170, 320, 4, "", nil},
+		"ccParty": {true, "tl", 0, 0, 300, 8, "ccSelf", nil},
 	}
 	text := renderAppConfig(want)
 	if !strings.Contains(text, "[overlay]") || !strings.Contains(text, "[overlays.dps]") {
@@ -265,6 +266,47 @@ func TestOverlayConfigRoundTrip(t *testing.T) {
 	}
 }
 
+func TestValidOverlayLayoutOrder(t *testing.T) {
+	base := OverlayLayout{Enabled: true, Anchor: "tl", Width: 260, MaxRows: 8}
+	with := func(o []string) OverlayLayout { l := base; l.Order = o; return l }
+	if !ValidOverlayLayout(with([]string{"1164", "cd-59005"})) {
+		t.Fatal("valid order rejected")
+	}
+	if ValidOverlayLayout(with([]string{"a.b"})) || ValidOverlayLayout(with([]string{""})) {
+		t.Fatal("bad order entry accepted")
+	}
+	if !ValidOverlayLayout(with(make64("x", 64))) || ValidOverlayLayout(with(make64("x", 65))) {
+		t.Fatal("order length limit wrong")
+	}
+}
+
+func make64(s string, n int) []string {
+	o := make([]string, n)
+	for i := range o {
+		o[i] = s
+	}
+	return o
+}
+
+func TestOverlayOrderRoundTrip(t *testing.T) {
+	c := defaultAppConfig()
+	c.Overlays = map[string]OverlayLayout{
+		"ccBoss": {Enabled: true, Anchor: "tl", Width: 260, MaxRows: 8, Order: []string{"1165", "1164"}},
+		"dps":    {Enabled: true, Anchor: "tl", Width: 260, MaxRows: 8},
+	}
+	text := renderAppConfig(c)
+	if strings.Count(text, "order =") != 1 {
+		t.Fatalf("want exactly one order key:\n%s", text)
+	}
+	got, msg := parseAppConfig(text)
+	if msg != "" {
+		t.Fatal(msg)
+	}
+	if !reflect.DeepEqual(got.Overlays, c.Overlays) {
+		t.Fatalf("got %+v", got.Overlays)
+	}
+}
+
 func TestOverlayLayoutIgnoresOldGeometry(t *testing.T) {
 	got, msg := parseAppConfig("[overlays.dps]\nenabled = true\nx = 5\ny = 6\nwidth = 260\nheight = 200\n")
 	if msg != "" {
@@ -276,16 +318,31 @@ func TestOverlayLayoutIgnoresOldGeometry(t *testing.T) {
 }
 
 func TestOverlayLayoutBadValues(t *testing.T) {
-	text := "[overlays.cc]\nenabled = true\nanchor = \"middle\"\nx = 0\ny = 0\nwidth = 260\nmaxRows = 8\n" +
+	text := "overlayLayoutVersion = 2\n[overlays.cc]\nenabled = true\nanchor = \"middle\"\nx = 0\ny = 0\nwidth = 260\nmaxRows = 8\n" +
 		"[overlays.dps]\nenabled = true\nanchor = \"tl\"\nx = 0\ny = 0\nwidth = -1\nmaxRows = 8\n" +
+		"[overlays.ccSelf]\nenabled = true\nanchor = \"tl\"\nx = 0\ny = 0\nwidth = 260\nmaxRows = 1\ndock = \"a b\"\n" +
 		"[overlays.cooldown]\nenabled = true\nanchor = \"bl\"\nx = 3\ny = -4\nwidth = 200\nmaxRows = 5\n"
 	got, msg := parseAppConfig(text)
 	if msg != "" {
 		t.Fatal(msg)
 	}
-	want := map[string]OverlayLayout{"cooldown": {true, "bl", 3, -4, 200, 5}}
+	want := map[string]OverlayLayout{"cooldown": {true, "bl", 3, -4, 200, 5, "", nil}}
 	if !reflect.DeepEqual(got.Overlays, want) {
 		t.Fatalf("got %+v", got.Overlays)
+	}
+}
+
+func TestOverlayLayoutOlderVersionDropped(t *testing.T) {
+	lay := "[overlays.cooldown]\nenabled = true\nanchor = \"bl\"\nx = 3\ny = -4\nwidth = 200\nmaxRows = 5\n"
+	if got, _ := parseAppConfig(lay); len(got.Overlays) != 0 {
+		t.Fatalf("unversioned layouts kept: %+v", got.Overlays)
+	}
+	got, _ := parseAppConfig("overlayLayoutVersion = 2\n" + lay)
+	if len(got.Overlays) != 1 {
+		t.Fatalf("current layouts dropped: %+v", got.Overlays)
+	}
+	if !strings.Contains(renderAppConfig(got), "overlayLayoutVersion = 2") {
+		t.Fatal("version not written")
 	}
 }
 
@@ -309,7 +366,7 @@ func TestOverlayConfigDefaults(t *testing.T) {
 
 func TestOverlayConfigRejectsBadKey(t *testing.T) {
 	c := defaultAppConfig()
-	c.Overlays = map[string]OverlayLayout{"bad key]": {true, "tl", 0, 0, 260, 8}, "dps": {true, "tl", 0, 0, 260, 8}}
+	c.Overlays = map[string]OverlayLayout{"bad key]": {true, "tl", 0, 0, 260, 8, "", nil}, "dps": {true, "tl", 0, 0, 260, 8, "", nil}}
 	text := renderAppConfig(c)
 	if strings.Contains(text, "bad key") || !strings.Contains(text, "[overlays.dps]") {
 		t.Fatalf("unexpected render:\n%s", text)

@@ -1,71 +1,76 @@
 <script setup lang="ts">
+import { computed } from 'vue';
+import { layoutOf } from '@/lib/overlayComponents';
+import { defaultDpsLook, DPS_FONT_PX, type DpsLook } from '@/lib/overlaySections';
 import { overlaySettings, updateOverlaySettings } from '../../overlay/overlayLink';
-import type { DpsOverlaySettings as Dps, SizeStep } from '@/lib/overlaySettings';
-import DSegmented from '../../ui/DSegmented.vue';
+import { useOverlayState } from '../../overlay/useOverlayState';
+import DButton from '../../ui/DButton.vue';
 import DCheckbox from '../../ui/DCheckbox.vue';
-import OpacityRange from './OpacityRange.vue';
+import IconButton from './IconButton.vue';
+import PanelBgField from './PanelBgField.vue';
+import SizeField, { type SizeValue } from './SizeField.vue';
 
-const SIZES = [
-    { value: 's', label: '小' },
-    { value: 'm', label: '中' },
-    { value: 'l', label: '大' },
-] as const;
 const COLUMNS = [
     { key: 'dps', label: 'DPS' },
     { key: 'total', label: '總傷害' },
     { key: 'share', label: '佔比' },
 ] as const;
 const TOP = [
-    { key: 'boss', label: 'BOSS' },
+    { key: 'boss', label: 'BOSS 名稱' },
+    { key: 'hpPct', label: '血量 %' },
+    { key: 'hpLeft', label: '剩餘血量' },
     { key: 'time', label: '時間' },
     { key: 'partyDps', label: '隊伍 DPS' },
 ] as const;
+const MIN_ROWS = 1;
+const MAX_ROWS = 20;
 
-const set = (mut: (d: Dps) => void) => updateOverlaySettings(s => mut(s.dps));
+const { state, setLayout } = useOverlayState();
+const d = computed(() => overlaySettings.value.dpsLook);
+const set = (mut: (d: DpsLook) => void) => updateOverlaySettings(s => mut(s.dpsLook));
+const setFont = (v: SizeValue) => set(x => { x.font = v.size; x.fpx = v.px; });
+const resetLook = () => set(x => { const z = defaultDpsLook(); x.font = z.font; x.fpx = z.fpx; x.bg = z.bg; });
+
+// 顯示列數 lives in the dps layout, not in the settings.
+const rows = computed(() => layoutOf('dps', state.value?.layout).maxRows);
+function stepRows(delta: number) {
+    const lay = layoutOf('dps', state.value?.layout);
+    const next = Math.min(MAX_ROWS, Math.max(MIN_ROWS, lay.maxRows + delta));
+    if (next !== lay.maxRows) setLayout('dps', { ...lay, maxRows: next });
+}
 </script>
 
 <template>
-  <div class="settings">
-    <div class="setting">
-      <div class="lbl">
-        <div>透明度</div>
-        <div class="hint">只影響背景，文字與圖示維持不透明</div>
+  <div class="ovs-page" data-dps-page>
+    <h2>簡易戰鬥資訊</h2>
+    <div class="ovs-box">
+      <h3>外觀<IconButton kind="reset" data-reset-look @fire="resetLook" /></h3>
+      <div class="ovs-field">
+        <span class="ovs-lbl">字體大小</span>
+        <SizeField :model-value="{ size: d.font, px: d.fpx }" :presets="DPS_FONT_PX" :min="10" :max="40" @update:model-value="setFont" />
       </div>
-      <OpacityRange
-        data-dps-opacity
-        :model-value="overlaySettings.dps.opacity"
-        @update:model-value="v => set(d => { d.opacity = v; })"
-      />
+      <div class="ovs-field">
+        <span class="ovs-lbl">顯示列數</span>
+        <DButton size="sm" data-rows-dec aria-label="減少列數" :disabled="rows <= MIN_ROWS" @click="stepRows(-1)">−</DButton>
+        <span class="rows-val" data-rows-val>{{ rows }}</span>
+        <DButton size="sm" data-rows-inc aria-label="增加列數" :disabled="rows >= MAX_ROWS" @click="stepRows(1)">＋</DButton>
+      </div>
+      <PanelBgField :model-value="d.bg" :fallback="overlaySettings.general.bg" @update:model-value="v => set(x => { x.bg = v; })" />
     </div>
-    <div class="setting">
-      <div class="lbl">字體大小</div>
-      <DSegmented
-        :model-value="overlaySettings.dps.fontSize"
-        :options="[...SIZES]"
-        @update:model-value="(v: SizeStep) => set(d => { d.fontSize = v; })"
-      />
-    </div>
-    <div class="group">
-      <div class="sub">每列顯示</div>
-      <div class="checks">
+    <div class="ovs-box">
+      <h3>內容</h3>
+      <div class="ovs-field">
+        <span class="ovs-lbl">每列顯示</span>
         <DCheckbox
-          v-for="c in COLUMNS"
-          :key="c.key"
-          :model-value="overlaySettings.dps.columns[c.key]"
-          :label="c.label"
-          @update:model-value="v => set(d => { d.columns[c.key] = v; })"
+          v-for="c in COLUMNS" :key="c.key" :model-value="d.columns[c.key]" :label="c.label"
+          @update:model-value="v => set(x => { x.columns[c.key] = v; })"
         />
       </div>
-    </div>
-    <div class="group">
-      <div class="sub">頂部資訊</div>
-      <div class="checks">
+      <div class="ovs-field">
+        <span class="ovs-lbl">頂部資訊</span>
         <DCheckbox
-          v-for="c in TOP"
-          :key="c.key"
-          :model-value="overlaySettings.dps.top[c.key]"
-          :label="c.label"
-          @update:model-value="v => set(d => { d.top[c.key] = v; })"
+          v-for="c in TOP" :key="c.key" :model-value="d.top[c.key]" :label="c.label"
+          @update:model-value="v => set(x => { x.top[c.key] = v; })"
         />
       </div>
     </div>
@@ -73,10 +78,5 @@ const set = (mut: (d: Dps) => void) => updateOverlaySettings(s => mut(s.dps));
 </template>
 
 <style scoped>
-.settings { display: flex; flex-direction: column; gap: var(--space-4); }
-.setting { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
-.hint { color: var(--c-text-dim); font-size: var(--fs-xs); }
-.sub { color: var(--c-text-dim); font-size: var(--fs-sm); }
-.group { display: flex; flex-direction: column; gap: var(--space-2); }
-.checks { display: flex; flex-wrap: wrap; gap: var(--space-5); }
+.rows-val { min-width: 2em; text-align: center; font-family: Consolas, "Cascadia Mono", "Courier New", ui-monospace, monospace; }
 </style>

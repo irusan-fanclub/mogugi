@@ -60,6 +60,10 @@ const (
 	StatInjuryMax uint16 = 112
 	StatCritical  uint16 = 115
 	StatBalance   uint16 = 118
+
+	// 信念值 gauge (CTuairim) and its cap; only the owner's 0x7530 carries them.
+	StatTuairim    uint16 = 198
+	StatTuairimMax uint16 = 199
 )
 
 // statSnapshotFirst is the 0x5209 element index holding the first stat, and

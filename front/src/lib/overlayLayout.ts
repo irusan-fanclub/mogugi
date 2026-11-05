@@ -6,6 +6,15 @@ export interface Guide { x1: number; y1: number; x2: number; y2: number; centre:
 
 const GUIDE_PAD = 8;
 
+/** Field-wise layout equality; a missing dock or order equals an empty one. */
+export function sameLayout(a: OverlayLayout, b: OverlayLayout): boolean {
+    const oa = a.order ?? [];
+    const ob = b.order ?? [];
+    return a.enabled === b.enabled && a.anchor === b.anchor && a.x === b.x && a.y === b.y
+        && a.width === b.width && a.maxRows === b.maxRows && (a.dock ?? '') === (b.dock ?? '')
+        && oa.length === ob.length && oa.every((id, i) => id === ob[i]);
+}
+
 function pointIn(anchor: Anchor, w: number, h: number): { x: number; y: number } {
     return {
         x: anchor === 'tl' || anchor === 'bl' ? 0 : anchor === 'center' ? w / 2 : w,
@@ -22,6 +31,15 @@ export function unclampedRect(l: OverlayLayout, height: number, vp: Size): Rect 
 
 export function rectOf(l: OverlayLayout, height: number, vp: Size): Rect & { clamped: boolean } {
     const { l: rawL, t: rawT } = unclampedRect(l, height, vp);
+    const left = Math.min(Math.max(rawL, 0), Math.max(0, vp.w - l.width));
+    const top = Math.min(Math.max(rawT, 0), Math.max(0, vp.h - height));
+    return { l: left, t: top, w: l.width, h: height, clamped: Math.abs(left - rawL) > 0.5 || Math.abs(top - rawT) > 0.5 };
+}
+
+/** A docked component sits right under its host, x pixels from the host's left edge. */
+export function dockedRect(host: Rect, l: OverlayLayout, height: number, vp: Size): Rect & { clamped: boolean } {
+    const rawL = host.l + l.x;
+    const rawT = host.t + host.h;
     const left = Math.min(Math.max(rawL, 0), Math.max(0, vp.w - l.width));
     const top = Math.min(Math.max(rawT, 0), Math.max(0, vp.h - height));
     return { l: left, t: top, w: l.width, h: height, clamped: Math.abs(left - rawL) > 0.5 || Math.abs(top - rawT) > 0.5 };

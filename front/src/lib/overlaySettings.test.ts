@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
     defaultOverlaySettings, normalizeOverlaySettings, loadOverlaySettings, saveOverlaySettings,
-    DEFAULT_SELF_CC, DEFAULT_BOSS_CC, FONT_PX, ICON_PX,
+    FONT_PX,
 } from './overlaySettings';
 import { resetSettingsForTest, saveSetting } from './settingsStorage';
 
@@ -10,26 +10,28 @@ beforeEach(() => { resetSettingsForTest(); });
 describe('defaults', () => {
     it('match the plan', () => {
         const d = defaultOverlaySettings();
-        expect(d.v).toBe(1);
-        expect(d.dps.columns).toEqual({ dps: true, total: false, share: true });
-        expect(d.dps.top).toEqual({ boss: true, time: true, partyDps: false });
-        expect(d.dps.opacity).toBe(60);
-        expect(d.cc.opacity).toBe(0);
-        expect(d.dps.fontSize).toBe('m');
-        expect(d.cc.iconSize).toBe('m');
-        expect(d.cc.sections.self).toEqual([516, 680, 192]);
-        expect(d.cc.sections.party).toEqual([516, 680, 192]);
-        expect(DEFAULT_SELF_CC).toEqual([516, 680, 192]);
-        expect(d.cc.sections.boss).not.toContain(494);
-        expect(d.cc.sections.boss).not.toContain(516);
-        expect(DEFAULT_BOSS_CC).toEqual(d.cc.sections.boss);
+        expect(d.v).toBe(2);
+        expect(d.scale).toBe(100);
+        expect(d.dpsLook.columns).toEqual({ dps: true, total: false, share: true });
+        expect(d.dpsLook.font).toBe('m');
+        expect(d.ccBoss.items.map(i => i.id)).toContain(323);
+        expect(d.ccBoss.items.map(i => i.id)).not.toContain(516);
+        expect(d.burst.items.map(i => i.id)).toEqual([516, 900206]);
+        expect(d.cooldown.items.map(i => i.skillId)).toEqual([59005, 59143, 59123]);
         expect(FONT_PX).toEqual({ s: 12, m: 14, l: 16 });
-        expect(ICON_PX).toEqual({ s: 24, m: 32, l: 40 });
+    });
+    it('has no widgets or old dps look', () => {
+        const d = defaultOverlaySettings() as unknown as Record<string, unknown>;
+        expect(d.widgets).toBeUndefined();
+        expect(d.dps).toBeUndefined();
     });
     it('returns independent copies', () => {
         const a = defaultOverlaySettings();
-        a.cc.sections.self.push(1);
-        expect(defaultOverlaySettings().cc.sections.self).toEqual([516, 680, 192]);
+        a.ccSelf.items.pop();
+        a.cooldown.items.pop();
+        const d = defaultOverlaySettings();
+        expect(d.ccSelf.items).toHaveLength(defaultOverlaySettings().ccSelf.items.length);
+        expect(d.cooldown.items).toHaveLength(3);
     });
 });
 
@@ -38,34 +40,34 @@ describe('normalizeOverlaySettings', () => {
         expect(normalizeOverlaySettings(null)).toEqual(defaultOverlaySettings());
     });
     it('clamps opacity and fixes invalid fields', () => {
-        const n = normalizeOverlaySettings({ dps: { opacity: 250, fontSize: 'xl' }, cc: { opacity: -5 } });
-        expect(n.dps.opacity).toBe(100);
-        expect(n.dps.fontSize).toBe('m');
-        expect(n.cc.opacity).toBe(0);
+        const n = normalizeOverlaySettings({ alerts: { opacity: 250, fontSize: 'xl' } });
+        expect(n.alerts).toMatchObject({ opacity: 100, fontSize: 'm' });
     });
-    it('drops garbage list entries and duplicates', () => {
-        const n = normalizeOverlaySettings({ cc: { sections: { self: [5, 'x', 5, null, 7.5, -1, 6], party: 'bad' } } });
-        expect(n.cc.sections.self).toEqual([5, 6]);
-        expect(n.cc.sections.party).toEqual([516, 680, 192]);
-    });
-    it('keeps valid booleans', () => {
-        const n = normalizeOverlaySettings({ dps: { columns: { total: true, dps: false } } });
-        expect(n.dps.columns).toEqual({ dps: false, total: true, share: true });
+    it('ignores saved widgets', () => {
+        const n = normalizeOverlaySettings({ widgets: [{ id: 'a', kind: 'cc', ccIds: [5] }] }) as unknown as Record<string, unknown>;
+        expect(n.widgets).toBeUndefined();
     });
 });
 
 describe('load / save', () => {
     it('round trips', () => {
         const s = defaultOverlaySettings();
-        s.dps.opacity = 33;
-        s.cc.sections.boss = [7, 1];
+        s.dpsLook.font = 'l';
+        s.ccSelf.items.pop();
         saveOverlaySettings(s);
         expect(loadOverlaySettings()).toEqual(s);
     });
     it('normalises stored data and survives corrupt storage', () => {
-        saveSetting('overlay', { dps: { opacity: 999 } });
-        expect(loadOverlaySettings().dps.opacity).toBe(100);
+        saveSetting('overlay', { v: 2, scale: 999 });
+        expect(loadOverlaySettings().scale).toBe(150);
         saveSetting('overlay', 'bad');
+        expect(loadOverlaySettings()).toEqual(defaultOverlaySettings());
+    });
+});
+
+describe('settings version', () => {
+    it('a saved v1 object loads as the defaults', () => {
+        saveSetting('overlay', { v: 1, scale: 120 });
         expect(loadOverlaySettings()).toEqual(defaultOverlaySettings());
     });
 });
@@ -74,14 +76,12 @@ describe('new settings', () => {
     it('defaults', () => {
         const d = defaultOverlaySettings();
         expect(d.scale).toBe(100);
-        expect(d.cooldown).toEqual({ opacity: 60, iconSize: 'm' });
-        expect(d.alerts).toEqual({ opacity: 60, fontSize: 'm' });
-        expect(d.rules).toEqual([]);
+        expect(d.alerts).toEqual({ opacity: 60, bg: '#0e1013', fontSize: 'm' });
+        expect(d.rules.map(x => x.id)).toEqual(['d-prelude', 'd-lively', 'd-march', 'd-def', 'd-mdef', 'd-dmg']);
         expect(d.voice).toEqual({ voiceName: '', rate: 1.2, volume: 100, muted: false });
     });
     it('ignores a legacy cc.cooldown', () => {
         const n = normalizeOverlaySettings({ cc: { cooldown: false } });
-        expect('cooldown' in n.cc).toBe(false);
         expect(n).toEqual(defaultOverlaySettings());
     });
     it('clamps scale, rate and volume', () => {
@@ -92,15 +92,15 @@ describe('new settings', () => {
         expect(v).toEqual({ voiceName: 'A', rate: 1.8, volume: 0, muted: true });
         expect(normalizeOverlaySettings({ voice: { rate: 0.1, volume: 500 } }).voice).toMatchObject({ rate: 0.6, volume: 100 });
     });
-    it('normalises cooldown and alerts appearance', () => {
-        const n = normalizeOverlaySettings({ cooldown: { opacity: 500, iconSize: 'l' }, alerts: { opacity: 20, fontSize: 'z' } });
-        expect(n.cooldown).toEqual({ opacity: 100, iconSize: 'l' });
-        expect(n.alerts).toEqual({ opacity: 20, fontSize: 'm' });
+    it('normalises alerts appearance and background colour', () => {
+        const n = normalizeOverlaySettings({ alerts: { opacity: 20, fontSize: 'z', bg: '#ABCDEF' } });
+        expect(n.alerts).toEqual({ opacity: 20, bg: '#abcdef', fontSize: 'm' });
+        expect(normalizeOverlaySettings({ alerts: { bg: 'red' } }).alerts.bg).toBe('#0e1013');
     });
     const countdown = {
         id: 'a', enabled: false, kind: 'countdown', target: 'boss', ccId: 803, times: [3, 10, 3, 5.4, -1, 'x'], every: 45,
         conds: [{ mode: 'absent', ccId: 516 }], join: 'or', text: false, textMessage: 'hi', voice: true, voiceMessage: 'yo',
-        textKeep: 9, dismiss: { condFails: true, ccEnds: true, replaced: false },
+        textKeep: 9, loud: false, dismiss: { condFails: true, ccEnds: true, replaced: false },
     };
     const rulesOf = (...rs: unknown[]) => normalizeOverlaySettings({ rules: rs }).rules;
     it('drops invalid rules, keeps valid ones', () => {
@@ -124,8 +124,29 @@ describe('new settings', () => {
         expect(r).toEqual({
             id: 'a', enabled: true, kind: 'countdown', target: 'self', ccId: 1, times: [3], every: 30,
             conds: [], join: 'and', text: true, textMessage: '', voice: true, voiceMessage: '', textKeep: 5,
-            dismiss: { condFails: false, ccEnds: false, replaced: false },
+            loud: false, dismiss: { condFails: false, ccEnds: false, replaced: false },
         });
+    });
+    it('an appear rule keeps its cc and drops the times', () => {
+        const r = rulesOf({ id: 'p', kind: 'appear', target: 'self', ccId: 516, times: [3], loud: true })[0];
+        expect(r).toMatchObject({ kind: 'appear', ccId: 516, times: [], loud: true });
+        expect(rulesOf({ id: 'p', kind: 'appear', target: 'self' })).toEqual([]);
+    });
+    it('default rules: music buffs at 30 s without 圖安之魂, boss debuffs', () => {
+        const d = defaultOverlaySettings().rules;
+        const by = (id: string) => d.find(x => x.id === id)!;
+        for (const id of ['d-prelude', 'd-lively', 'd-march']) {
+            expect(by(id)).toMatchObject({ kind: 'countdown', target: 'self', times: [30], conds: [{ mode: 'absent', ccId: 1124 }] });
+        }
+        expect(d.map(x => x.ccId)).toEqual([680, 192, 193, 1164, 1165, 1166]);
+        expect(['d-def', 'd-mdef', 'd-dmg'].map(id => [by(id).target, by(id).times])).toEqual(Array(3).fill(['boss', [30]]));
+    });
+    it('a first run and an empty list saved before sections get the default rules; a later empty list stays empty', () => {
+        const ids = (v: unknown) => normalizeOverlaySettings(v).rules.length;
+        expect(ids({})).toBe(6);
+        expect(ids({ rules: [] })).toBe(6);
+        expect(ids({ rules: [], widgets: [] })).toBe(0);
+        expect(ids({ rules: [], general: {} })).toBe(0);
     });
     it('keeps the whole-party target', () => {
         expect(rulesOf({ id: 'a', kind: 'countdown', target: 'all', ccId: 1, times: [3] })[0].target).toBe('all');
@@ -160,9 +181,52 @@ describe('new settings', () => {
         s.rules = [{
             id: 'a', enabled: true, kind: 'countdown', target: 'party', ccId: 2, times: [9, 1], every: 30,
             conds: [{ mode: 'present', ccId: 5 }], join: 'or', text: true, textMessage: '', voice: false, voiceMessage: '',
-            textKeep: 5, dismiss: { condFails: false, ccEnds: false, replaced: false },
+            textKeep: 5, loud: true, dismiss: { condFails: false, ccEnds: false, replaced: false },
         }];
         saveOverlaySettings(s);
         expect(loadOverlaySettings()).toEqual(s);
+    });
+});
+
+describe('v1 migration to sections', () => {
+    const rule = { id: 'r1', kind: 'countdown', target: 'boss', ccId: 1164, times: [30] };
+    it('keeps scale, rules, voice and the DPS look; sizes the CC sections', () => {
+        const n = normalizeOverlaySettings({
+            v: 1, scale: 120,
+            dps: { opacity: 80, bg: '#112233', fontSize: 'l', columns: { dps: true, total: true, share: false }, top: { boss: false, time: true, partyDps: true } },
+            cc: { opacity: 0, iconSize: 's', sections: { boss: [803] } },
+            rules: [rule], voice: { rate: 1.5 },
+        });
+        expect(n.scale).toBe(120);
+        expect(n.rules).toHaveLength(1);
+        expect(n.voice.rate).toBe(1.5);
+        expect(n.dpsLook.font).toBe('l');
+        expect(n.dpsLook.columns).toEqual({ dps: true, total: true, share: false });
+        expect(n.dpsLook.top).toMatchObject({ boss: false, partyDps: true, hpPct: true });
+        expect(n.dpsLook.bg).toEqual({ color: '#112233', alpha: 80 });
+        for (const id of ['ccBoss', 'ccSelf', 'ccParty'] as const) expect(n[id].look.size).toBe('s');
+        expect(n.burst.look.size).toBe('c');
+        expect(n.ccBoss.items).toEqual(defaultOverlaySettings().ccBoss.items);
+    });
+    it('garbage gives the defaults for the new fields', () => {
+        const d = defaultOverlaySettings();
+        for (const g of [{}, null, 'x', { ccBoss: 3, dpsLook: [], general: 1, cooldown: 'x' }]) {
+            const n = normalizeOverlaySettings(g);
+            expect(n.general).toEqual(d.general);
+            expect(n.ccBoss).toEqual(d.ccBoss);
+            expect(n.ccSelf).toEqual(d.ccSelf);
+            expect(n.ccParty).toEqual(d.ccParty);
+            expect(n.burst).toEqual(d.burst);
+            expect(n.cooldown).toEqual(d.cooldown);
+            expect(n.dpsLook).toEqual(d.dpsLook);
+        }
+    });
+    it('saved new fields round-trip', () => {
+        const d = defaultOverlaySettings();
+        d.ccSelf.items.pop();
+        d.general.warn = '#010203';
+        const n = normalizeOverlaySettings(JSON.parse(JSON.stringify(d)));
+        expect(n.ccSelf.items).toHaveLength(d.ccSelf.items.length);
+        expect(n.general.warn).toBe('#010203');
     });
 });

@@ -51,6 +51,7 @@ var ndjsonDecoders = map[event.EventId]func() event.IEvent{
 	event.EventIdEntityInvincible:          func() event.IEvent { return &event.EventEntityInvincible{} },
 	event.EventIdClockShift:                func() event.IEvent { return &event.EventClockShift{} },
 	event.EventIdOwnerProfile:              func() event.IEvent { return &event.EventOwnerProfile{} },
+	event.EventIdTuairim:                   func() event.IEvent { return &event.EventTuairim{} },
 }
 
 // decodeNdjsonEvent restores one packet-log line to its concrete event type.
@@ -119,6 +120,7 @@ func (c *SourceController) startNdjson(path, base string, opt ReplayOptions, gen
 		}
 	}
 	c.pub.SetReadOnly(true)
+	c.pub.SetOverlayGated(true)
 	c.pub.SetImportBattles(false) // events carry no SetLocation, nothing to import
 	c.state = SourceState{Mode: "replay", File: base, Total: fi.Size()}
 	if opt.ImportBattles {

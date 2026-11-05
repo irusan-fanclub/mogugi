@@ -51,10 +51,10 @@ describe('overlayLink', () => {
     });
 
     it('updateOverlaySettings persists and emits', () => {
-        updateOverlaySettings(s => { s.dps.opacity = 33; });
-        expect(overlaySettings.value.dps.opacity).toBe(33);
-        expect((emits(OV.settings)[0] as { dps: { opacity: number } }).dps.opacity).toBe(33);
-        expect(JSON.parse(settingsStorage.getItem('overlay')!).dps.opacity).toBe(33);
+        updateOverlaySettings(s => { s.scale = 133; });
+        expect(overlaySettings.value.scale).toBe(133);
+        expect((emits(OV.settings)[0] as { scale: number }).scale).toBe(133);
+        expect(JSON.parse(settingsStorage.getItem('overlay')!).scale).toBe(133);
     });
 
     it('stop unregisters the hello listener and the target watch', async () => {

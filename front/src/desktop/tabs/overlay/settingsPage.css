@@ -1,0 +1,35 @@
+/* Shared look of the overlay settings pages (global, ovs- prefixed). */
+.ovs-page h2 { margin: 0 0 var(--space-3); font-size: var(--fs-lg, 16px); font-weight: 600; }
+.ovs-box { margin: 0 0 var(--space-4); padding: var(--space-3) var(--space-4); border: 1px solid var(--c-line); border-radius: 6px; background: var(--c-surface); }
+.ovs-box > h3 { display: flex; align-items: center; gap: var(--space-3); margin: 0 0 var(--space-3); font-size: var(--fs-sm); font-weight: 400; color: var(--c-text-dim); }
+.ovs-box > h3 .ibtn { margin-left: auto; }
+.ovs-field { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; margin: 6px 0; font-size: var(--fs-sm); }
+.ovs-lbl { width: 84px; flex: none; color: var(--c-text-dim); }
+.ovs-dim { color: var(--c-text-dim); font-size: var(--fs-xs); }
+.ovs-pos { margin: var(--space-3) 0 0; color: var(--c-text-dim); font-size: var(--fs-xs); }
+.ovs-num { width: 56px; padding: 2px 6px; background: var(--c-bg-deep); border: 1px solid var(--c-line); border-radius: 4px; color: var(--c-text); font: inherit; }
+.ovs-num:disabled { color: var(--c-text-dim); background: var(--c-surface-2); cursor: not-allowed; }
+.ovs-txt { width: 90px; padding: 2px 6px; background: var(--c-bg-deep); border: 1px solid var(--c-line); border-radius: 4px; color: var(--c-text); font: inherit; }
+.ovs-field input[type=color] { width: 34px; height: 24px; padding: 0; border: 1px solid var(--c-line); border-radius: 4px; background: var(--c-bg-deep); cursor: pointer; }
+.ovs-field input[type=range] { width: 140px; accent-color: var(--c-accent); }
+.ovs-chips { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
+.ovs-chips button { padding: 1px 8px; border: 1px solid var(--c-line); border-radius: 10px; background: transparent; color: var(--c-text); font: inherit; font-size: var(--fs-xs); cursor: pointer; }
+.ovs-chips button.on { border-color: var(--c-accent); background: var(--c-accent); color: var(--c-bg-deep); font-weight: 700; }
+.ovs-soon { display: inline-flex; }
+.ovs-cchip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 4px 1px 2px; border: 1px solid var(--c-line); border-radius: 4px; background: var(--c-bg-deep); font-size: var(--fs-xs); }
+.ovs-cchip img { width: 20px; height: 20px; border-radius: 2px; }
+.ovs-cchip button { padding: 0 3px; border: 0; background: transparent; color: var(--c-text-dim); font: inherit; cursor: pointer; }
+.ovs-cchip button:hover { color: var(--c-err); }
+.ovs-mini { padding: 1px 8px; border: 1px dashed var(--c-line); border-radius: 4px; background: transparent; color: var(--c-text-dim); font: inherit; font-size: var(--fs-xs); cursor: pointer; }
+.ovs-mini:hover { color: var(--c-text); border-color: var(--c-text-dim); }
+.ovs-iconpick { padding: 2px; border: 1px solid var(--c-line); border-radius: 5px; background: var(--c-bg-deep); cursor: pointer; line-height: 0; }
+.ovs-iconpick:hover { border-color: var(--c-accent); }
+.ovs-iconpick img { width: 32px; height: 32px; border-radius: 3px; }
+.ovs-unit { margin: 0 0 var(--space-2); border: 1px solid var(--c-line); border-radius: 6px; background: var(--c-bg); }
+.ovs-unit > .head { display: flex; align-items: center; gap: var(--space-3); padding: 6px var(--space-3); cursor: pointer; font-size: var(--fs-sm); }
+.ovs-unit > .head > img { width: 28px; height: 28px; border-radius: 3px; }
+.ovs-unit > .head > .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ovs-unit > .head > .caret { width: 10px; color: var(--c-text-dim); font-size: var(--fs-xs); }
+.ovs-unit > .body { padding: 2px var(--space-3) var(--space-3) var(--space-4); border-top: 1px solid var(--c-line); }
+.ovs-solo { padding: 1px 7px; border: 1px solid var(--c-share); border-radius: 9px; color: var(--c-share); font-size: var(--fs-xs); white-space: nowrap; }
+.ovs-solo button { margin-left: 4px; padding: 0 4px; border: 0; border-radius: 3px; background: var(--c-share); color: var(--c-bg-deep); font: inherit; cursor: pointer; }

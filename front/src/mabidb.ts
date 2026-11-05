@@ -71,6 +71,12 @@ export class MabiDB {
         return query<ListRow>(`SELECT id AS Id, name AS Name FROM ${table} ORDER BY id`);
     }
 
+    // Skills a player race can use (available_race bits 1|2|4); throws on a db without the column.
+    public async getPlayerSkillIds(): Promise<number[]> {
+        await this.tryOpen();
+        return query<{ Id: number }>('SELECT id AS Id FROM skill WHERE (available_race & 7) != 0').map(r => r.Id);
+    }
+
     // 批次取物品說明（遺物欄位固定效果寫在說明裡；只查需要的少數 id）。
     public async getItemDescriptions(ids: number[]): Promise<Record<number, string>> {
         if (!ids.length) return {};

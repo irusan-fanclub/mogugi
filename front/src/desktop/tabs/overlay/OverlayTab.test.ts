@@ -3,7 +3,7 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { ref, nextTick } from 'vue';
 import { mount, VueWrapper } from '@vue/test-utils';
 import type { OverlayState } from '@/lib/overlayProtocol';
-import { defaultOverlaySettings, DEFAULT_BOSS_CC, DEFAULT_SELF_CC, type OverlaySettings } from '@/lib/overlaySettings';
+import { defaultOverlaySettings, type OverlaySettings } from '@/lib/overlaySettings';
 import { condNameMap } from '@/store';
 
 // Lazy lookups: vi.mock factories run before the module-level refs exist.
@@ -12,7 +12,7 @@ const settingsRef = () => settings;
 
 const h = vi.hoisted(() => ({
     setLayout: vi.fn(), setLocked: vi.fn(), setHotkey: vi.fn(), restartElevated: vi.fn(),
-    setHidden: vi.fn(), setVisibleHotkey: vi.fn(),
+    setHidden: vi.fn(), setVisibleHotkey: vi.fn(), removeLayout: vi.fn(),
 }));
 const { setLayout, setLocked, setHotkey } = h;
 const state = ref<OverlayState | null>(null);
@@ -40,7 +40,7 @@ beforeEach(() => {
     state.value = { locked: true, hotkey: 'Ctrl+Alt+L', hotkeyError: '', licensed: true, elevated: true, elevateError: '', hidden: false, visibleHotkey: 'Ctrl+Alt+O', visibleHotkeyError: '', layout: { dps: { enabled: false, anchor: 'tr', x: -24, y: 24, width: 260, maxRows: 8 } }, gameFound: true };
     settings.value = defaultOverlaySettings();
     condNameMap.value = { 516: '覺醒', 680: '序曲', 192: '活潑板', 999: '測試狀態' };
-    setLayout.mockClear(); setLocked.mockClear(); setHotkey.mockClear();
+    h.removeLayout.mockClear(); setLayout.mockClear(); setLocked.mockClear(); setHotkey.mockClear();
     roCb = null;
     vi.stubGlobal('ResizeObserver', class {
         constructor(cb: ResizeObserverCallback) { roCb = cb; }
@@ -99,7 +99,7 @@ describe('LockBar', () => {
     });
 });
 
-describe('OverlayTab list', () => {
+describe('OverlayTab nav', () => {
     it('shows a notice under the lock bar only when unlicensed', async () => {
         mountTab();
         expect(w!.find('[data-unlicensed]').exists()).toBe(false);
@@ -108,15 +108,36 @@ describe('OverlayTab list', () => {
         expect(w!.find('[data-unlicensed]').text()).toBe('未授權，overlay 不會開啟');
     });
 
-    it('lists the four components with switches bound to state.layout', async () => {
+    it('lists the nine pages in order', () => {
         mountTab();
-        expect(items().map(i => i.find('.name').text())).toEqual(['DPS', 'CC 監測', '技能冷卻', '提醒']);
-        const sw = items().map(i => i.find('[role="switch"]'));
-        expect(sw.map(s => s.attributes('aria-checked'))).toEqual(['false', 'true', 'true', 'true']);
-        await sw[0].trigger('click');
-        expect(setLayout).toHaveBeenCalledWith('dps', { enabled: true, anchor: 'tr', x: -24, y: 24, width: 260, maxRows: 8 });
-        await sw[1].trigger('click');
-        expect(setLayout).toHaveBeenCalledWith('cc', { enabled: false, anchor: 'tl', x: 24, y: 24, width: 300, maxRows: 8 });
+        expect(items().map(i => i.text())).toEqual(['通用', '簡易戰鬥資訊', 'BOSS CC', '自己 CC', '隊伍 CC', '技能冷卻', '雜項', '爆發提示（開發中）', '提醒（開發中）']);
+    });
+
+    it('each page opens its settings', async () => {
+        mountTab();
+        expect(w!.find('[data-general]').exists()).toBe(true);
+        await items()[2].trigger('click');
+        expect(w!.get('[data-overlay-settings] h2').text()).toBe('BOSS CC');
+        expect(w!.find('[data-item="1164"]').exists()).toBe(true);
+        await items()[4].trigger('click');
+        expect(w!.find('[data-item="1164"]').exists()).toBe(false);
+        expect(w!.find('[data-item="680"]').exists()).toBe(true);
+        await items()[5].trigger('click');
+        expect(w!.find('[data-item="59005"]').exists()).toBe(true);
+        await items()[6].trigger('click');
+        expect(w!.find('[data-item="428"]').exists()).toBe(true);
+        await items()[8].trigger('click');
+        await w!.get('[data-alerts-opacity]').setValue('20');
+        expect(settings.value.alerts.opacity).toBe(20);
+    });
+
+    it('switching page closes an open picker', async () => {
+        mountTab();
+        await items()[2].trigger('click');
+        await w!.get('[data-add]').trigger('click');
+        expect(w!.find('[data-picker]').exists()).toBe(true);
+        await items()[3].trigger('click');
+        expect(w!.find('[data-picker]').exists()).toBe(false);
     });
 
     it('passes hidden state to the lock bar and calls setHidden', async () => {
@@ -135,76 +156,47 @@ describe('OverlayTab list', () => {
     });
 });
 
-describe('DPS settings', () => {
-    it('opacity, font size, columns and top info write to overlaySettings.dps', async () => {
-        mountTab();
-        await items()[0].trigger('click');
-        const range = w!.find('[data-dps-opacity]');
-        expect((range.element as HTMLInputElement).value).toBe('60');
-        await range.setValue('35');
-        expect(settings.value.dps.opacity).toBe(35);
+describe('簡易戰鬥資訊 page', () => {
+    const openDps = async () => { mountTab(); await items()[1].trigger('click'); };
 
+    it('font size, columns and top info write dpsLook', async () => {
+        await openDps();
         await w!.findAll('[role="radio"]').find(r => r.text() === '大')!.trigger('click');
-        expect(settings.value.dps.fontSize).toBe('l');
-
+        expect(settings.value.dpsLook.font).toBe('l');
+        await w!.findAll('[role="radio"]').find(r => r.text() === '自訂')!.trigger('click');
+        expect(settings.value.dpsLook).toMatchObject({ font: 'c', fpx: 17 });
         await w!.findAll('[role="checkbox"]').find(c => c.text() === '總傷害')!.trigger('click');
-        expect(settings.value.dps.columns.total).toBe(true);
-        await w!.findAll('[role="checkbox"]').find(c => c.text() === '隊伍 DPS')!.trigger('click');
-        expect(settings.value.dps.top.partyDps).toBe(true);
-        expect(w!.findAll('[role="checkbox"]').map(c => c.text())).toEqual(['DPS', '總傷害', '佔比', 'BOSS', '時間', '隊伍 DPS']);
-    });
-});
-
-describe('CC settings', () => {
-    async function openCc() {
-        mountTab();
-        await items()[1].trigger('click');
-    }
-    const sections = () => w!.findAll('[data-cc-section]');
-
-    it('has opacity, icon size and three sections', async () => {
-        await openCc();
-        expect(sections().map(s => s.find('.title').text())).toEqual(['BOSS', '自身', '隊友']);
-        await w!.find('[data-cc-opacity]').setValue('40');
-        expect(settings.value.cc.opacity).toBe(40);
-        await w!.findAll('[role="radio"]').find(r => r.text() === '小')!.trigger('click');
-        expect(settings.value.cc.iconSize).toBe('s');
+        expect(settings.value.dpsLook.columns.total).toBe(true);
+        await w!.findAll('[role="checkbox"]').find(c => c.text() === '剩餘血量')!.trigger('click');
+        expect(settings.value.dpsLook.top.hpLeft).toBe(true);
+        expect(w!.findAll('[role="checkbox"]').map(c => c.text())).toEqual(
+            ['DPS', '總傷害', '佔比', 'BOSS 名稱', '血量 %', '剩餘血量', '時間', '隊伍 DPS']);
     });
 
-    it('removes with the x button', async () => {
-        await openCc();
-        await sections()[1].findAll('[data-remove] button')[0].trigger('click');
-        expect(settings.value.cc.sections.self).toEqual(DEFAULT_SELF_CC.slice(1));
-        expect(settings.value.cc.sections.boss).toEqual(DEFAULT_BOSS_CC);
+    it('面板底色 自訂 stores its own colour; ↺ restores the look', async () => {
+        settings.value.dpsLook.bg = null;
+        await openDps();
+        await w!.findAll('[role="radio"]').find(r => r.text() === '自訂' && r.element.closest('[data-bg-mode]'))!.trigger('click');
+        expect(settings.value.dpsLook.bg).toEqual({ color: '#0e1013', alpha: 0 });
+        await w!.get('[data-bg-alpha]').setValue('70');
+        expect(settings.value.dpsLook.bg).toEqual({ color: '#0e1013', alpha: 70 });
+        await w!.get('[data-reset-look]').trigger('click');
+        expect(settings.value.dpsLook.bg).toEqual({ color: '#0e1013', alpha: 25 });
     });
 
-    it('adds from the search result list', async () => {
-        await openCc();
-        const self = sections()[1];
-        await self.findAll('button').find(b => b.text() === '新增')!.trigger('click');
-        await self.find('input').setValue('測試');
-        const rows = self.findAll('[data-add]');
-        expect(rows).toHaveLength(1);
-        await rows[0].trigger('click');
-        expect(settings.value.cc.sections.self).toEqual([...DEFAULT_SELF_CC, 999]);
-    });
-
-    it('reorders without a pinned item', async () => {
-        await openCc();
-        const rows = sections()[1].findAll('.row');
-        expect(rows[0].attributes('draggable')).toBe('true');
-        const dt = { setData() {}, effectAllowed: '' };
-        await rows[0].trigger('dragstart', { dataTransfer: dt });
-        await rows[1].trigger('dragover', { dataTransfer: dt });
-        expect(settings.value.cc.sections.self.slice(0, 2)).toEqual([DEFAULT_SELF_CC[1], DEFAULT_SELF_CC[0]]);
-    });
-
-    it('恢復預設 restores that section only', async () => {
-        await openCc();
-        const self = sections()[1];
-        await self.findAll('[data-remove] button')[0].trigger('click');
-        await self.findAll('button').find(b => b.text() === '恢復預設')!.trigger('click');
-        expect(settings.value.cc.sections.self).toEqual(DEFAULT_SELF_CC);
+    it('the row stepper writes maxRows of the dps layout, within 1-20', async () => {
+        await openDps();
+        expect(w!.get('[data-rows-val]').text()).toBe('8');
+        await w!.get('[data-rows-inc]').trigger('click');
+        expect(setLayout).toHaveBeenLastCalledWith('dps', { enabled: false, anchor: 'tr', x: -24, y: 24, width: 260, maxRows: 9 });
+        await w!.get('[data-rows-dec]').trigger('click');
+        expect(setLayout).toHaveBeenLastCalledWith('dps', { enabled: false, anchor: 'tr', x: -24, y: 24, width: 260, maxRows: 7 });
+        state.value = { ...state.value!, layout: { dps: { enabled: true, anchor: 'tr', x: 0, y: 0, width: 260, maxRows: 20 } } };
+        await nextTick();
+        expect(w!.get('[data-rows-inc]').attributes('disabled')).toBeDefined();
+        state.value = { ...state.value!, layout: { dps: { enabled: true, anchor: 'tr', x: 0, y: 0, width: 260, maxRows: 1 } } };
+        await nextTick();
+        expect(w!.get('[data-rows-dec]').attributes('disabled')).toBeDefined();
     });
 });
 
@@ -256,39 +248,5 @@ describe('overlay tab page chrome', () => {
         state.value = { ...state.value!, gameFound: false };
         await nextTick();
         expect(w!.get('[data-no-game]').text()).toBe('找不到遊戲視窗，遊戲啟動後 overlay 會自動出現');
-    });
-
-    it('cooldown switch sends the full default layout', async () => {
-        mountTab();
-        await items()[2].find('[role="switch"]').trigger('click');
-        expect(setLayout).toHaveBeenCalledWith('cooldown', { enabled: false, anchor: 'bl', x: 24, y: -24, width: 240, maxRows: 6 });
-    });
-
-    it('the row stepper sends the full layout with maxRows changed, within 1-20', async () => {
-        mountTab();
-        await items()[1].trigger('click');
-        expect(w!.get('[data-rows-val]').text()).toBe('8');
-        await w!.get('[data-rows-inc]').trigger('click');
-        expect(setLayout).toHaveBeenLastCalledWith('cc', { enabled: true, anchor: 'tl', x: 24, y: 24, width: 300, maxRows: 9 });
-        await w!.get('[data-rows-dec]').trigger('click');
-        expect(setLayout).toHaveBeenLastCalledWith('cc', { enabled: true, anchor: 'tl', x: 24, y: 24, width: 300, maxRows: 7 });
-        state.value = { ...state.value!, layout: { ...state.value!.layout, cc: { enabled: true, anchor: 'tl', x: 24, y: 24, width: 300, maxRows: 20 } } };
-        await nextTick();
-        expect(w!.get('[data-rows-inc]').attributes('disabled')).toBeDefined();
-        state.value = { ...state.value!, layout: { ...state.value!.layout, cc: { enabled: true, anchor: 'tl', x: 24, y: 24, width: 300, maxRows: 1 } } };
-        await nextTick();
-        expect(w!.get('[data-rows-dec]').attributes('disabled')).toBeDefined();
-    });
-
-    it('cooldown and alerts pages open; cc page has no 顯示技能冷卻', async () => {
-        mountTab();
-        await items()[2].trigger('click');
-        await w!.get('[data-cooldown-opacity]').setValue('30');
-        expect(settings.value.cooldown.opacity).toBe(30);
-        await items()[3].trigger('click');
-        await w!.get('[data-alerts-opacity]').setValue('20');
-        expect(settings.value.alerts.opacity).toBe(20);
-        await items()[1].trigger('click');
-        expect(w!.text()).not.toContain('顯示技能冷卻');
     });
 });

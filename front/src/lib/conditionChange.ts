@@ -1,4 +1,5 @@
 import type { EntityCondition } from '@/eventActor';
+import { CC_VALUE_KEYS } from './ccParamSpecs';
 
 /**
  * The value-bearing param keys of each CC the UI reads magnitudes from.
@@ -6,11 +7,16 @@ import type { EntityCondition } from '@/eventActor';
  * they move on every refresh and mean no real change. Add a CC here only when
  * something actually displays its numbers.
  */
-export const SIGNIFICANT_PARAM_KEYS: Record<number, readonly string[]> = {
+const BASE_KEYS: Record<number, readonly string[]> = {
     192: ['LSMA', 'MFCP', 'AFCP', 'LSFA'],   // 活潑板
     516: ['SOP_DMG_MINMAX', 'SOP_CRITICAL'], // 覺醒
     680: ['MCMBAMIN', 'MCMBAMAX', 'MCMBAC'], // 戰場的序曲
 };
+// Plus the battle tab's CC tooltip keys (ccParamSpecs), merged per CC.
+export const SIGNIFICANT_PARAM_KEYS: Record<number, readonly string[]> = { ...BASE_KEYS };
+for (const [id, keys] of Object.entries(CC_VALUE_KEYS)) {
+    SIGNIFICANT_PARAM_KEYS[+id] = [...new Set([...(BASE_KEYS[+id] ?? []), ...keys])];
+}
 
 /**
  * Whether the condition list is a new state worth a history entry: the set of

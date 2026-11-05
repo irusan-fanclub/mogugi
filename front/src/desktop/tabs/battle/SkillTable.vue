@@ -23,6 +23,7 @@ import {
 import CcIconGrid from './CcIconGrid.vue';
 import SkillDetailLines, { type DetailLine } from './SkillDetailLines.vue';
 import { numWidth } from './playerColumns';
+import type { CcValueSummary } from '@/lib/ccValues';
 import type { PlayerVM } from './battleTypes';
 
 const props = defineProps<{
@@ -41,6 +42,8 @@ const props = defineProps<{
     historyOf: (section: 'boss' | 'self', hit: EntityDamage) => EntityConditionState[];
     /** CCs seen in the fight on the targets hit / on the player; unseen ones are hidden. */
     seen: { boss: Set<number>; self: Set<number> };
+    /** CC value summaries for the tooltips, built once per player and range. */
+    values?: { boss: Map<number, CcValueSummary>; self: Map<number, CcValueSummary> };
 }>();
 const emit = defineEmits<{
     hits: [skillId: number];
@@ -226,7 +229,7 @@ const pct = (v: number) => `${(100 * v).toFixed(1)}%`;
             <span class="r num active">{{ row.activeDps === null ? '-' : humanReadableNumber(row.activeDps) }}</span>
             <span class="r num share">{{ pct(row.share) }}</span>
           </div>
-          <SkillDetailLines v-if="detailed" :lines="linesBySkill.get(row.skillId) ?? []" :data-skill="row.skillId" @chip-menu="chipMenu">
+          <SkillDetailLines v-if="detailed" :lines="linesBySkill.get(row.skillId) ?? []" :values="values" :data-skill="row.skillId" @chip-menu="chipMenu">
             <template #end-cc>
               <span class="plus-wrap">
                 <button

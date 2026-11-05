@@ -39,6 +39,7 @@ const (
 	EventIdEntityInvincible
 	EventIdClockShift
 	EventIdOwnerProfile
+	EventIdTuairim
 )
 
 // System-level events use negative IDs so they can be filtered out
@@ -50,6 +51,7 @@ const (
 	EventIdSourceChanged
 	EventIdHistoryEvicted
 	EventIdBattleBoundary
+	EventIdZone
 )
 
 type IEvent interface {
@@ -261,6 +263,12 @@ type EventBattleBoundary struct {
 	Present []string
 }
 
+// EventZone tells clients whether the local player is inside a dungeon.
+type EventZone struct {
+	EventBase
+	InDungeon bool
+}
+
 type EventMessageBox struct {
 	EventBase
 	Message string
@@ -353,6 +361,14 @@ type EventOwnerStats struct {
 type EventOwnerProfile struct {
 	EventBase
 	Profile packet.OwnerProfile
+}
+
+// EventTuairim is the local character's 信念值 gauge (stat 198) and its cap.
+// It rises 0.1667/s in combat and drops to 0 when 信念值強化 (CC 428) fires.
+type EventTuairim struct {
+	EventBase
+	Value float64
+	Max   float64
 }
 
 // SourceState describes where events come from: live capture or a replay.

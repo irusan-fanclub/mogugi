@@ -2,7 +2,6 @@ import type { EntityActor, EntityCondition } from '@/eventActor';
 import { dpsOf, shareOf, type PlayerDamage } from './battleStats';
 import { titleBoss } from './targets';
 import { fightSpan, mergedIds } from './effectTimeline';
-import type { CcSection } from './overlaySettings';
 
 /** Announced target wins ('' = all targets); otherwise the latest boss, else all targets. */
 export function resolveOverlayTarget(i: {
@@ -14,7 +13,7 @@ export function resolveOverlayTarget(i: {
 
 export interface DpsRowVM { id: string; name: string; dps: number; total: number; share: number; isSelf: boolean }
 export interface DpsOverlayVM {
-    boss: { name: string; hpPct: number | null } | null;
+    boss: { name: string; hpPct: number | null; life: number | null } | null;
     fightSec: number | null;
     partyDps: number;
     rows: DpsRowVM[];
@@ -36,6 +35,8 @@ export function buildDpsOverlay(i: {
     const { fightSec, partyDps } = fightStats(i.rows);
     const boss = i.boss && {
         name: i.boss.name,
+        life: i.boss.maxLife > 0
+            ? Math.min(i.boss.maxLife, Math.max(0, i.boss.life ?? i.boss.maxLife - i.boss.dealt)) : null,
         hpPct: i.boss.maxLife > 0
             ? Math.min(100, Math.max(0, (i.boss.life ?? i.boss.maxLife - i.boss.dealt) / i.boss.maxLife * 100)) : null,
     };
@@ -89,31 +90,4 @@ export function formatRemaining(sec: number): string {
     if (s < 100) return String(s);
     if (s < 6000) return `${Math.ceil(s / 60)}m`;
     return '';
-}
-
-export interface CcRowVM { id: string; name: string; icons: CcIconVM[] }
-export interface CcOverlayVM { boss: CcRowVM | null; self: CcRowVM | null; party: CcRowVM[] }
-
-export function buildCcOverlay(i: {
-    actors: Record<string, EntityActor>; bossId: string; ownerId: string; partyIds: string[];
-    sections: Record<CcSection, number[]>; now: number; nameOf: (id: string) => string;
-    /** `${actorId}:${ccId}` keys an alert rule wants shown in red. */
-    red: Set<string>;
-}): CcOverlayVM {
-    const row = (id: string, tracked: number[]): CcRowVM | null => {
-        const a = i.actors[id];
-        if (!a) return null;
-        return { id, name: i.nameOf(id), icons: activeIcons(a.conditionMap, tracked, i.now, cc => i.red.has(`${id}:${cc}`)) };
-    };
-    const party: CcRowVM[] = [];
-    for (const id of i.partyIds) {
-        if (id === i.ownerId) continue;
-        const r = row(id, i.sections.party);
-        if (r && r.icons.length) party.push(r);
-    }
-    return {
-        boss: i.bossId ? row(i.bossId, i.sections.boss) : null,
-        self: row(i.ownerId, i.sections.self),
-        party,
-    };
 }

@@ -10,6 +10,7 @@ import { ActorManager, type EntityActor, type EntityConditionState, type EntityD
 import { bossInfoOf } from '@/lib/bossInfo';
 import { fightStats } from '@/lib/overlayModel';
 import { buildPlayerRows, dpsOf, shareOf } from '@/lib/battleStats';
+import { ccValueSummaries, type CcValueSummary } from '@/lib/ccValues';
 import { buildDpsEntities, fightOwner, fightSpan, playerSelfHistory } from '@/lib/effectTimeline';
 import { activeDps, activeSeconds, deathSpans, excludedSpans, invincibleOf, type Span } from '@/lib/activeDps';
 import { DETAIL_COLUMNS, mergeColumnOrder, visibleColumns } from '@/lib/skillColumns';
@@ -317,6 +318,20 @@ const seenById = computed(() => {
     }
     return out;
 });
+// CC tooltip values per open detailed player: boss = selected target, self = the player; one pass each.
+const ccValuesById = computed(() => {
+    const out: Record<string, { boss: Map<number, CcValueSummary>; self: Map<number, CcValueSummary> }> = {};
+    const span = fightSpan(chartEntities.value);
+    if (!span) return out;
+    const start = Math.max(span.start, timeRangeMin.value ?? span.start);
+    const end = Math.min(span.end, timeRangeMax.value ?? span.end);
+    const boss = chartTarget.value ? ccValueSummaries(chartTarget.value.conditionHistory, start, end) : new Map();
+    for (const p of players.value) {
+        if (!isOpen(p.realName) || !isDetailed(p.realName)) continue;
+        out[p.id] = { boss, self: ccValueSummaries(selfHistoryById.value(p.id), start, end) };
+    }
+    return out;
+});
 const historyOfById = computed(() => {
     const out: Record<string, (section: 'boss' | 'self', hit: EntityDamage) => EntityConditionState[]> = {};
     for (const p of players.value) {
@@ -529,6 +544,7 @@ onBeforeUnmount(() => {
           :detailed="isDetailed(p.realName)"
           :history-of="historyOfById[p.id]"
           :seen="seenById[p.id] ?? NO_SEEN"
+          :values="ccValuesById[p.id]"
           @update:detailed="v => setDetailed(p.realName, v)"
           @hits="id => openSkillHits(p, id)"
           @menu="(e, row) => skillMenu(e, p, row)"

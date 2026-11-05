@@ -1,29 +1,21 @@
 import { loadSetting, saveSetting } from './settingsStorage';
-import { AWAKENING_CC_ID } from './ccConditionTooltip';
+import {
+    defaultCcSection, defaultCooldownSection, defaultDpsLook, defaultGeneral, normalizeCcSection,
+    normalizeCooldownSection, normalizeDpsLook, normalizeGeneral,
+    type CcSection as CcSectionData, type CcSectionId, type CooldownSection, type DpsLook, type OverlayGeneral,
+} from './overlaySections';
 
 export type SizeStep = 's' | 'm' | 'l';
 
-export interface DpsOverlaySettings {
-    opacity: number;
-    fontSize: SizeStep;
-    columns: { dps: boolean; total: boolean; share: boolean };
-    top: { boss: boolean; time: boolean; partyDps: boolean };
-}
+/** A tracked cooldown: started by a cast of `skillId`, or (ccId > 0) by the caster applying that CC. */
+export interface CooldownSkill { skillId: number; cooldownSec: number; ccId: number }
 
-export type CcSection = 'boss' | 'self' | 'party';
-
-export interface CcOverlaySettings {
-    opacity: number;
-    iconSize: SizeStep;
-    sections: Record<CcSection, number[]>;
-}
-
-export interface CooldownOverlaySettings { opacity: number; iconSize: SizeStep }
-export interface AlertsOverlaySettings { opacity: number; fontSize: SizeStep }
+export interface AlertsOverlaySettings { opacity: number; bg: string; fontSize: SizeStep }
 
 export type AlertTarget = 'boss' | 'self' | 'party' | 'all';
 
-export type AlertKind = 'countdown' | 'periodic';
+/** countdown: at remaining seconds. periodic: every N seconds while the conditions hold. appear: when the CC starts. */
+export type AlertKind = 'countdown' | 'periodic' | 'appear';
 export interface AlertCond { mode: 'absent' | 'present'; ccId: number }
 export interface AlertDismiss { condFails: boolean; ccEnds: boolean; replaced: boolean }
 
@@ -32,7 +24,7 @@ export interface AlertRule {
     enabled: boolean;
     kind: AlertKind;
     target: AlertTarget;
-    /** Countdown: the watched CC. Periodic: unused, 0. */
+    /** Countdown and appear: the watched CC. Periodic: unused, 0. */
     ccId: number;
     /** Countdown: remaining-second points, descending. Periodic: empty. */
     times: number[];
@@ -46,52 +38,79 @@ export interface AlertRule {
     voiceMessage: string;
     /** Seconds a text alert stays. */
     textKeep: number;
+    /** Shown large and highlighted. */
+    loud: boolean;
     dismiss: AlertDismiss;
 }
 
 export interface VoiceSettings { voiceName: string; rate: number; volume: number; muted: boolean }
 
 export interface OverlaySettings {
-    v: 1;
+    v: typeof SETTINGS_VERSION;
     scale: number;
-    dps: DpsOverlaySettings;
-    cc: CcOverlaySettings;
-    cooldown: CooldownOverlaySettings;
+    general: OverlayGeneral;
+    ccBoss: CcSectionData;
+    ccSelf: CcSectionData;
+    ccParty: CcSectionData;
+    burst: CcSectionData;
+    misc: CcSectionData;
+    cooldown: CooldownSection;
+    dpsLook: DpsLook;
     alerts: AlertsOverlaySettings;
     rules: AlertRule[];
     voice: VoiceSettings;
 }
 
 export const FONT_PX: Record<SizeStep, number> = { s: 12, m: 14, l: 16 };
-export const ICON_PX: Record<SizeStep, number> = { s: 24, m: 32, l: 40 };
+export const DEFAULT_BG = '#0e1013';
 
-// 覺醒, 戰場的序曲, 活潑板
-export const DEFAULT_SELF_CC: number[] = [AWAKENING_CC_ID, 680, 192];
-// Its own list, so changing the battle tab's defaults does not change the overlay's.
-export const DEFAULT_BOSS_CC: number[] = [803, 1026, 464, 578, 10001, 10002, 1164, 1165, 1166, 1093, 392, 912, 598, 1138];
+/** Saved settings from an older version are replaced by the defaults. */
+export const SETTINGS_VERSION = 2;
+
+const PRELUDE = 680;
+const LIVELY = 192;
+const MARCH = 193;
+const TUAN = 1124;
+
+const rule = (o: Pick<AlertRule, 'id' | 'kind' | 'target' | 'ccId'> & Partial<AlertRule>): AlertRule => ({
+    enabled: true, times: [], every: DEFAULT_EVERY, conds: [], join: 'and', text: true, textMessage: '',
+    voice: false, voiceMessage: '', textKeep: 10, loud: false,
+    dismiss: { condFails: false, ccEnds: true, replaced: false }, ...o,
+});
+const music = (id: string, ccId: number) => rule({
+    id, kind: 'countdown', target: 'self', ccId, times: [30], conds: [{ mode: 'absent', ccId: TUAN }],
+    textMessage: '{CC} 剩 {秒} 秒，沒有圖安之魂', voice: true, voiceMessage: '{CC}剩{秒}秒，沒有圖安',
+    dismiss: { condFails: true, ccEnds: true, replaced: false },
+});
+const bossDebuff = (id: string, ccId: number) => rule({ id, kind: 'countdown', target: 'boss', ccId, times: [30] });
+
+/** The rules mogugi starts with; ids are fixed so 恢復預設 can tell which are missing. */
+export function defaultRules(): AlertRule[] {
+    // Shipped off: each player turns on the ones they want.
+    return [
+        music('d-prelude', PRELUDE),
+        music('d-lively', LIVELY),
+        music('d-march', MARCH),
+        bossDebuff('d-def', 1164),
+        bossDebuff('d-mdef', 1165),
+        bossDebuff('d-dmg', 1166),
+    ].map(r => ({ ...r, enabled: false }));
+}
 
 export function defaultOverlaySettings(): OverlaySettings {
     return {
-        v: 1,
+        v: SETTINGS_VERSION,
         scale: 100,
-        dps: {
-            opacity: 60,
-            fontSize: 'm',
-            columns: { dps: true, total: false, share: true },
-            top: { boss: true, time: true, partyDps: false },
-        },
-        cc: {
-            opacity: 0,
-            iconSize: 'm',
-            sections: {
-                boss: [...DEFAULT_BOSS_CC],
-                self: [...DEFAULT_SELF_CC],
-                party: [...DEFAULT_SELF_CC],
-            },
-        },
-        cooldown: { opacity: 60, iconSize: 'm' },
-        alerts: { opacity: 60, fontSize: 'm' },
-        rules: [],
+        general: defaultGeneral(),
+        ccBoss: defaultCcSection('ccBoss'),
+        ccSelf: defaultCcSection('ccSelf'),
+        ccParty: defaultCcSection('ccParty'),
+        burst: defaultCcSection('burst'),
+        misc: defaultCcSection('misc'),
+        cooldown: defaultCooldownSection(),
+        dpsLook: defaultDpsLook(),
+        alerts: { opacity: 60, bg: DEFAULT_BG, fontSize: 'm' },
+        rules: defaultRules(),
         voice: { voiceName: '', rate: 1.2, volume: 100, muted: false },
     };
 }
@@ -108,14 +127,8 @@ function opacity(v: unknown, fb: number): number {
     return Math.min(100, Math.max(0, Math.round(v)));
 }
 
-function idList(v: unknown, fb: number[]): number[] {
-    if (!Array.isArray(v)) return [...fb];
-    const out: number[] = [];
-    for (const x of v) {
-        if (typeof x === 'number' && Number.isInteger(x) && x > 0 && !out.includes(x)) out.push(x);
-    }
-    return out;
-}
+const color = (v: unknown, fb: string): string =>
+    typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v.toLowerCase() : fb;
 
 function num(v: unknown, fb: number, lo: number, hi: number): number {
     if (typeof v !== 'number' || !Number.isFinite(v)) return fb;
@@ -149,14 +162,16 @@ function normalizeRule(v: unknown): AlertRule | null {
     const target = r.target;
     const kind = r.kind;
     if (typeof r.id !== 'string' || r.id === '') return null;
-    if (kind !== 'countdown' && kind !== 'periodic') return null;
+    if (kind !== 'countdown' && kind !== 'periodic' && kind !== 'appear') return null;
     if (target !== 'boss' && target !== 'self' && target !== 'party' && target !== 'all') return null;
     let ccId = 0;
     let times: number[] = [];
-    if (kind === 'countdown') {
+    if (kind !== 'periodic') {
         const id = posInt(r.ccId);
         if (id === null) return null;
         ccId = id;
+    }
+    if (kind === 'countdown') {
         times = Array.isArray(r.times)
             ? [...new Set(r.times
                 .filter((x): x is number => typeof x === 'number' && Number.isFinite(x) && x > 0)
@@ -181,6 +196,7 @@ function normalizeRule(v: unknown): AlertRule | null {
         voice: bool(r.voice, true),
         voiceMessage: typeof r.voiceMessage === 'string' ? r.voiceMessage : '',
         textKeep: intIn(r.textKeep, DEFAULT_TEXT_KEEP, 1, 600),
+        loud: bool(r.loud, false),
         dismiss: {
             condFails: bool(d.condFails, false),
             ccEnds: bool(d.ccEnds, false),
@@ -189,55 +205,46 @@ function normalizeRule(v: unknown): AlertRule | null {
     };
 }
 
+/** Saved rules; a first run, or an empty list saved before sections existed, gets the default rules. */
+function normalizeRules(root: Record<string, unknown>): AlertRule[] {
+    const v = root.rules;
+    if (!Array.isArray(v) || (v.length === 0 && !('general' in root) && !Array.isArray(root.widgets))) return defaultRules();
+    return v.map(normalizeRule).filter((r): r is AlertRule => r !== null);
+}
+
+/** A saved CC section; v1 settings carry only `cc.iconSize`, which sets the three CC sections' size. */
+function normalizeSection(root: Record<string, unknown>, id: CcSectionId): CcSectionData {
+    const saved = root[id];
+    if (typeof saved === 'object' && saved !== null) return normalizeCcSection(saved, id);
+    const legacy = rec(root.cc).iconSize;
+    const s = normalizeCcSection(null, id);
+    if (id !== 'burst' && id !== 'misc' && (legacy === 's' || legacy === 'm' || legacy === 'l')) s.look.size = legacy;
+    return s;
+}
+
 /** Fills missing or invalid fields from the defaults, clamps opacity, dedups lists. */
 export function normalizeOverlaySettings(v: unknown): OverlaySettings {
     const d = defaultOverlaySettings();
     const dps = rec(rec(v).dps);
-    const cc = rec(rec(v).cc);
-    const cols = rec(dps.columns);
-    const top = rec(dps.top);
-    const sec = rec(cc.sections);
-    const cd = rec(rec(v).cooldown);
     const al = rec(rec(v).alerts);
     const vo = rec(rec(v).voice);
-    const rules = rec(v).rules;
     return {
-        v: 1,
+        v: SETTINGS_VERSION,
         scale: num(rec(v).scale, d.scale, 80, 150),
-        dps: {
-            opacity: opacity(dps.opacity, d.dps.opacity),
-            fontSize: step(dps.fontSize, d.dps.fontSize),
-            columns: {
-                dps: bool(cols.dps, d.dps.columns.dps),
-                total: bool(cols.total, d.dps.columns.total),
-                share: bool(cols.share, d.dps.columns.share),
-            },
-            top: {
-                boss: bool(top.boss, d.dps.top.boss),
-                time: bool(top.time, d.dps.top.time),
-                partyDps: bool(top.partyDps, d.dps.top.partyDps),
-            },
-        },
-        cc: {
-            opacity: opacity(cc.opacity, d.cc.opacity),
-            iconSize: step(cc.iconSize, d.cc.iconSize),
-            sections: {
-                boss: idList(sec.boss, d.cc.sections.boss),
-                self: idList(sec.self, d.cc.sections.self),
-                party: idList(sec.party, d.cc.sections.party),
-            },
-        },
-        cooldown: {
-            opacity: opacity(cd.opacity, d.cooldown.opacity),
-            iconSize: step(cd.iconSize, d.cooldown.iconSize),
-        },
+        general: normalizeGeneral(rec(v).general),
+        ccBoss: normalizeSection(rec(v), 'ccBoss'),
+        ccSelf: normalizeSection(rec(v), 'ccSelf'),
+        ccParty: normalizeSection(rec(v), 'ccParty'),
+        burst: normalizeSection(rec(v), 'burst'),
+        misc: normalizeSection(rec(v), 'misc'),
+        cooldown: normalizeCooldownSection(rec(v).cooldown),
+        dpsLook: normalizeDpsLook(rec(v).dpsLook, dps),
         alerts: {
             opacity: opacity(al.opacity, d.alerts.opacity),
+            bg: color(al.bg, d.alerts.bg),
             fontSize: step(al.fontSize, d.alerts.fontSize),
         },
-        rules: Array.isArray(rules)
-            ? rules.map(normalizeRule).filter((r): r is AlertRule => r !== null)
-            : [],
+        rules: normalizeRules(rec(v)),
         voice: {
             voiceName: typeof vo.voiceName === 'string' ? vo.voiceName : d.voice.voiceName,
             rate: num(vo.rate, d.voice.rate, 0.6, 1.8),
@@ -251,7 +258,9 @@ const KEY = 'overlay';
 const isAny = (_v: unknown): _v is unknown => true;
 
 export function loadOverlaySettings(): OverlaySettings {
-    return normalizeOverlaySettings(loadSetting<unknown>(KEY, null, isAny));
+    const saved = loadSetting<unknown>(KEY, null, isAny);
+    const old = typeof saved !== 'object' || saved === null || (saved as { v?: unknown }).v !== SETTINGS_VERSION;
+    return old ? defaultOverlaySettings() : normalizeOverlaySettings(saved);
 }
 
 export function saveOverlaySettings(s: OverlaySettings): void {

@@ -5,12 +5,19 @@ import * as protocols from '@/protocols';
 function sink() {
     return {
         messageBox: vi.fn(), ownerName: vi.fn(), captureStatus: vi.fn(), ownerEquipment: vi.fn(),
-        ownerStats: vi.fn(), ownerProfile: vi.fn(), sessionReset: vi.fn(), configChanged: vi.fn(), sourceChanged: vi.fn(), clearData: vi.fn(), battle: vi.fn(),
-        historyEvicted: vi.fn(), battleBoundary: vi.fn(),
+        ownerStats: vi.fn(), ownerProfile: vi.fn(), tuairim: vi.fn(), sessionReset: vi.fn(), configChanged: vi.fn(), sourceChanged: vi.fn(), clearData: vi.fn(), battle: vi.fn(),
+        historyEvicted: vi.fn(), battleBoundary: vi.fn(), zone: vi.fn(),
     } satisfies EventSink;
 }
 
 describe('dispatchEvents', () => {
+    it('routes zone events to the zone handler', () => {
+        const s = sink();
+        dispatchEvents([{ EventId: protocols.eventIdZone, At: 1, Id: '0', InDungeon: true } as protocols.eventZone], s);
+        expect(s.zone).toHaveBeenCalledWith(true);
+        expect(s.battle).not.toHaveBeenCalled();
+    });
+
     it('handles runtime events and ignores unknown negative ids', () => {
         const s = sink();
         const dmg = { EventId: 3, At: 1, Id: '1', TargetId: '2', SkillId: 1, Damage: 5, IsCritical: false, IsDelayed: false };
@@ -34,6 +41,13 @@ describe('dispatchEvents', () => {
         const profile = { titles: { titleId: 1, optionTitleId: 2 }, talent: null, multiClass: null };
         dispatchEvents([{ EventId: protocols.eventIdOwnerProfile, At: 1, Id: '7', Profile: profile } as protocols.eventBase], s);
         expect(s.ownerProfile).toHaveBeenCalledWith(profile);
+        expect(s.battle).not.toHaveBeenCalled();
+    });
+
+    it('routes the 信念值 gauge to its sink only', () => {
+        const s = sink();
+        dispatchEvents([{ EventId: protocols.eventIdTuairim, At: 5, Id: '7', Value: 42.5, Max: 100 } as protocols.eventBase], s);
+        expect(s.tuairim).toHaveBeenCalledWith({ value: 42.5, max: 100, at: 5 });
         expect(s.battle).not.toHaveBeenCalled();
     });
 

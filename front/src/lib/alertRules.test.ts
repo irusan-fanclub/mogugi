@@ -1,18 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import type { EntityActor } from '@/eventActor';
 import type { AlertRule } from './overlaySettings';
-import { createAlertTracker, fillMessage } from './alertRules';
+import { APPEAR_FRESH_SEC, createAlertTracker, fillMessage } from './alertRules';
 
 const OVERTURE = 1001;
 const TUAN = 680;
 const SOUL = 681;
 
 type Conds = Record<number, number>;
-function actors(map: Record<string, Conds>): Record<string, EntityActor> {
+// `at` is when every listed condition started.
+function actors(map: Record<string, Conds>, at = 0): Record<string, EntityActor> {
     const out: Record<string, EntityActor> = {};
     for (const [id, conds] of Object.entries(map)) {
-        const conditionMap: Record<number, { DisableAt: number }> = {};
-        for (const [cc, d] of Object.entries(conds)) conditionMap[Number(cc)] = { DisableAt: d };
+        const conditionMap: Record<number, { DisableAt: number; At: number }> = {};
+        for (const [cc, d] of Object.entries(conds)) conditionMap[Number(cc)] = { DisableAt: d, At: at };
         out[id] = { conditionMap } as unknown as EntityActor;
     }
     return out;
@@ -20,7 +21,7 @@ function actors(map: Record<string, Conds>): Record<string, EntityActor> {
 function rule(p: Partial<AlertRule> = {}): AlertRule {
     return {
         id: 'r1', enabled: true, kind: 'countdown', target: 'self', ccId: OVERTURE, times: [25, 15, 5], every: 30,
-        conds: [], join: 'and', text: true, textMessage: '', voice: true, voiceMessage: '', textKeep: 5,
+        conds: [], join: 'and', text: true, textMessage: '', voice: true, voiceMessage: '', textKeep: 5, loud: false,
         dismiss: { condFails: false, ccEnds: false, replaced: false }, ...p,
     };
 }
@@ -69,14 +70,12 @@ describe('alertRules', () => {
         t.step(input(a, 100, r));
         const s = t.step(input(a, 106, r));
         expect(s.fires).toEqual([]);
-        expect(s.red.size).toBe(0);
 
         const b = actors({ me: { [OVERTURE]: 130 }, p1: { [SOUL]: 500 } });
         const t2 = createAlertTracker();
         t2.step(input(b, 100, r));
         const s2 = t2.step(input(b, 106, r));
         expect(secs(s2)).toEqual([25]);
-        expect(s2.red.has(`me:${OVERTURE}`)).toBe(true);
     });
 
     it('condition present requires it, and consumes the time point when unmet', () => {
@@ -128,26 +127,19 @@ describe('alertRules', () => {
         expect(secs(t.step(input(a, 106, r)))).toEqual([25]);
     });
 
-    it('disabled rules neither fire nor turn red', () => {
+    it('disabled rules do not fire', () => {
         const t = createAlertTracker();
         const a = actors({ me: { [OVERTURE]: 130 } });
         const r = [rule({ enabled: false })];
         t.step(input(a, 100, r));
-        const s = t.step(input(a, 126, r));
-        expect(s.fires).toEqual([]);
-        expect(s.red.size).toBe(0);
+        expect(t.step(input(a, 126, r)).fires).toEqual([]);
     });
 
-    it('turns red within max(times), not for DisableAt 0', () => {
+    it('a countdown ignores a cc with no end', () => {
         const t = createAlertTracker();
-        const r = [rule()];
-        const a = actors({ me: { [OVERTURE]: 130 } });
-        expect(t.step(input(a, 100, r)).red.size).toBe(0);
-        expect(t.step(input(a, 105, r)).red.has(`me:${OVERTURE}`)).toBe(true);
         const forever = actors({ me: { [OVERTURE]: 0 } });
-        const s = t.step(input(forever, 110, r));
-        expect(s.red.size).toBe(0);
-        expect(s.fires).toEqual([]);
+        t.step(input(forever, 100, [rule()]));
+        expect(t.step(input(forever, 110, [rule()])).fires).toEqual([]);
     });
 
     it('prunes tracking for vanished casts', () => {
@@ -193,10 +185,6 @@ describe('alertRules', () => {
             expect(secs(run('or', false, false))).toEqual([25]);
             expect(secs(run('or', true, false))).toEqual([]);
         });
-        it('red follows the group', () => {
-            expect(run('and', false, false).red.size).toBe(0);
-            expect(run('or', false, false).red.has(`me:${OVERTURE}`)).toBe(true);
-        });
     });
 
     describe('periodic', () => {
@@ -223,11 +211,10 @@ describe('alertRules', () => {
             expect(t.step(input(a, 100, r)).fires).toHaveLength(1);
             expect(t.step(input(a, 90, r)).fires).toHaveLength(1);
         });
-        it('with no conditions holds always; sec is 0 and red stays empty', () => {
+        it('with no conditions holds always; sec is 0', () => {
             const t = createAlertTracker();
             const s = t.step(input(actors({ me: {} }), 100, [periodic()]));
             expect(s.fires.map(f => [f.actorId, f.sec])).toEqual([['me', 0]]);
-            expect(s.red.size).toBe(0);
         });
         it('ignores {CC} and {秒} and defaults to a condition sentence', () => {
             const t = createAlertTracker();
@@ -318,5 +305,65 @@ describe('alertRules across a clock shift', () => {
         const after = t.step(input(shifted(126, -4), 107, r));
         expect([...after.ccLive]).toEqual([...before.ccLive]);
         expect(before.fires[0].castKey).toBe([...before.ccLive][0]);
+    });
+
+    it('an appear rule fires once when the cc starts, again for a new cast, and carries loud', () => {
+        const t = createAlertTracker();
+        const r = [rule({ kind: 'appear', times: [], loud: true, textMessage: '{CC} 開了 {秒}' })];
+        expect(t.step(input(actors({ me: {} }), 100, r)).fires).toEqual([]);
+        const first = t.step(input(actors({ me: { [OVERTURE]: 130 } }, 101), 101, r)).fires;
+        expect(first.map(f => [f.text, f.loud])).toEqual([[`cc-${OVERTURE} 開了 `, true]]);
+        expect(t.step(input(actors({ me: { [OVERTURE]: 130 } }, 101), 102, r)).fires).toEqual([]);
+        expect(t.step(input(actors({ me: { [OVERTURE]: 200 } }, 103), 103, r)).fires).toHaveLength(1);
+    });
+
+    it('an appear rule does not fire for a cc first seen well after it started', () => {
+        const t = createAlertTracker();
+        const r = [rule({ kind: 'appear', times: [] })];
+        const late = actors({ me: { [OVERTURE]: 130 } }, 60);
+        expect(t.step(input(late, 100, r)).fires).toEqual([]);
+        expect(t.step(input(late, 101, r)).fires).toEqual([]);
+    });
+
+    it('an appear rule fires once for a cc seen at its start, up to APPEAR_FRESH_SEC late', () => {
+        const t = createAlertTracker();
+        const r = [rule({ kind: 'appear', times: [] })];
+        const a = actors({ me: { [OVERTURE]: 130 } }, 100);
+        expect(t.step(input(a, 100 + APPEAR_FRESH_SEC, r)).fires).toHaveLength(1);
+        expect(t.step(input(a, 101 + APPEAR_FRESH_SEC, r)).fires).toEqual([]);
+        const t2 = createAlertTracker();
+        expect(t2.step(input(a, 100.5 + APPEAR_FRESH_SEC, r)).fires).toEqual([]);
+    });
+
+    it('an appear rule seen at the cc start fires once when its conditions hold later', () => {
+        const t = createAlertTracker();
+        const r = [rule({ kind: 'appear', times: [], conds: [{ mode: 'present', ccId: SOUL }] })];
+        expect(t.step(input(actors({ me: { [OVERTURE]: 200 } }, 100), 100, r)).fires).toEqual([]);
+        expect(t.step(input(actors({ me: { [OVERTURE]: 200, [SOUL]: 0 } }, 100), 110, r)).fires).toHaveLength(1);
+        expect(t.step(input(actors({ me: { [OVERTURE]: 200, [SOUL]: 0 } }, 100), 111, r)).fires).toEqual([]);
+    });
+
+    it('an appear rule first seen 40 s into the cc never fires, even when conditions hold later', () => {
+        const t = createAlertTracker();
+        const r = [rule({ kind: 'appear', times: [], conds: [{ mode: 'present', ccId: SOUL }] })];
+        expect(t.step(input(actors({ me: { [OVERTURE]: 200 } }, 60), 100, r)).fires).toEqual([]);
+        expect(t.step(input(actors({ me: { [OVERTURE]: 200, [SOUL]: 0 } }, 60), 101, r)).fires).toEqual([]);
+    });
+
+    it('reset forgets what was seen', () => {
+        const t = createAlertTracker();
+        const r = [rule()];
+        const a = actors({ me: { [OVERTURE]: 130 } });
+        t.step(input(a, 100, r));
+        t.reset();
+        expect(t.step(input(a, 106, r)).fires).toEqual([]);
+    });
+
+    it('an appear rule also watches a cc with no end, and waits for its conditions', () => {
+        const t = createAlertTracker();
+        const r = [rule({ kind: 'appear', times: [], conds: [{ mode: 'present', ccId: SOUL }] })];
+        expect(t.step(input(actors({ me: { [OVERTURE]: 0 } }, 100), 100, r)).fires).toEqual([]);
+        expect(t.step(input(actors({ me: { [OVERTURE]: 0, [SOUL]: 0 } }, 100), 101, r)).fires).toHaveLength(1);
+        expect(t.step(input(actors({ me: { [OVERTURE]: 0, [SOUL]: 0 } }, 100), 102, r)).fires).toEqual([]);
     });
 });

@@ -11,7 +11,7 @@ import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import Database from 'better-sqlite3';
 
-const BUILD_VERSION = 7;
+const BUILD_VERSION = 8;
 
 const REGION = 'tw';
 const VER = 'v168';
@@ -46,14 +46,19 @@ const ICON_SOURCES = [
 
 // Synthetic CCs have no upstream icon; borrow another icon (kind 'cc' or 'skill').
 // Keep in sync with BARDSONG_CC_ID in front/src/lib/bardsongTrack.ts.
-const SYNTHETIC_CC_ICONS = [{ ccId: 900206, from: { kind: 'cc', id: 624 } }];
+// CC 323 傷害詛咒 2 is real but has no upstream icon; 元素騎士's 注魔 stands in.
+const SYNTHETIC_CC_ICONS = [
+    { ccId: 900206, from: { kind: 'cc', id: 624 } },
+    { ccId: 323, from: { kind: 'skill', id: 59027 } },
+];
 
 // `optional: true` — table may be absent from older upstream sqlites (optionset:
 // mabitsequal schema >= 4, metalware_ability: >= 5); emit an empty table then.
 // `extra` — additional columns copied verbatim beyond id + name.
 const LIST_SOURCES = [
     { dst: 'race',                src: 'race',                id: 'race_id' },
-    { dst: 'skill',               src: 'skill',               id: 'skill_id' },
+    { dst: 'skill',               src: 'skill',               id: 'skill_id',
+      extra: { available_race: 'INTEGER' } },
     { dst: 'character_condition', src: 'character_condition', id: 'condition_id' },
     { dst: 'item',                src: 'item',                id: 'item_id',
       extra: { description: 'TEXT' } },
