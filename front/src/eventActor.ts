@@ -19,8 +19,8 @@ export class ActorManager {
     constructor(private _damageCollector: DamageCollectorManager) {
     }
 
-    public entityMap: Record<string, EntityActor> = shallowReactive({});
-    public groupMap: Record<string, GroupActor> = shallowReactive({});
+    public entityMap: Record<string, EntityActor> = shallowReactive<Record<string, EntityActor>>({});
+    public groupMap: Record<string, GroupActor> = shallowReactive<Record<string, GroupActor>>({});
     public damages: protocols.eventDamage[] = [];
     // Each raw hit under its attacker and its target, in arrival order, so a
     // new entity replays only its own hits. Raw events are never re-owned
