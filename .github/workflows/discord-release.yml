@@ -2,13 +2,17 @@ name: Discord release announcement
 
 on:
   release:
-    types: [published]
+    types: [published, edited]
   workflow_dispatch:
     inputs:
       tag:
         description: 'Release tag to announce (test mode)'
         required: true
         default: 'v0.2.2'
+      json_only:
+        description: 'Only rebuild mogugi/releases.json, no announcement'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -23,7 +27,10 @@ env:
 jobs:
   announce:
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.release.prerelease == false }}
+    # Edits and json_only runs only refresh releases.json (job below).
+    if: >-
+      ${{ (github.event_name == 'workflow_dispatch' && !inputs.json_only) ||
+          (github.event_name == 'release' && github.event.action == 'published' && github.event.release.prerelease == false) }}
     env:
       R2_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
     steps:
@@ -178,3 +185,88 @@ jobs:
             curl -fsS -X POST -H "Content-Type: application/json" \
               -d "$payload" "$WEBHOOK"
           fi
+
+  # mogugi/releases.json feeds the 魔古工坊 release page. It is written after the
+  # mirror step, so every download link in it already exists on R2. It never
+  # blocks the announcement; a failure fails the run and alerts the private
+  # ops channel through supermogugi.
+  releases-json:
+    needs: announce
+    runs-on: ubuntu-latest
+    # A publish and a quick edit must not race on the same object.
+    concurrency:
+      group: releases-json
+      cancel-in-progress: false
+    if: >-
+      ${{ always() && needs.announce.result != 'cancelled' &&
+          (github.event_name == 'workflow_dispatch' || github.event.release.prerelease == false) }}
+    env:
+      R2_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      JSON_URL: https://cdn.elden-mogu.com/mogugi/releases.json
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Publish releases.json, purge its URL, verify
+        if: ${{ env.R2_KEY_ID != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          ENDPOINT: https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          CF_ZONE_ID: ${{ vars.CF_ZONE_ID }}
+          CF_PURGE_TOKEN: ${{ secrets.CF_PURGE_TOKEN }}
+        run: |
+          set -euo pipefail
+          script=.github/scripts/releases-json.mjs
+          gh api --paginate "repos/${{ github.repository }}/releases" --jq '.[]' | jq -s . > gh.json
+          aws s3api list-objects-v2 --endpoint-url "$ENDPOINT" --bucket "$R2_BUCKET" \
+            --prefix "$R2_PREFIX/" --query 'Contents[].Key' --output text | tr '\t' '\n' > keys.txt
+          node "$script" gh.json keys.txt > releases.json
+          want=$(node "$script" --latest-gh gh.json)
+          echo "newest published release: $want"
+
+          attempt() {
+            aws s3api put-object --endpoint-url "$ENDPOINT" --bucket "$R2_BUCKET" \
+              --key "$R2_PREFIX/releases.json" --body releases.json \
+              --content-type 'application/json; charset=utf-8' \
+              --cache-control 'public, max-age=300' >/dev/null || return 1
+            # Purge exactly the one URL the page reads; never the whole zone.
+            curl -fsS -X POST "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/purge_cache" \
+              -H "Authorization: Bearer $CF_PURGE_TOKEN" -H 'Content-Type: application/json' \
+              --data "{\"files\":[\"$JSON_URL\"]}" > purge.json || return 1
+            [ "$(jq -r .success purge.json)" = "true" ] || { cat purge.json; return 1; }
+            curl -fsS -H 'Cache-Control: no-cache' "$JSON_URL" -o live.json || return 1
+            got=$(node "$script" --latest live.json)
+            echo "live releases.json newest: $got"
+            [ "$got" = "$want" ]
+          }
+
+          for i in 1 2 3; do
+            if attempt; then echo "releases.json published"; exit 0; fi
+            echo "::warning::releases.json attempt $i failed"
+            sleep 10
+          done
+          echo "::error::releases.json was not published after 3 attempts"
+          exit 1
+
+      - name: Alert the ops channel
+        if: ${{ failure() }}
+        env:
+          ALERT_KEY: ${{ secrets.MOGUGI_ALERT_KEY }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          [ -n "$ALERT_KEY" ] || { echo "MOGUGI_ALERT_KEY not set; skipping alert"; exit 0; }
+          body=$(jq -n --arg tag "$TAG" --arg url "$RUN_URL" \
+            '{title: "mogugi releases.json 更新失敗", description: ("發佈頁可能停在舊版。版本：" + $tag), url: $url}')
+          curl -fsS -m 15 -X POST https://mabinogi.elden-mogu.com/mogugi/ops/alert \
+            -H "X-Alert-Key: $ALERT_KEY" -H 'Content-Type: application/json' -d "$body" \
+            || echo "::warning::alert endpoint unreachable"
