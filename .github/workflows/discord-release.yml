@@ -243,10 +243,16 @@ jobs:
               -H "Authorization: Bearer $CF_PURGE_TOKEN" -H 'Content-Type: application/json' \
               --data "{\"files\":[\"$JSON_URL\"]}" > purge.json || return 1
             [ "$(jq -r .success purge.json)" = "true" ] || { cat purge.json; return 1; }
-            curl -fsS -H 'Cache-Control: no-cache' "$JSON_URL" -o live.json || return 1
+            # Fetch as the site does: with its Origin. If the CDN caches this
+            # copy, a reply without the CORS header would break the page.
+            curl -fsS -D headers.txt -H 'Cache-Control: no-cache' \
+              -H 'Origin: https://mabinogi.elden-mogu.com' "$JSON_URL" -o live.json || return 1
+            grep -qi '^access-control-allow-origin:' headers.txt || { echo "no CORS header"; return 1; }
             got=$(node "$script" --latest live.json)
             echo "live releases.json newest: $got"
-            [ "$got" = "$want" ]
+            [ "$got" = "$want" ] || return 1
+            # An edit keeps the same tag, so also require this run's copy.
+            [ "$(jq -r .generatedAt live.json)" = "$(jq -r .generatedAt releases.json)" ]
           }
 
           for i in 1 2 3; do
