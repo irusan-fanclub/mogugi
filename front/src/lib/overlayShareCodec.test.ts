@@ -116,6 +116,16 @@ describe('overlayShareCodec', () => {
         expect(await decodeShare('mogugi-overlay:1:!!!! ' + 'mogugi-overlay:2:xxx')).toEqual({ ok: false, error: 'newer' });
     });
 
+    it('bounds the work on pathological whitespace-separated input', async () => {
+        const evil = SHARE_PREFIX + '1:' + 'a '.repeat(520_000);
+        const t0 = Date.now();
+        const r = await decodeShare(evil);
+        expect(r.ok).toBe(false);
+        expect(Date.now() - t0).toBeLessThan(2000);
+        const many = ('mogugi-overlay:1:a a a ').repeat(40_000);
+        expect((await decodeShare(many)).ok).toBe(false);
+    }, 20_000);
+
     it('has copy for every error and a dated file name', () => {
         expect(SHARE_ERROR_TEXT.broken).toBe('內容不完整，可能少複製了結尾');
         expect(shareFileName(new Date(2026, 10, 10))).toBe('mogugi-overlay-20261110.txt');

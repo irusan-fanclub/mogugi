@@ -7,6 +7,7 @@ export const DISCORD_LIMIT = 2000;
 
 const MAX_TEXT = 1_048_576;
 const MAX_JSON = 2_097_152;
+const MAX_RETRIES = 8;
 
 export interface SharePayload { settingsV: number; settings: OverlaySettings; layouts: Record<string, unknown> }
 export type ShareError = 'notShare' | 'broken' | 'newer' | 'tooBig';
@@ -124,7 +125,7 @@ async function decodeAt(rest: string): Promise<Result> {
     }
     let last: Result = await decodeToken(token);
     if (last.ok || last.error !== 'broken') return last;
-    for (let i = cuts.length - 1; i >= 0; i--) {
+    for (let i = cuts.length - 1; i >= Math.max(0, cuts.length - MAX_RETRIES); i--) {
         last = await decodeToken(token.slice(0, cuts[i]));
         if (last.ok || last.error !== 'broken') return last;
     }
@@ -137,7 +138,9 @@ export async function decodeShare(text: string): Promise<Result> {
     if (text.length > MAX_TEXT) return { ok: false, error: 'tooBig' };
     let best: ShareError = 'notShare';
     // Chatter may mention the prefix first, so try the last occurrence first.
-    for (let at = text.lastIndexOf(SHARE_PREFIX); at >= 0; at = at > 0 ? text.lastIndexOf(SHARE_PREFIX, at - 1) : -1) {
+    let tries = 0;
+    for (let at = text.lastIndexOf(SHARE_PREFIX); at >= 0 && tries < MAX_RETRIES; at = at > 0 ? text.lastIndexOf(SHARE_PREFIX, at - 1) : -1) {
+        tries++;
         const r = await decodeAt(text.slice(at + SHARE_PREFIX.length));
         if (r.ok) return r;
         if (ERROR_RANK[r.error] > ERROR_RANK[best]) best = r.error;
