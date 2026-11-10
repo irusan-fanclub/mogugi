@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defaultLayoutOf } from './overlayComponents';
+import { defaultLayoutOf, layoutOf } from './overlayComponents';
 import type { OverlayLayout } from './overlayProtocol';
 import { defaultOverlaySettings, type OverlaySettings } from './overlaySettings';
 import type { SharePayload } from './overlayShareCodec';
@@ -62,6 +62,11 @@ describe('sanitizeLayouts', () => {
         expect(out.ok!.order).not.toContain('bad id');
         expect(out.ok2!.dock).toBe('ccBoss');
         expect(out.ok2!.order).toBeUndefined();
+    });
+
+    it('skips prototype-polluting ids', () => {
+        const raw = JSON.parse(`{"__proto__":${JSON.stringify(lay())},"constructor":${JSON.stringify(lay())},"prototype":${JSON.stringify(lay())},"ok":${JSON.stringify(lay())}}`);
+        expect(sortedKeys(sanitizeLayouts(raw))).toEqual(['ok']);
     });
 });
 
@@ -166,6 +171,17 @@ describe('mergeImport', () => {
         const r = mergeImport(own, ownL, sent, allIn(true));
         expect(r.saves).toEqual({});
         expect(r.removes).toEqual([]);
+        expect(r.settings).toEqual(own);
+    });
+
+    it('identity: a legacy cc-only own layout keeps its effective BOSS position', () => {
+        const own = sentSettings();
+        const ownL: Layouts = { cc: lay({ anchor: 'tr', x: -40, y: 60, width: 250 }) };
+        // Built the way encodeShare does: cc dropped, replaced by the effective ccBoss.
+        const sent = payload({ ccBoss: layoutOf('ccBoss', ownL) }, structuredClone(own));
+        const r = mergeImport(own, ownL, sent, allIn(true));
+        const after = applyOps(ownL, r);
+        expect(layoutOf('ccBoss', after)).toEqual(layoutOf('ccBoss', ownL));
         expect(r.settings).toEqual(own);
     });
 

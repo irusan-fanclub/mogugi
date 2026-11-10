@@ -28,6 +28,7 @@ const ID_RE = /^[A-Za-z0-9_-]+$/;
 const ANCHORS: readonly string[] = ['tl', 'tr', 'bl', 'br', 'center'];
 const FIXED_IDS = ['dps', 'alerts', ...SECTION_ORDER];
 const MAX_ORDER = 64;
+const BLOCKED_IDS = ['__proto__', 'constructor', 'prototype'];
 
 const isPlain = (v: unknown): v is Record<string, unknown> =>
     typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -48,7 +49,7 @@ export function regionOfLayoutId(id: string): RegionId | null {
 export function sanitizeLayouts(raw: Record<string, unknown>): Layouts {
     const out: Layouts = {};
     for (const [id, v] of Object.entries(raw)) {
-        if (!validId(id) || !isPlain(v)) continue;
+        if (!validId(id) || BLOCKED_IDS.includes(id) || !isPlain(v)) continue;
         if (typeof v.enabled !== 'boolean' || typeof v.anchor !== 'string' || !ANCHORS.includes(v.anchor)) continue;
         if (!inRange(v.x, -1e6, 1e6) || !inRange(v.y, -1e6, 1e6)) continue;
         if (!inRange(v.width, 120, 800) || !inRange(v.maxRows, 1, 20)) continue;

@@ -1,5 +1,6 @@
 import { defaultOverlaySettings, normalizeOverlaySettings, SETTINGS_VERSION, type OverlaySettings } from './overlaySettings';
 import type { OverlayLayout } from './overlayProtocol';
+import { layoutOf } from './overlayComponents';
 
 export const SHARE_PREFIX = 'mogugi-overlay:';
 export const SHARE_FORMAT = 1;
@@ -47,6 +48,8 @@ export async function encodeShare(
     for (const [id, l] of Object.entries(layouts ?? {})) {
         if (id !== 'cc' && l) outLayouts[id] = l;
     }
+    // A legacy cc record is the BOSS position; carry it as ccBoss since cc itself is not exported.
+    if (layouts?.cc && !layouts.ccBoss) outLayouts.ccBoss = layoutOf('ccBoss', layouts);
     const json = JSON.stringify({ settingsV: SETTINGS_VERSION, settings: { ...settings, voice }, layouts: outLayouts });
     const stream = new Blob([json]).stream().pipeThrough(new CompressionStream('deflate-raw'));
     const buf = new Uint8Array(await new Response(stream).arrayBuffer());

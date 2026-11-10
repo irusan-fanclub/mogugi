@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { defaultOverlaySettings, SETTINGS_VERSION } from './overlaySettings';
 import type { OverlayLayout } from './overlayProtocol';
+import { layoutOf } from './overlayComponents';
 import { decodeShare, encodeShare, SHARE_ERROR_TEXT, shareFileName, SHARE_PREFIX } from './overlayShareCodec';
 
 const L = {
@@ -39,6 +40,16 @@ describe('overlayShareCodec', () => {
         delete rest.cc;
         expect(r.payload.layouts).toEqual(rest);
         expect(r.payload.settingsV).toBe(SETTINGS_VERSION);
+    });
+
+    it('exports a legacy cc record as ccBoss and never exports cc', async () => {
+        const cc = { enabled: true, anchor: 'tr', x: -40, y: 60, width: 250, maxRows: 5 } as OverlayLayout;
+        const r = await decodeShare(await encodeShare(sample(), { cc, dps: L.dps }));
+        expect(r.ok).toBe(true);
+        if (!r.ok) return;
+        expect(r.payload.layouts.cc).toBeUndefined();
+        expect(r.payload.layouts.ccBoss).toEqual(layoutOf('ccBoss', { cc }));
+        expect(r.payload.layouts.ccBoss).toMatchObject({ anchor: 'tr', x: -40, y: 60, width: 250 });
     });
 
     it('produces a pasteable single token', async () => {
