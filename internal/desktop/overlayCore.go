@@ -58,6 +58,7 @@ type overlayDeps struct {
 	elevated        func() bool
 	saveLayout      func(id string, l app.OverlayLayout) error
 	removeLayout    func(id string) error
+	replaceLayouts  func(saves map[string]app.OverlayLayout, removes []string) error
 	saveHotkey      func(string) error
 	// saveVisibleHotkey persists the show/hide hotkey.
 	saveVisibleHotkey func(string) error
@@ -293,6 +294,41 @@ func (c *overlayCore) RemoveLayout(id string) {
 	c.emitState()
 	if err := c.d.removeLayout(id); err != nil {
 		logger.Printf("remove overlay layout failed: %v", err)
+	}
+}
+
+// ReplaceLayouts applies many removes and saves at once; invalid or unknown
+// entries are dropped, and an id in both is saved.
+func (c *overlayCore) ReplaceLayouts(saves map[string]app.OverlayLayout, removes []string) {
+	c.saveMu.Lock()
+	defer c.saveMu.Unlock()
+	okSaves := make(map[string]app.OverlayLayout, len(saves))
+	for id, l := range saves {
+		if app.ValidOverlayID(id) && app.ValidOverlayLayout(l) {
+			okSaves[id] = l
+		}
+	}
+	c.mu.Lock()
+	var okRemoves []string
+	for _, id := range removes {
+		if _, saved := okSaves[id]; saved {
+			continue
+		}
+		if _, ok := c.layouts[id]; ok {
+			okRemoves = append(okRemoves, id)
+			delete(c.layouts, id)
+		}
+	}
+	for id, l := range okSaves {
+		c.layouts[id] = l
+	}
+	c.mu.Unlock()
+	if len(okSaves) == 0 && len(okRemoves) == 0 {
+		return
+	}
+	c.emitState()
+	if err := c.d.replaceLayouts(okSaves, okRemoves); err != nil {
+		logger.Printf("replace overlay layouts failed: %v", err)
 	}
 }
 

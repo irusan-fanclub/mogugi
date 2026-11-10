@@ -52,6 +52,7 @@ func setupOverlays(wapp *application.App, port int) *overlayCore {
 		elevated:          isElevated,
 		saveLayout:        app.SaveOverlayLayout,
 		removeLayout:      app.RemoveOverlayLayout,
+		replaceLayouts:    app.ReplaceOverlayLayouts,
 		saveHotkey:        app.SaveOverlayHotkey,
 		saveVisibleHotkey: app.SaveOverlayVisibleHotkey,
 	}
@@ -87,6 +88,10 @@ func setupOverlays(wapp *application.App, port int) *overlayCore {
 			return
 		}
 		core.RemoveLayout(id)
+	})
+	wapp.Event.On("overlay:replace-layouts", func(e *application.CustomEvent) {
+		saves, removes := parseReplacePayload(e.Data)
+		core.ReplaceLayouts(saves, removes)
 	})
 	wapp.Event.On("overlay:set-locked", func(e *application.CustomEvent) {
 		p, _ := e.Data.(map[string]any)
@@ -126,6 +131,27 @@ func setupOverlays(wapp *application.App, port int) *overlayCore {
 	})
 	go ow.keepOnTop()
 	return core
+}
+
+// parseReplacePayload reads an overlay:replace-layouts payload, skipping bad entries.
+func parseReplacePayload(data any) (map[string]app.OverlayLayout, []string) {
+	p, _ := data.(map[string]any)
+	saves := map[string]app.OverlayLayout{}
+	rawSaves, _ := p["saves"].(map[string]any)
+	for id, v := range rawSaves {
+		m, _ := v.(map[string]any)
+		if l, ok := parseLayout(m); ok {
+			saves[id] = l
+		}
+	}
+	var removes []string
+	rawRemoves, _ := p["removes"].([]any)
+	for _, v := range rawRemoves {
+		if s, ok := v.(string); ok {
+			removes = append(removes, s)
+		}
+	}
+	return saves, removes
 }
 
 // parseLayout reads the layout object of an overlay:set-layout payload.

@@ -56,12 +56,14 @@ describe('useOverlayState', () => {
         o.setLayout('ccBoss', lay);
         o.setHotkey('Ctrl+Shift+K');
         o.setHidden(true);
+        o.replaceLayouts({ dps: lay }, ['old']);
         const before = o.visibleHotkeyAttempts.value;
         o.setVisibleHotkey('Ctrl+Alt+H');
         expect(o.visibleHotkeyAttempts.value).toBe(before + 1);
         const by = (n: string) => bridge.emitted.filter(e => e.name === n).map(e => e.data);
         expect(by(OV.setLocked)).toEqual([{ locked: false }]);
         expect(by(OV.setLayout)).toEqual([{ id: 'ccBoss', layout: lay }]);
+        expect(by(OV.replaceLayouts)).toEqual([{ saves: { dps: lay }, removes: ['old'] }]);
         expect(by(OV.setHotkey)).toEqual([{ hotkey: 'Ctrl+Shift+K' }]);
         expect(by(OV.setHidden)).toEqual([{ hidden: true }]);
         expect(by(OV.setVisibleHotkey)).toEqual([{ hotkey: 'Ctrl+Alt+H' }]);

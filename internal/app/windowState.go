@@ -71,6 +71,23 @@ func SaveOverlayLayout(id string, l OverlayLayout) error {
 	})
 }
 
+// ReplaceOverlayLayouts applies removes then saves in one config write.
+func ReplaceOverlayLayouts(saves map[string]OverlayLayout, removes []string) error {
+	return updateAppConfig(func(c *appConfig) {
+		m := make(map[string]OverlayLayout, len(c.Overlays)+len(saves))
+		for k, v := range c.Overlays {
+			m[k] = v
+		}
+		for _, id := range removes {
+			delete(m, id)
+		}
+		for id, l := range saves {
+			m[id] = l
+		}
+		c.Overlays = m
+	})
+}
+
 // RemoveOverlayLayout drops one component's stored layout.
 func RemoveOverlayLayout(id string) error {
 	return updateAppConfig(func(c *appConfig) {

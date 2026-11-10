@@ -47,6 +47,11 @@ function handle(name: string, data: unknown) {
         case 'overlay:get-state': break;
         case 'overlay:set-layout': core.layout[p.id as string] = p.layout as OverlayLayout; break;
         case 'overlay:remove-layout': delete core.layout[p.id as string]; break;
+        case 'overlay:replace-layouts': {
+            for (const id of (p.removes as string[] | undefined) ?? []) delete core.layout[id];
+            Object.assign(core.layout, p.saves as Record<string, OverlayLayout> | undefined);
+            break;
+        }
         case 'overlay:set-locked': core.locked = !!p.locked; break;
         case 'overlay:set-hidden': core.hidden = !!p.hidden; break;
         case 'overlay:set-hotkey': {

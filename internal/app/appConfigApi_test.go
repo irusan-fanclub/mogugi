@@ -269,6 +269,29 @@ func TestPutConfigPreservesOverlays(t *testing.T) {
 	}
 }
 
+func TestReplaceOverlayLayoutsWritesSavesAndRemoves(t *testing.T) {
+	withAppConfigDir(t)
+	l := OverlayLayout{Enabled: true, Anchor: "tl", Width: 260, MaxRows: 8}
+	for _, id := range []string{"dps", "old"} {
+		if err := SaveOverlayLayout(id, l); err != nil {
+			t.Fatal(err)
+		}
+	}
+	l2 := l
+	l2.Width = 300
+	if err := ReplaceOverlayLayouts(map[string]OverlayLayout{"dps": l2, "new": l}, []string{"old"}); err != nil {
+		t.Fatal(err)
+	}
+	_, _, got := LoadOverlayConfig()
+	if len(got) != 2 || got["dps"].Width != 300 || got["new"].Width != 260 {
+		t.Fatalf("layouts = %+v", got)
+	}
+	b, err := os.ReadFile(filepath.Join(dataDirOverride, appConfigFileName))
+	if err != nil || !strings.Contains(string(b), "[overlays.new]") || strings.Contains(string(b), "[overlays.old]") {
+		t.Fatalf("file: %v\n%s", err, b)
+	}
+}
+
 func TestConfigPut_MemoryLimit(t *testing.T) {
 	withAppConfigDir(t)
 	appCfg.MemoryLimitMB = 300

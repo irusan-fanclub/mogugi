@@ -21,6 +21,7 @@ export function useOverlayState(): {
     state: Ref<OverlayState | null>;
     setLayout(id: ComponentId, layout: OverlayLayout): void;
     removeLayout(id: ComponentId): void;
+    replaceLayouts(saves: Record<string, OverlayLayout>, removes: string[]): void;
     setLocked(on: boolean): void;
     setHotkey(h: string): void;
     setHidden(on: boolean): void;
@@ -35,6 +36,7 @@ export function useOverlayState(): {
         state,
         setLayout: (id, layout) => { void emitDesktop(OV.setLayout, { id, layout }); },
         removeLayout: id => { void emitDesktop(OV.removeLayout, { id }); },
+        replaceLayouts: (saves, removes) => { void emitDesktop(OV.replaceLayouts, { saves, removes }); },
         setLocked: locked => { void emitDesktop(OV.setLocked, { locked }); },
         setHotkey: hotkey => { hotkeyAttempts.value++; void emitDesktop(OV.setHotkey, { hotkey }); },
         setHidden: hidden => { void emitDesktop(OV.setHidden, { hidden }); },

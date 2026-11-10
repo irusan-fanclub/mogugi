@@ -12,6 +12,7 @@ export const OV = {
     settings: 'overlay:settings',
     restartElevated: 'overlay:restart-elevated',
     removeLayout: 'overlay:remove-layout',
+    replaceLayouts: 'overlay:replace-layouts',
 } as const;
 
 export type Anchor = 'tl' | 'tr' | 'bl' | 'br' | 'center';

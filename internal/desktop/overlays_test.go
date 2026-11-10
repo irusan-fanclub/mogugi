@@ -13,6 +13,24 @@ func layoutPayload(extra map[string]any) map[string]any {
 	return m
 }
 
+func TestParseReplacePayload(t *testing.T) {
+	saves, removes := parseReplacePayload(map[string]any{
+		"saves":   map[string]any{"a": layoutPayload(nil), "bad": map[string]any{"enabled": 1.0}, "notObj": 3.0},
+		"removes": []any{"x", 4.0, "y"},
+	})
+	if len(saves) != 1 || saves["a"].Width != 260 || !reflect.DeepEqual(removes, []string{"x", "y"}) {
+		t.Fatalf("saves=%+v removes=%v", saves, removes)
+	}
+	saves, removes = parseReplacePayload("nope")
+	if len(saves) != 0 || len(removes) != 0 {
+		t.Fatalf("garbage accepted: %+v %v", saves, removes)
+	}
+	saves, removes = parseReplacePayload(map[string]any{"saves": "x", "removes": "y"})
+	if len(saves) != 0 || len(removes) != 0 {
+		t.Fatalf("wrong types accepted: %+v %v", saves, removes)
+	}
+}
+
 func TestParseLayoutOrder(t *testing.T) {
 	l, ok := parseLayout(layoutPayload(map[string]any{"order": []any{"1164", "1165"}}))
 	if !ok || !reflect.DeepEqual(l.Order, []string{"1164", "1165"}) {

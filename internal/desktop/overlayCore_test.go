@@ -29,6 +29,12 @@ type fakeOverlay struct {
 	saved      []app.OverlayLayout
 	savedKeys  []string
 	savedVis   []string
+	replaced   []replaceCall
+}
+
+type replaceCall struct {
+	saves   map[string]app.OverlayLayout
+	removes []string
 }
 
 func (f *fakeOverlay) deps() overlayDeps {
@@ -60,7 +66,11 @@ func (f *fakeOverlay) deps() overlayDeps {
 			f.saved = append(f.saved, l)
 			return nil
 		},
-		removeLayout:      func(id string) error { f.removedIDs = append(f.removedIDs, id); return nil },
+		removeLayout: func(id string) error { f.removedIDs = append(f.removedIDs, id); return nil },
+		replaceLayouts: func(s map[string]app.OverlayLayout, r []string) error {
+			f.replaced = append(f.replaced, replaceCall{s, r})
+			return nil
+		},
 		saveHotkey:        func(h string) error { f.savedKeys = append(f.savedKeys, h); return nil },
 		saveVisibleHotkey: func(h string) error { f.savedVis = append(f.savedVis, h); return nil },
 	}
@@ -307,6 +317,64 @@ func TestRemoveLayoutDropsSavesAndEmits(t *testing.T) {
 	c.RemoveLayout("w1")
 	if len(f.removedIDs) != 1 || len(f.emits) != 1 {
 		t.Fatalf("unknown id acted on: removed=%v", f.removedIDs)
+	}
+}
+
+func TestReplaceLayoutsAppliesOnceAndEmitsOnce(t *testing.T) {
+	f := &fakeOverlay{}
+	l1 := app.OverlayLayout{Enabled: true, Anchor: "tl", Width: 200, MaxRows: 8}
+	l2 := app.OverlayLayout{Enabled: true, Anchor: "br", X: 5, Width: 300, MaxRows: 4}
+	c := newTestCore(f, map[string]app.OverlayLayout{"a": l1, "b": l1})
+	c.ReplaceLayouts(map[string]app.OverlayLayout{"a": l2, "c": l1}, []string{"b"})
+	want := map[string]app.OverlayLayout{"a": l2, "c": l1}
+	if got := c.State().Layout; !reflect.DeepEqual(got, want) {
+		t.Fatalf("layout = %+v", got)
+	}
+	if len(f.replaced) != 1 || !reflect.DeepEqual(f.replaced[0].saves, want) || !reflect.DeepEqual(f.replaced[0].removes, []string{"b"}) {
+		t.Fatalf("replaced = %+v", f.replaced)
+	}
+	if len(f.emits) != 1 {
+		t.Fatalf("emits = %d", len(f.emits))
+	}
+}
+
+func TestReplaceLayoutsSkipsInvalidEntries(t *testing.T) {
+	f := &fakeOverlay{}
+	l := app.OverlayLayout{Enabled: true, Anchor: "tl", Width: 200, MaxRows: 8}
+	bad := l
+	bad.Anchor = "x"
+	c := newTestCore(f, map[string]app.OverlayLayout{"old": l})
+	c.ReplaceLayouts(map[string]app.OverlayLayout{"bad key]": l, "badAnchor": bad, "ok": l}, []string{"nope", "old"})
+	want := map[string]app.OverlayLayout{"ok": l}
+	if got := c.State().Layout; !reflect.DeepEqual(got, want) {
+		t.Fatalf("layout = %+v", got)
+	}
+	if len(f.replaced) != 1 || !reflect.DeepEqual(f.replaced[0].saves, want) || !reflect.DeepEqual(f.replaced[0].removes, []string{"old"}) {
+		t.Fatalf("replaced = %+v", f.replaced)
+	}
+}
+
+func TestReplaceLayoutsSaveWinsOverRemove(t *testing.T) {
+	f := &fakeOverlay{}
+	l1 := app.OverlayLayout{Enabled: true, Anchor: "tl", Width: 200, MaxRows: 8}
+	l2 := app.OverlayLayout{Enabled: false, Anchor: "tr", Width: 250, MaxRows: 3}
+	c := newTestCore(f, map[string]app.OverlayLayout{"a": l1})
+	c.ReplaceLayouts(map[string]app.OverlayLayout{"a": l2}, []string{"a"})
+	if got := c.State().Layout["a"]; !reflect.DeepEqual(got, l2) {
+		t.Fatalf("a = %+v", got)
+	}
+	if len(f.replaced) != 1 || len(f.replaced[0].removes) != 0 {
+		t.Fatalf("replaced = %+v", f.replaced)
+	}
+}
+
+func TestReplaceLayoutsNoopDoesNothing(t *testing.T) {
+	f := &fakeOverlay{}
+	l := app.OverlayLayout{Enabled: true, Anchor: "x", Width: 200, MaxRows: 8}
+	c := newTestCore(f, nil)
+	c.ReplaceLayouts(map[string]app.OverlayLayout{"bad key]": l, "badAnchor": l}, []string{"unknown"})
+	if len(f.replaced) != 0 || len(f.emits) != 0 {
+		t.Fatalf("replaced=%d emits=%d", len(f.replaced), len(f.emits))
 	}
 }
 
