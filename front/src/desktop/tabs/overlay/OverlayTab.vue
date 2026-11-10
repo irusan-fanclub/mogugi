@@ -9,6 +9,8 @@ import DpsOverlaySettings from './DpsOverlaySettings.vue';
 import CcSectionSettings from './CcSectionSettings.vue';
 import CooldownSettings from './CooldownSettings.vue';
 import AlertsSettings from './AlertsSettings.vue';
+import ShareExportDialog from './ShareExportDialog.vue';
+import ShareImportDialog from './ShareImportDialog.vue';
 import { overlaySettings, updateOverlaySettings } from '../../overlay/overlayLink';
 import './settingsPage.css';
 
@@ -23,6 +25,8 @@ const isCc = (p: Page): p is CcSectionId => p === 'ccBoss' || p === 'ccSelf' || 
 const NARROW_PX = 720;
 const { state, setLocked, setHotkey, restartElevated, setHidden, setVisibleHotkey } = useOverlayState();
 
+const exportOpen = ref(false);
+const importOpen = ref(false);
 const selected = ref<Page>('general');
 const narrow = ref(false);
 // Narrow mode only: whether the settings page is open instead of the list.
@@ -72,6 +76,8 @@ onBeforeUnmount(() => ro?.disconnect());
       <span class="val">{{ overlaySettings.scale }}%</span>
       <span class="grow" />
       <span class="hint">overlay 只在視窗模式或無邊框視窗模式下看得到</span>
+      <DButton size="sm" data-share-export @click="exportOpen = true"><i class="mdi mdi-export-variant" />匯出設定</DButton>
+      <DButton size="sm" data-share-import @click="importOpen = true"><i class="mdi mdi-import" />匯入設定</DButton>
     </div>
     <div class="body">
       <nav v-if="!narrow || !detail" class="list" :class="{ full: narrow }" data-overlay-list>
@@ -100,6 +106,8 @@ onBeforeUnmount(() => ro?.disconnect());
         </template>
       </section>
     </div>
+    <ShareExportDialog v-model="exportOpen" />
+    <ShareImportDialog v-model="importOpen" />
   </div>
 </template>
 

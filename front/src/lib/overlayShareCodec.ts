@@ -5,7 +5,7 @@ export const SHARE_PREFIX = 'mogugi-overlay:';
 export const SHARE_FORMAT = 1;
 export const DISCORD_LIMIT = 2000;
 
-const MAX_TEXT = 1_048_576;
+export const MAX_TEXT = 1_048_576;
 const MAX_JSON = 2_097_152;
 const MAX_RETRIES = 8;
 

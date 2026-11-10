@@ -49,9 +49,7 @@ export function sortRows<T extends Record<string, unknown>>(rows: T[], sortBy: S
 
 const BOM = String.fromCharCode(0xFEFF);
 
-// downloadCsv: trigger a browser download of csv as a UTF-8 (BOM-prefixed) file.
-export function downloadCsv(filename: string, csv: string): void {
-    const blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8' });
+function saveBlob(filename: string, blob: Blob): void {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -60,4 +58,14 @@ export function downloadCsv(filename: string, csv: string): void {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+}
+
+// downloadCsv: trigger a browser download of csv as a UTF-8 (BOM-prefixed) file.
+export function downloadCsv(filename: string, csv: string): void {
+    saveBlob(filename, new Blob([BOM + csv], { type: 'text/csv;charset=utf-8' }));
+}
+
+// downloadText: download plain UTF-8 text without a BOM.
+export function downloadText(filename: string, text: string): void {
+    saveBlob(filename, new Blob([text], { type: 'text/plain;charset=utf-8' }));
 }
