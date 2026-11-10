@@ -135,4 +135,21 @@ describe('ShareImportDialog', () => {
         expect(text).not.toHaveBeenCalled();
         expect(q('[data-share-error]')?.textContent).toContain(SHARE_ERROR_TEXT.tooBig);
     });
+
+    it('drops a slow file read that resolves after the dialog closed', async () => {
+        mountDlg();
+        let done!: (t: string) => void;
+        const file = { size: 10, text: () => new Promise<string>(r => { done = r; }) } as unknown as File;
+        const input = q('input[type=file]') as HTMLInputElement;
+        Object.defineProperty(input, 'files', { value: [file], configurable: true });
+        input.dispatchEvent(new Event('change'));
+        await w!.setProps({ modelValue: false });
+        await w!.setProps({ modelValue: true });
+        done(shared);
+        // Decoding streams in real time; give a stale result room to land.
+        await new Promise(r => setTimeout(r, 100));
+        await flushPromises();
+        expect(q('[data-region-row]')).toBeNull();
+        expect(q('textarea')).not.toBeNull();
+    });
 });

@@ -43,8 +43,7 @@ function reset() {
 watch(open, v => { if (!v) reset(); });
 onBeforeUnmount(() => clearTimeout(debounce));
 
-async function parse(raw: string) {
-    const mine = ++seq;
+async function parse(raw: string, mine = ++seq) {
     if (!raw.trim()) { error.value = null; return; }
     const r = await decodeShare(raw);
     if (mine !== seq) return;
@@ -65,8 +64,12 @@ async function onFile(e: Event) {
     input.value = '';
     if (!file) return;
     clearTimeout(debounce);
-    if (file.size > MAX_TEXT) { seq++; error.value = 'tooBig'; return; }
-    await parse(await file.text());
+    const mine = ++seq;
+    if (file.size > MAX_TEXT) { error.value = 'tooBig'; return; }
+    const raw = await file.text();
+    // Closing or re-pasting during the read bumps seq; drop the late result.
+    if (mine !== seq) return;
+    await parse(raw, mine);
 }
 
 function repaste() {
