@@ -5,7 +5,13 @@ import { flushPromises, mount, VueWrapper } from '@vue/test-utils';
 import { defaultOverlaySettings, type OverlaySettings } from '@/lib/overlaySettings';
 import { encodeShare, SHARE_ERROR_TEXT } from '@/lib/overlayShareCodec';
 
-const h = vi.hoisted(() => ({ replaceLayouts: vi.fn(), update: vi.fn() }));
+const h = vi.hoisted(() => ({ replaceLayouts: vi.fn(), update: vi.fn(), decodes: [] as Promise<unknown>[] }));
+// Record every decode so tests can await it instead of sleeping.
+vi.mock('@/lib/overlayShareCodec', async orig => {
+    const m = await orig<typeof import('@/lib/overlayShareCodec')>();
+    return { ...m, decodeShare: (t: string) => { const p = m.decodeShare(t); h.decodes.push(p); return p; } };
+});
+
 const settings = ref<OverlaySettings>(defaultOverlaySettings());
 const layout = { dps: { enabled: true, anchor: 'tr', x: -24, y: 24, width: 260, maxRows: 8 } };
 vi.mock('../../overlay/overlayLink', () => ({
@@ -26,7 +32,7 @@ import ShareImportDialog from './ShareImportDialog.vue';
 let w: VueWrapper | null = null;
 let shared = '';
 beforeEach(async () => {
-    h.replaceLayouts.mockReset(); h.update.mockReset();
+    h.replaceLayouts.mockReset(); h.update.mockReset(); h.decodes.length = 0;
     settings.value = defaultOverlaySettings();
     const theirs = defaultOverlaySettings();
     theirs.scale = 130;
@@ -42,6 +48,8 @@ const paste = async (text: string) => {
     ta.value = text;
     ta.dispatchEvent(new Event('input'));
     await vi.advanceTimersByTimeAsync(250);
+    // The debounce has fired; wait for the real (stream-based) decode to settle.
+    await Promise.all(h.decodes);
     await flushPromises();
 };
 const toStep2 = async () => {
@@ -146,8 +154,8 @@ describe('ShareImportDialog', () => {
         await w!.setProps({ modelValue: false });
         await w!.setProps({ modelValue: true });
         done(shared);
-        // Decoding streams in real time; give a stale result room to land.
-        await new Promise(r => setTimeout(r, 100));
+        await flushPromises();
+        await Promise.all(h.decodes);
         await flushPromises();
         expect(q('[data-region-row]')).toBeNull();
         expect(q('textarea')).not.toBeNull();
