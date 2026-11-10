@@ -40,7 +40,8 @@ export async function encodeShare(
     settings: OverlaySettings,
     layouts: Partial<Record<string, OverlayLayout>> | undefined,
 ): Promise<string> {
-    const { voiceName: _drop, ...voice } = settings.voice;
+    const voice: Omit<OverlaySettings['voice'], 'voiceName'> & { voiceName?: string } = { ...settings.voice };
+    delete voice.voiceName;
     const outLayouts: Record<string, OverlayLayout> = {};
     for (const [id, l] of Object.entries(layouts ?? {})) {
         if (id !== 'cc' && l) outLayouts[id] = l;
@@ -73,27 +74,15 @@ async function inflate(bytes: Uint8Array): Promise<string> {
     return new TextDecoder('utf-8', { fatal: true }).decode(all);
 }
 
-export async function decodeShare(
-    text: string,
-): Promise<{ ok: true; payload: SharePayload } | { ok: false; error: ShareError }> {
-    const fail = (error: ShareError) => ({ ok: false as const, error });
-    if (text.length > MAX_TEXT) return fail('tooBig');
-    const at = text.indexOf(SHARE_PREFIX);
-    if (at < 0) return fail('notShare');
-    const rest = text.slice(at + SHARE_PREFIX.length);
-    const m = /^(\d+):/.exec(rest);
-    if (!m) return fail('notShare');
-    if (Number(m[1]) > SHARE_FORMAT) return fail('newer');
-    if (Number(m[1]) !== SHARE_FORMAT) return fail('notShare');
+const isB64Char = (c: number) =>
+    (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 45 || c === 95;
+const isSpace = (c: number) => c === 32 || (c >= 9 && c <= 13) || c === 0xa0 || c === 0x3000;
 
-    let token = '';
-    for (const ch of rest.slice(m[0].length)) {
-        if (/\s/.test(ch)) continue;
-        if (!/[A-Za-z0-9_-]/.test(ch)) break;
-        token += ch;
-    }
+type Result = { ok: true; payload: SharePayload } | { ok: false; error: ShareError };
+
+async function decodeToken(token: string): Promise<Result> {
+    const fail = (error: ShareError): Result => ({ ok: false, error });
     if (!token || token.length % 4 === 1) return fail('broken');
-
     let root: unknown;
     try {
         root = JSON.parse(await inflate(fromBase64Url(token)));
@@ -113,6 +102,47 @@ export async function decodeShare(
             layouts: isPlain(root.layouts) ? root.layouts : {},
         },
     };
+}
+
+/** Decodes one prefix occurrence; on 'broken', retries with the token cut at each skipped whitespace. */
+async function decodeAt(rest: string): Promise<Result> {
+    const m = /^(\d+):/.exec(rest);
+    if (!m) return { ok: false, error: 'notShare' };
+    if (Number(m[1]) > SHARE_FORMAT) return { ok: false, error: 'newer' };
+    if (Number(m[1]) !== SHARE_FORMAT) return { ok: false, error: 'notShare' };
+
+    let token = '';
+    const cuts: number[] = [];
+    let skipped = false;
+    for (let i = m[0].length; i < rest.length; i++) {
+        const c = rest.charCodeAt(i);
+        if (isSpace(c)) { skipped = true; continue; }
+        if (!isB64Char(c)) break;
+        if (skipped && token) cuts.push(token.length);
+        skipped = false;
+        token += rest[i];
+    }
+    let last: Result = await decodeToken(token);
+    if (last.ok || last.error !== 'broken') return last;
+    for (let i = cuts.length - 1; i >= 0; i--) {
+        last = await decodeToken(token.slice(0, cuts[i]));
+        if (last.ok || last.error !== 'broken') return last;
+    }
+    return { ok: false, error: 'broken' };
+}
+
+const ERROR_RANK: Record<ShareError, number> = { notShare: 0, broken: 1, tooBig: 2, newer: 3 };
+
+export async function decodeShare(text: string): Promise<Result> {
+    if (text.length > MAX_TEXT) return { ok: false, error: 'tooBig' };
+    let best: ShareError = 'notShare';
+    // Chatter may mention the prefix first, so try the last occurrence first.
+    for (let at = text.lastIndexOf(SHARE_PREFIX); at >= 0; at = at > 0 ? text.lastIndexOf(SHARE_PREFIX, at - 1) : -1) {
+        const r = await decodeAt(text.slice(at + SHARE_PREFIX.length));
+        if (r.ok) return r;
+        if (ERROR_RANK[r.error] > ERROR_RANK[best]) best = r.error;
+    }
+    return { ok: false, error: best };
 }
 
 export function shareFileName(d: Date): string {

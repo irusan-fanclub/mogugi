@@ -35,7 +35,8 @@ describe('overlayShareCodec', () => {
         expect(r.ok).toBe(true);
         if (!r.ok) return;
         expect(r.payload.settings).toEqual({ ...s, voice: { ...s.voice, voiceName: '' } });
-        const { cc: _cc, ...rest } = L as Record<string, unknown>;
+        const rest: Record<string, unknown> = { ...L };
+        delete rest.cc;
         expect(r.payload.layouts).toEqual(rest);
         expect(r.payload.settingsV).toBe(SETTINGS_VERSION);
     });
@@ -99,6 +100,20 @@ describe('overlayShareCodec', () => {
         expect(r.ok).toBe(true);
         if (!r.ok) return;
         expect(r.payload.settings.rules).toEqual(rules);
+    });
+
+    it('ignores trailing chatter that looks like token characters', async () => {
+        const t = await encodeShare(sample(), L);
+        expect((await decodeShare(t + '\nthanks')).ok).toBe(true);
+        expect((await decodeShare(t + ' ok 謝謝')).ok).toBe(true);
+        const mid = t.slice(0, 50) + '\n' + t.slice(50) + '\nthanks a lot';
+        expect((await decodeShare(mid)).ok).toBe(true);
+    });
+
+    it('uses the real token when chatter mentions the prefix', async () => {
+        const t = await encodeShare(sample(), L);
+        expect((await decodeShare('用 mogugi-overlay: 開頭貼上\n' + t)).ok).toBe(true);
+        expect(await decodeShare('mogugi-overlay:1:!!!! ' + 'mogugi-overlay:2:xxx')).toEqual({ ok: false, error: 'newer' });
     });
 
     it('has copy for every error and a dated file name', () => {
