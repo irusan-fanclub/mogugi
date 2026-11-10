@@ -108,6 +108,8 @@ describe('overlayShareCodec', () => {
         expect((await decodeShare(t + ' ok 謝謝')).ok).toBe(true);
         const mid = t.slice(0, 50) + '\n' + t.slice(50) + '\nthanks a lot';
         expect((await decodeShare(mid)).ok).toBe(true);
+        const long = t + ' thanks for sharing this nice setup with all of us today ok';
+        expect((await decodeShare(long)).ok).toBe(true);
     });
 
     it('uses the real token when chatter mentions the prefix', async () => {

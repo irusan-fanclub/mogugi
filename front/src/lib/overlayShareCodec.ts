@@ -125,8 +125,10 @@ async function decodeAt(rest: string): Promise<Result> {
     }
     let last: Result = await decodeToken(token);
     if (last.ok || last.error !== 'broken') return last;
-    for (let i = cuts.length - 1; i >= Math.max(0, cuts.length - MAX_RETRIES); i--) {
-        last = await decodeToken(token.slice(0, cuts[i]));
+    // Cuts are increasing: try the 4 shortest (trailing chatter), then the 4 longest.
+    const picks = new Set([...cuts.slice(0, 4), ...cuts.slice(-4).reverse()]);
+    for (const cut of picks) {
+        last = await decodeToken(token.slice(0, cut));
         if (last.ok || last.error !== 'broken') return last;
     }
     return { ok: false, error: 'broken' };
