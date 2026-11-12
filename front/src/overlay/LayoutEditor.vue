@@ -10,7 +10,7 @@ const props = defineProps<{
     scale: number;
     comps: EditorComp[];
     dragId: string | null;
-    dragMode: 'move' | 'width' | null;
+    dragMoving: boolean;
     cell: { col: number; row: number } | null;
     guides: Guide[];
     hotkey: string;
@@ -41,7 +41,7 @@ const used = (a: Anchor) => props.comps.some(c => c.enabled && !c.docked && c.an
   <template v-if="active">
     <div class="ov-mask" />
     <svg class="ov-fx" :viewBox="`0 0 ${viewport.w} ${viewport.h}`">
-      <template v-if="dragMode === 'move'">
+      <template v-if="dragMoving">
         <g data-grid>
           <line v-for="i in 2" :key="'v' + i" class="ov-grid-line" :x1="viewport.w * i / 3" y1="0" :x2="viewport.w * i / 3" :y2="viewport.h" />
           <line v-for="i in 2" :key="'h' + i" class="ov-grid-line" x1="0" :y1="viewport.h * i / 3" :x2="viewport.w" :y2="viewport.h * i / 3" />
@@ -59,7 +59,7 @@ const used = (a: Anchor) => props.comps.some(c => c.enabled && !c.docked && c.an
       />
       <template v-for="c in comps" :key="c.id">
         <line
-          v-if="c.enabled && !c.docked && !(dragId === c.id && dragMode === 'move')" class="ov-link" data-link
+          v-if="c.enabled && !c.docked && !(dragId === c.id && dragMoving)" class="ov-link" data-link
           :x1="anchorPoint(c.anchor).x" :y1="anchorPoint(c.anchor).y" :x2="refPoint(c).x" :y2="refPoint(c).y"
         />
       </template>

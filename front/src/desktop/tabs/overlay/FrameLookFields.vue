@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import type { SectionLook } from '@/lib/overlayFrames';
 import {
-    cleanTitleText, ICON_SIZE_PX, TITLE_MAX,
+    cleanTitleText, ICON_SIZE_PX, TEXT_PX, TITLE_MAX,
     type Arrange, type CcLook, type CcNames, type CooldownLook, type GapMode, type SectionId,
 } from '@/lib/overlaySections';
 import { COMPONENT_NAMES } from '@/lib/overlayComponents';
@@ -59,6 +59,13 @@ function setText(e: Event) {
       <SizeField
         :model-value="{ size: look.size, px: look.px }" :presets="ICON_SIZE_PX" :min="16" :max="96"
         @update:model-value="(v: SizeValue) => patch({ size: v.size, px: v.px })"
+      />
+    </div>
+    <div class="ovs-field">
+      <span class="ovs-lbl">文字大小</span>
+      <SizeField
+        :model-value="{ size: look.text, px: look.tpx }" :presets="TEXT_PX" :min="9" :max="24" data-text-size
+        @update:model-value="(v: SizeValue) => patch({ text: v.size, tpx: v.px })"
       />
     </div>
     <div v-if="isCooldown" class="ovs-field">

@@ -1,16 +1,13 @@
 import { computed, ref, type Ref } from 'vue';
-import { autoAnchor, dockedRect, offsetsFor, rectOf, snapMove, snapWidth, type Guide, type Rect, type Size } from '@/lib/overlayLayout';
+import { autoAnchor, dockedRect, offsetsFor, rectOf, snapMove, type Guide, type Rect, type Size } from '@/lib/overlayLayout';
 import type { ComponentId, OverlayLayout } from '@/lib/overlayProtocol';
 
 export const SNAP_PX = 6;
 /** How close a dragged top edge must come to another component's bottom to dock under it. */
 export const DOCK_PX = 14;
-export const MIN_WIDTH = 120;
-export const MAX_WIDTH = 800;
 
 export interface DragState {
     id: ComponentId;
-    mode: 'move' | 'width';
     pointerId: number | undefined;
     sx: number;
     sy: number;
@@ -18,7 +15,6 @@ export interface DragState {
     layout: OverlayLayout;
     l: number;
     t: number;
-    width: number;
     moved: boolean;
     guides: Guide[];
     cell: { col: number; row: number } | null;
@@ -38,7 +34,7 @@ interface Ctx {
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
 
-/** Pointer-driven move and width drags. Nothing is saved until the pointer is released. */
+/** Pointer-driven move drags. Nothing is saved until the pointer is released. */
 export function useLayoutDrag(ctx: Ctx) {
     const drag = ref<DragState | null>(null);
 
@@ -72,8 +68,7 @@ export function useLayoutDrag(ctx: Ctx) {
         const d = drag.value;
         const lay = ctx.layoutOf(id);
         if (d && d.id === id) {
-            if (d.mode === 'move') return { l: d.l, t: d.t, w: d.base.w, h: ctx.heightOf(id), clamped: false };
-            return placed(id, { ...lay, width: d.width });
+            return { l: d.l, t: d.t, w: d.base.w, h: ctx.heightOf(id), clamped: false };
         }
         return placed(id, lay);
     }
@@ -89,12 +84,12 @@ export function useLayoutDrag(ctx: Ctx) {
         .filter(o => o !== id && ctx.layoutOf(o).enabled && !isBelow(o, id))
         .map(o => ({ id: o, r: shown(o) }));
 
-    function start(id: ComponentId, mode: 'move' | 'width', e: { clientX: number; clientY: number; pointerId?: number }) {
+    function start(id: ComponentId, e: { clientX: number; clientY: number; pointerId?: number }) {
         const layout = ctx.layoutOf(id);
         const base = shown(id);
         drag.value = {
-            id, mode, pointerId: e.pointerId, sx: e.clientX, sy: e.clientY, base, layout,
-            l: base.l, t: base.t, width: layout.width, moved: false, guides: [], cell: null, dock: null,
+            id, pointerId: e.pointerId, sx: e.clientX, sy: e.clientY, base, layout,
+            l: base.l, t: base.t, moved: false, guides: [], cell: null, dock: null,
         };
     }
 
@@ -121,45 +116,24 @@ export function useLayoutDrag(ctx: Ctx) {
         const vp = ctx.viewport.value;
         const others = e.altKey ? [] : othersOf(d.id);
         d.moved = true;
-        if (d.mode === 'move') {
-            const { w, h } = d.base;
-            const raw: Rect = { l: clamp(d.base.l + dx, 0, Math.max(0, vp.w - w)), t: clamp(d.base.t + dy, 0, Math.max(0, vp.h - h)), w, h };
-            const host = dockTarget(d, raw, others);
-            const snapped = e.altKey ? { l: raw.l, t: raw.t, guides: [] as Guide[] } : snapMove(raw, others.map(o => o.r), vp, SNAP_PX);
-            d.l = snapped.l;
-            d.t = snapped.t;
-            d.guides = snapped.guides;
-            d.dock = host?.id ?? null;
-            if (host) {
-                // Docked: the top edge is the host's bottom, whatever else snapped vertically.
-                d.t = host.r.t + host.r.h;
-                d.guides = [...snapped.guides.filter(g => g.x1 === g.x2), {
-                    x1: Math.min(d.l, host.r.l), y1: d.t, x2: Math.max(d.l + w, host.r.l + host.r.w), y2: d.t, centre: false,
-                }];
-            }
-            const cx = d.l + w / 2;
-            const cy = d.t + h / 2;
-            d.cell = { col: cx < vp.w / 3 ? 0 : cx < (vp.w * 2) / 3 ? 1 : 2, row: cy < vp.h / 3 ? 0 : cy < (vp.h * 2) / 3 ? 1 : 2 };
-            return;
+        const { w, h } = d.base;
+        const raw: Rect = { l: clamp(d.base.l + dx, 0, Math.max(0, vp.w - w)), t: clamp(d.base.t + dy, 0, Math.max(0, vp.h - h)), w, h };
+        const host = dockTarget(d, raw, others);
+        const snapped = e.altKey ? { l: raw.l, t: raw.t, guides: [] as Guide[] } : snapMove(raw, others.map(o => o.r), vp, SNAP_PX);
+        d.l = snapped.l;
+        d.t = snapped.t;
+        d.guides = snapped.guides;
+        d.dock = host?.id ?? null;
+        if (host) {
+            // Docked: the top edge is the host's bottom, whatever else snapped vertically.
+            d.t = host.r.t + host.r.h;
+            d.guides = [...snapped.guides.filter(g => g.x1 === g.x2), {
+                x1: Math.min(d.l, host.r.l), y1: d.t, x2: Math.max(d.l + w, host.r.l + host.r.w), y2: d.t, centre: false,
+            }];
         }
-        // A docked component keeps its left edge, so it always grows to the right.
-        const a = hostOf(d.id) ? 'tl' : d.layout.anchor;
-        const k = a === 'center' ? 2 : 1;
-        const sign = a === 'tr' || a === 'br' ? -1 : 1;
-        let width = clamp(d.layout.width + sign * k * dx, MIN_WIDTH, MAX_WIDTH);
-        let guides: Guide[] = [];
-        if (others.length) {
-            const r = placed(d.id, { ...d.layout, width });
-            const edge = sign < 0 ? 'left' : 'right';
-            const hit = snapWidth(r, edge, others.map(o => o.r), SNAP_PX);
-            if (hit.guides.length) {
-                // A centred component grows on both sides, so the edge moves half as far as the width.
-                width = clamp(a === 'center' ? width + 2 * (hit.w - width) : hit.w, MIN_WIDTH, MAX_WIDTH);
-                guides = hit.guides;
-            }
-        }
-        d.width = Math.round(width);
-        d.guides = guides;
+        const cx = d.l + w / 2;
+        const cy = d.t + h / 2;
+        d.cell = { col: cx < vp.w / 3 ? 0 : cx < (vp.w * 2) / 3 ? 1 : 2, row: cy < vp.h / 3 ? 0 : cy < (vp.h * 2) / 3 ? 1 : 2 };
     }
 
     function free(id: ComponentId, r: Rect): OverlayLayout {
@@ -174,10 +148,6 @@ export function useLayoutDrag(ctx: Ctx) {
         if (!d || !mine(d, e)) return;
         drag.value = null;
         if (!d.moved) return;
-        if (d.mode === 'width') {
-            if (d.width !== d.layout.width) ctx.save(d.id, { ...d.layout, width: d.width });
-            return;
-        }
         if (d.dock) {
             ctx.save(d.id, { ...d.layout, dock: d.dock, x: Math.round(d.l - shown(d.dock).l), y: 0 });
             return;

@@ -1,7 +1,7 @@
 import type { SectionLook } from '@/lib/overlayFrames';
 import type { CcLook, CooldownLook, SectionId } from '@/lib/overlaySections';
 
-const SIZE = { s: '小', m: '中', l: '大' } as const;
+const SIZE = { s: '小', m: '中', l: '大', xl: '特大' } as const;
 const CC_NAMES = { label: '文字', member: '隊友名', none: '無' } as const;
 
 /** One line for a collapsed 外觀 row: what the frame looks like, or whom it follows. */
@@ -17,5 +17,6 @@ export function frameSummary(look: SectionLook, section: SectionId, follow: stri
         parts.push(look.arrange === 'byMember' ? `依隊友排列（${look.gap === 'pack' ? '往左補齊' : '留空對齊'}）` : '平鋪');
     }
     if (section !== 'cooldown' && section !== 'burst') parts.push(`${(look as CcLook).dim}%`);
+    if (look.text !== 'm') parts.push(look.text === 'c' ? `字 ${look.tpx}px` : `字${SIZE[look.text]}`);
     return parts.join('・');
 }

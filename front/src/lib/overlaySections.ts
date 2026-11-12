@@ -1,6 +1,8 @@
-export type SizeChoice = 's' | 'm' | 'l' | 'c';
-export const ICON_SIZE_PX: Record<'s' | 'm' | 'l', number> = { s: 28, m: 36, l: 44 };
-export const DPS_FONT_PX: Record<'s' | 'm' | 'l', number> = { s: 12, m: 14, l: 17 };
+export type SizeChoice = 's' | 'm' | 'l' | 'xl' | 'c';
+export type SizePresets = Partial<Record<Exclude<SizeChoice, 'c'>, number>>;
+export const ICON_SIZE_PX: Record<'s' | 'm' | 'l' | 'xl', number> = { s: 28, m: 36, l: 44, xl: 56 };
+export const TEXT_PX: Record<'s' | 'm' | 'l' | 'xl', number> = { s: 10, m: 12, l: 14, xl: 17 };
+export const DPS_FONT_PX: Record<'s' | 'm' | 'l' | 'xl', number> = { s: 12, m: 14, l: 17, xl: 20 };
 
 export interface PanelBg { color: string; alpha: number }
 export interface OverlayGeneral { bg: PanelBg; warn: string; gone: string; ok: string }
@@ -17,7 +19,7 @@ export type GapMode = 'keep' | 'pack';
 export const TITLE_MAX = 16;
 /** `titleText`: '' means the section's own name. `arrange`/`gap`: how tiles lay out in the frame. */
 export interface CcLook {
-    size: SizeChoice; px: number; names: CcNames; dim: number; bg: PanelBg | null; title: boolean;
+    size: SizeChoice; px: number; text: SizeChoice; tpx: number; names: CcNames; dim: number; bg: PanelBg | null; title: boolean;
     titleText: string; arrange: Arrange; gap: GapMode;
 }
 export interface CcItem {
@@ -33,7 +35,7 @@ export interface CcSection { look: CcLook; items: CcItem[] }
 export type CooldownWho = 'self' | 'party' | 'all';
 export interface CooldownItem { skillId: number; cooldownSec: number; ccId: number; enabled: boolean; who: CooldownWho; arcana: number[] }
 export interface CooldownLook {
-    size: SizeChoice; px: number; names: boolean; bg: PanelBg | null; title: boolean;
+    size: SizeChoice; px: number; text: SizeChoice; tpx: number; names: boolean; bg: PanelBg | null; title: boolean;
     titleText: string; arrange: Arrange; gap: GapMode;
 }
 export interface CooldownSection { look: CooldownLook; items: CooldownItem[] }
@@ -53,6 +55,8 @@ const ARCANA_MAX = 10;
 
 export const iconPx = (look: { size: SizeChoice; px: number }): number =>
     look.size === 'c' ? look.px : ICON_SIZE_PX[look.size];
+export const textPx = (look: { text: SizeChoice; tpx: number }): number =>
+    look.text === 'c' ? look.tpx : TEXT_PX[look.text];
 export const dpsFontPx = (look: DpsLook): number => look.font === 'c' ? look.fpx : DPS_FONT_PX[look.font];
 
 export const defaultGeneral = (): OverlayGeneral => ({
@@ -85,7 +89,7 @@ const cc = (id: number, label: string, o: Partial<CcItem> = {}): CcItem => ({
 });
 
 export function defaultCcSection(id: CcSectionId): CcSection {
-    const look: CcLook = { size: 'm', px: 36, names: 'label', dim: 40, bg: null, title: false, titleText: '', arrange: 'flow', gap: 'keep' };
+    const look: CcLook = { size: 'm', px: 36, text: 'm', tpx: 12, names: 'label', dim: 40, bg: null, title: false, titleText: '', arrange: 'flow', gap: 'keep' };
     switch (id) {
         case 'ccBoss':
             return { look, items: [
@@ -125,7 +129,7 @@ export function defaultCooldownSection(): CooldownSection {
     const it = (skillId: number, cooldownSec: number, ccId: number): CooldownItem =>
         ({ ...defaultCooldownItem(skillId), cooldownSec, ccId });
     return {
-        look: { size: 'm', px: 36, names: true, bg: null, title: false, titleText: '', arrange: 'flow', gap: 'keep' },
+        look: { size: 'm', px: 36, text: 'm', tpx: 12, names: true, bg: null, title: false, titleText: '', arrange: 'flow', gap: 'keep' },
         items: [it(59005, 180, 803), it(59143, 60, 0), it(59123, 30, 0)],
     };
 }
@@ -153,7 +157,7 @@ function int(v: unknown, fb: number, lo: number, hi: number): number {
 const posInt = (v: unknown): number | null =>
     typeof v === 'number' && Number.isInteger(v) && v > 0 ? v : null;
 const size = (v: unknown, fb: SizeChoice): SizeChoice =>
-    v === 's' || v === 'm' || v === 'l' || v === 'c' ? v : fb;
+    v === 's' || v === 'm' || v === 'l' || v === 'xl' || v === 'c' ? v : fb;
 
 function bg(v: unknown, fb: PanelBg | null): PanelBg | null {
     if (typeof v !== 'object' || v === null) return fb;
@@ -219,6 +223,8 @@ export function normalizeCcLook(l: unknown, d: CcLook): CcLook {
     return {
         size: size(r.size, d.size),
         px: int(r.px, d.px, 16, 96),
+        text: size(r.text, d.text),
+        tpx: int(r.tpx, d.tpx, 9, 24),
         names: r.names === 'label' || r.names === 'member' || r.names === 'none' ? r.names : d.names,
         dim: int(r.dim, d.dim, 10, 100),
         bg: bg(r.bg, null),
@@ -262,6 +268,8 @@ export function normalizeCooldownLook(l: unknown, d: CooldownLook): CooldownLook
     return {
         size: size(r.size, d.size),
         px: int(r.px, d.px, 16, 96),
+        text: size(r.text, d.text),
+        tpx: int(r.tpx, d.tpx, 9, 24),
         names: bool(r.names, d.names),
         bg: bg(r.bg, null),
         title: bool(r.title, false),

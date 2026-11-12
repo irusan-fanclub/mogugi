@@ -3,7 +3,7 @@ import type { ComponentDef, ItemNamer } from '@/lib/overlayComponents';
 import { sectionItems } from '@/lib/overlayComponents';
 import { FONT_PX, type OverlaySettings } from '@/lib/overlaySettings';
 import {
-    dpsFontPx, iconPx, itemKey, orderedKeys, type CcSection, type CooldownSection, type PanelBg, type SectionId,
+    dpsFontPx, iconPx, itemKey, orderedKeys, textPx, type CcSection, type CooldownSection, type PanelBg, type SectionId,
 } from '@/lib/overlaySections';
 import type { Layouts } from '@/lib/overlayGroups';
 import { parseFrame, sectionTitle, type SectionLook } from '@/lib/overlayFrames';
@@ -56,6 +56,12 @@ export function fontPxOf(s: OverlaySettings, c: ComponentDef): number {
     if (c.kind === 'dps') return dpsFontPx(s.dpsLook);
     if (c.kind === 'alerts') return FONT_PX[s.alerts.fontSize];
     return 14;
+}
+
+/** Text size of a section or pulled frame; dps and alerts keep their own fonts. */
+export function textPxOf(s: OverlaySettings, c: ComponentDef, layouts: Layouts): number | undefined {
+    if (c.kind === 'dps' || c.kind === 'alerts') return undefined;
+    return textPx(frameLook(s, c, layouts));
 }
 
 export function tileLook(s: OverlaySettings, c: ComponentDef, layouts: Layouts): { px: number; dim: number } {

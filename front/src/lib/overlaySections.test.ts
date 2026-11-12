@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
     defaultCcSection, defaultCooldownSection, defaultDpsLook, defaultGeneral, defaultCcItem, defaultCooldownItem,
     iconPx, dpsFontPx, orderedKeys, normalizeCcSection, normalizeCooldownSection, normalizeGeneral, normalizeDpsLook,
-    itemKey, unitId,
+    itemKey, unitId, textPx, normalizeCcLook, normalizeCooldownLook,
 } from './overlaySections';
 
 describe('defaults', () => {
@@ -10,7 +10,7 @@ describe('defaults', () => {
         const s = defaultCcSection('ccBoss');
         expect(s.items.map(i => [i.id, i.label])).toEqual([[1164, '減物保'], [1165, '減魔保'], [1166, '增傷'], [323, '憤衝']]);
         expect(s.items[3].icon).toEqual({ kind: 'skill', id: 20018 });
-        expect(s.look).toEqual({ size: 'm', px: 36, names: 'label', dim: 40, bg: null, title: false, titleText: '', arrange: 'flow', gap: 'keep' });
+        expect(s.look).toEqual({ size: 'm', px: 36, text: 'm', tpx: 12, names: 'label', dim: 40, bg: null, title: false, titleText: '', arrange: 'flow', gap: 'keep' });
     });
     it('ccSelf and ccParty', () => {
         const s = defaultCcSection('ccSelf');
@@ -25,14 +25,14 @@ describe('defaults', () => {
     });
     it('burst', () => {
         const s = defaultCcSection('burst');
-        expect(s.look).toEqual({ size: 'c', px: 52, names: 'label', dim: 100, bg: null, title: false, titleText: '', arrange: 'flow', gap: 'keep' });
+        expect(s.look).toEqual({ size: 'c', px: 52, text: 'm', tpx: 12, names: 'label', dim: 100, bg: null, title: false, titleText: '', arrange: 'flow', gap: 'keep' });
         expect(s.items.map(i => [i.id, i.label, i.warnHl, i.goneHl])).toEqual([[516, '覺醒', false, false], [900206, '戰吼', false, false]]);
     });
     it('cooldown, dps, general', () => {
         const c = defaultCooldownSection();
         expect(c.items.map(i => [i.skillId, i.cooldownSec, i.ccId, i.who])).toEqual([
             [59005, 180, 803, 'party'], [59143, 60, 0, 'party'], [59123, 30, 0, 'party']]);
-        expect(c.look).toEqual({ size: 'm', px: 36, names: true, bg: null, title: false, titleText: '', arrange: 'flow', gap: 'keep' });
+        expect(c.look).toEqual({ size: 'm', px: 36, text: 'm', tpx: 12, names: true, bg: null, title: false, titleText: '', arrange: 'flow', gap: 'keep' });
         expect(defaultDpsLook().top).toEqual({ boss: true, hpPct: true, hpLeft: false, time: true, partyDps: true });
         expect(defaultDpsLook().bg).toEqual({ color: '#0e1013', alpha: 25 });
         expect(defaultGeneral()).toEqual({ bg: { color: '#0e1013', alpha: 0 }, warn: '#e8a33d', gone: '#e5534b', ok: '#5cc26a' });
@@ -50,6 +50,26 @@ describe('helpers', () => {
         expect(iconPx({ size: 'l', px: 60 })).toBe(44);
         expect(dpsFontPx({ ...defaultDpsLook(), font: 's' })).toBe(12);
         expect(dpsFontPx({ ...defaultDpsLook(), font: 'c', fpx: 20 })).toBe(20);
+    });
+    it('xl icon size and text sizes', () => {
+        expect(iconPx({ size: 'xl', px: 60 })).toBe(56);
+        expect(dpsFontPx({ ...defaultDpsLook(), font: 'xl' })).toBe(20);
+        expect(textPx({ text: 's', tpx: 20 })).toBe(10);
+        expect(textPx({ text: 'm', tpx: 20 })).toBe(12);
+        expect(textPx({ text: 'l', tpx: 20 })).toBe(14);
+        expect(textPx({ text: 'xl', tpx: 20 })).toBe(17);
+        expect(textPx({ text: 'c', tpx: 20 })).toBe(20);
+    });
+    it('normalizes text size and xl', () => {
+        const d = defaultCcSection('ccBoss').look;
+        expect(d).toMatchObject({ text: 'm', tpx: 12 });
+        expect(defaultCooldownSection().look).toMatchObject({ text: 'm', tpx: 12 });
+        expect(normalizeCcLook({}, d)).toMatchObject({ text: 'm', tpx: 12, size: 'm' });
+        expect(normalizeCcLook({ size: 'xl', text: 'xl', tpx: 3 }, d)).toMatchObject({ size: 'xl', text: 'xl', tpx: 9 });
+        expect(normalizeCcLook({ text: 'bogus', tpx: 99 }, d)).toMatchObject({ text: 'm', tpx: 24 });
+        const cd = defaultCooldownSection().look;
+        expect(normalizeCooldownLook({ size: 'xl', text: 'c', tpx: 15 }, cd)).toMatchObject({ size: 'xl', text: 'c', tpx: 15 });
+        expect(normalizeCooldownLook({ text: 7 }, cd)).toMatchObject({ text: 'm', tpx: 12 });
     });
     it('orderedKeys', () => {
         expect(orderedKeys(['1', '2', '3'], ['3', 'x', '1', '3'])).toEqual(['3', '1', '2']);

@@ -23,8 +23,6 @@ html, html body, html #app {
     --ov-edit: var(--c-share);
     --ov-guide: var(--c-accent);
     --ov-badge: max(26px, calc(26px * var(--ov-inv, 1) * 0.85));
-    --ov-handle-w: max(14px, calc(14px * var(--ov-inv, 1) * 0.8));
-    --ov-handle-h: max(40px, calc(40px * var(--ov-inv, 1) * 0.7));
 }
 
 .ov-frame {
@@ -161,25 +159,6 @@ html, html body, html #app {
     line-height: 1;
     cursor: pointer;
     text-shadow: none;
-}
-
-.ov-handle {
-    position: absolute;
-    top: 50%;
-    width: var(--ov-handle-w);
-    height: var(--ov-handle-h);
-    margin-top: calc(var(--ov-handle-h) / -2);
-    border-radius: 4px;
-    background: var(--ov-edit);
-    cursor: ew-resize;
-}
-
-.ov-handle::after {
-    content: "";
-    position: absolute;
-    inset: 30% 35%;
-    border-left: 1.5px solid var(--c-bg-deep);
-    border-right: 1.5px solid var(--c-bg-deep);
 }
 
 .ov-sample {
@@ -332,7 +311,7 @@ html, html body, html #app {
     font-variant-numeric: tabular-nums;
 }
 .ov-sec-num { color: var(--c-number); }
-.ov-title { font-size: 12px; font-weight: 700; color: #fff; opacity: 0.85; line-height: 1.4; margin-bottom: 2px; white-space: nowrap; }
+.ov-title { font-size: var(--ov-text, 12px); font-weight: 700; color: #fff; opacity: 0.85; line-height: 1.4; margin-bottom: 2px; white-space: nowrap; }
 .ov-tiles { display: flex; flex-wrap: wrap; gap: 4px 6px; }
 .ov-members { position: relative; display: grid; gap: 4px 6px; align-items: start; }
 .ov-col-bar {
@@ -341,7 +320,7 @@ html, html body, html #app {
 }
 .ov-ghost-col { display: flex; flex-direction: column; gap: 4px; }
 .ov-member-row { display: contents; }
-.ov-member-name { max-width: 6em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #fff; opacity: 0.85; }
+.ov-member-name { font-size: calc(var(--ov-text, 12px) + 2px); max-width: 6em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #fff; opacity: 0.85; }
 .ov-tile { display: flex; flex-direction: column; align-items: center; gap: 1px; }
 .ov-tile .ov-ico {
     position: relative; box-sizing: border-box; border: 2px solid transparent; border-radius: 3px;
@@ -353,7 +332,7 @@ html, html body, html #app {
     font-size: 12px; line-height: 1.15; background: rgba(0, 0, 0, 0.65); color: #fff;
 }
 .ov-tile .ov-lbl {
-    font-size: 11px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: clip; text-align: center;
+    font-size: calc(var(--ov-text, 12px) - 1px); line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: clip; text-align: center;
 }
 .ov-tile.editing { cursor: grab; }
 

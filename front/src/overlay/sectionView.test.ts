@@ -3,7 +3,7 @@ import { defaultOverlaySettings } from '@/lib/overlaySettings';
 import type { ComponentDef } from '@/lib/overlayComponents';
 import { frameField, type FrameRec } from '@/lib/overlayFrames';
 import type { TileVM } from '@/lib/overlayTiles';
-import { bgOf, frameLook, frameTitle, labelOf, tileLook } from './sectionView';
+import { bgOf, frameLook, frameTitle, labelOf, textPxOf, tileLook } from './sectionView';
 
 const lay = { enabled: true, anchor: 'tl', x: 0, y: 0, width: 100, maxRows: 1 } as const;
 const withRec = (id: string, r: Partial<FrameRec>) => ({
@@ -27,6 +27,19 @@ describe('frameLook', () => {
         const before = tileLook(s, grp(), l).px;
         s.ccParty.look = { ...s.ccParty.look, size: 'l' };
         expect(tileLook(s, grp(), l).px).not.toBe(before);
+    });
+});
+
+describe('textPxOf', () => {
+    it('follows the section look, a pulled frame own look wins, dps/alerts have none', () => {
+        const s = defaultOverlaySettings();
+        expect(textPxOf(s, sec(), undefined)).toBe(12);
+        s.ccParty.look = { ...s.ccParty.look, text: 'xl' };
+        expect(textPxOf(s, sec(), undefined)).toBe(17);
+        const own = { ...s.ccParty.look, text: 'c' as const, tpx: 20 };
+        expect(textPxOf(s, grp(), withRec('ccParty-g1', { look: own }))).toBe(20);
+        expect(textPxOf(s, grp(), withRec('ccParty-g1', { look: null }))).toBe(17);
+        expect(textPxOf(s, { id: 'dps', name: 'd', kind: 'dps' } as ComponentDef, undefined)).toBeUndefined();
     });
 });
 

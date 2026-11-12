@@ -30,6 +30,7 @@ import { actorManager, condNameMap, dcManager } from '@/store';
 import type { eventBase } from '@/protocols';
 import OverlayApp from './OverlayApp.vue';
 import { appear, hit, cc, BOSS_RACE } from './testSupport';
+import { defaultCcSection } from '@/lib/overlaySections';
 
 const fire = (name: string, data: unknown) => {
     (bridge.handlers.get(name) ?? []).forEach(h => h(data));
@@ -639,39 +640,40 @@ describe('OverlayApp', () => {
         expect(sets()[0].layout).toMatchObject({ anchor: 'tr', x: 24 + 300 - 200, y: 24 });
     });
 
-    it('dragging the width handle of a left-anchored component widens it on the right', async () => {
+    it('frames have no width handle in edit mode', async () => {
+        await mountApp();
+        fire('overlay:state', state(false));
+        await nextTick();
+        expect(w!.find('[data-handle]').exists()).toBe(false);
+        expect(w!.find('.ov-handle').exists()).toBe(false);
+    });
+
+    it('a stored width is kept when the frame is moved', async () => {
         await mountApp();
         fire('overlay:state', state(false));
         await nextTick();
         const c = comp('ccBoss');
-        await c.find('[data-handle]').trigger('pointerdown', ptr(324, 70));
-        await c.trigger('pointermove', ptr(374, 70, { altKey: true }));
-        expect(sets()).toHaveLength(0);
-        await c.trigger('pointerup', ptr(374, 70, { altKey: true }));
-        expect(sets()[0].layout).toMatchObject({ anchor: 'tl', x: 24, y: 24, width: 350 });
+        await c.trigger('pointerdown', ptr(100, 70));
+        await c.trigger('pointermove', ptr(140, 70, { altKey: true }));
+        await c.trigger('pointerup', ptr(140, 70, { altKey: true }));
+        expect(sets()[0].layout).toMatchObject({ width: 300 });
     });
 
-    it('width is limited to 120-800', async () => {
+    it('the text size is a per-frame CSS variable; a pulled frame own look affects only itself', async () => {
         await mountApp();
-        fire('overlay:state', state(false));
+        fire('overlay:state', state(false, { 'ccBoss-1166': UNIT }));
+        fire('overlay:settings', { ccBoss: { look: { text: 'l' } } });
         await nextTick();
-        const c = comp('ccBoss');
-        await c.find('[data-handle]').trigger('pointerdown', ptr(324, 70));
-        await c.trigger('pointermove', ptr(-900, 70, { altKey: true }));
-        await c.trigger('pointerup', ptr(-900, 70, { altKey: true }));
-        expect(sets()[0].layout.width).toBe(120);
-    });
-
-    it('a right-anchored component has its handle on the left and keeps its right edge', async () => {
-        await mountApp();
-        fire('overlay:state', state(false));
+        const px = (id: string) => (comp(id).element as HTMLElement).style.getPropertyValue('--ov-text');
+        expect(px('ccBoss')).toBe('14px');
+        expect(px('ccBoss-1166')).toBe('14px');
+        expect(px('ccSelf')).toBe('12px');
+        expect(px('dps')).toBe('');
+        const rec = { n: 1, name: 'x', titleOn: null, look: { ...defaultCcSection('ccBoss').look, text: 'c', tpx: 20 } };
+        fire('overlay:state', state(false, { 'ccBoss-1166': { ...UNIT, frame: JSON.stringify(rec) } }));
         await nextTick();
-        const c = comp('dps');
-        expect(c.find('[data-handle]').attributes('data-side')).toBe('left');
-        await c.find('[data-handle]').trigger('pointerdown', ptr(1000, 70));
-        await c.trigger('pointermove', ptr(960, 70, { altKey: true }));
-        await c.trigger('pointerup', ptr(960, 70, { altKey: true }));
-        expect(sets()[0].layout).toMatchObject({ anchor: 'tr', x: -24, width: 300 });
+        expect(px('ccBoss-1166')).toBe('20px');
+        expect(px('ccBoss')).toBe('14px');
     });
 
     it('the toggle enables a disabled component', async () => {

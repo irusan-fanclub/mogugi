@@ -46,6 +46,17 @@ describe('GeneralSettings', () => {
     });
 });
 
+describe('SizeField options', () => {
+    it('offers 特大 when the presets have xl, text presets give px', async () => {
+        w = mount(SizeField, { props: { presets: ICON_SIZE_PX, min: 16, max: 96, modelValue: { size: 'xl', px: 52 } } });
+        expect(w.findAll('[role="radio"]').map(r => r.text())).toEqual(['小', '中', '大', '特大', '自訂']);
+        expect((w.get('[data-size-px]').element as HTMLInputElement).value).toBe('56');
+        w.unmount();
+        w = mount(SizeField, { props: { presets: { s: 1, m: 2, l: 3 }, min: 1, max: 9, modelValue: { size: 'm', px: 5 } } });
+        expect(w.findAll('[role="radio"]').map(r => r.text())).toEqual(['小', '中', '大', '自訂']);
+    });
+});
+
 describe('SizeField', () => {
     it('a preset shows its px disabled; 自訂 starts from it and enables the input', async () => {
         w = mount(SizeField, {

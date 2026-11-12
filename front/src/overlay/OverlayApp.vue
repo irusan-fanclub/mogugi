@@ -15,7 +15,7 @@ import { frameOfKey, planPlace, planTakeOut, type LayoutOp, type PlaceTarget } f
 import { sampleAlerts, sampleDps, sampleMemberTiles, sampleTiles } from './sampleData';
 import {
     bgOf, fontPxOf, frameLook, frameTitle, gateOpen, inOrder, itemEnabled, itemName, labelOf, sectionOf, sectionOrder,
-    tileLook, tilesFor,
+    textPxOf, tileLook, tilesFor,
 } from './sectionView';
 import ComponentFrame from './ComponentFrame.vue';
 import LayoutEditor from './LayoutEditor.vue';
@@ -200,7 +200,7 @@ function tileDown(sec: SectionId, key: string, e: PointerEvent) {
 
 const pulledDrag = () => {
     const d = drag.value;
-    const c = d && d.mode === 'move' && d.moved ? compOf(d.id) : undefined;
+    const c = d && d.moved ? compOf(d.id) : undefined;
     return c && isPulled(c) ? c : null;
 };
 const spotAt = (c: ComponentDef, e: PointerEvent) =>
@@ -307,7 +307,7 @@ const stageStyle = computed(() => ({
     <div class="ov-stage" :style="stageStyle">
       <LayoutEditor
         :active="editing" :viewport="viewport" :scale="scale" :comps="editorComps"
-        :drag-id="drag?.id ?? null" :drag-mode="drag?.mode ?? null" :cell="drag?.cell ?? null"
+        :drag-id="drag?.id ?? null" :drag-moving="!!drag" :cell="drag?.cell ?? null"
         :guides="drag?.guides ?? []" :hotkey="state?.hotkey ?? ''"
         @lock="lock" @reset="reset"
       >
@@ -316,11 +316,11 @@ const stageStyle = computed(() => ({
           :id="c.id" :name="c.name"
           :left="rects[c.id].l" :top="rects[c.id].t" :width="rects[c.id].w"
           :anchor="layoutFor(c.id).anchor" :enabled="layoutFor(c.id).enabled"
-          :bg="bgOf(settings, c, layouts)" :font-px="fontPxOf(settings, c)"
+          :bg="bgOf(settings, c, layouts)" :font-px="fontPxOf(settings, c)" :text-px="textPxOf(settings, c, layouts)"
           :editing="editing" :sample="useSample(c)" :back="isPulled(c)"
           :clamped="rects[c.id].clamped" :dragging="drag?.id === c.id"
           :docked="!!hostOf(c.id)" :dock-target="drag?.dock === c.id"
-          @down="(e, mode) => start(c.id, mode, e)" @move="frameMove" @up="frameUp" @cancel="frameCancel"
+          @down="e => start(c.id, e)" @move="frameMove" @up="frameUp" @cancel="frameCancel"
           @anchor="cycleAnchor(c.id)" @undock="undock(c.id)" @toggle="toggle(c.id)" @height="h => (heights[c.id] = h)"
           @back="recallFrame(c)"
         >

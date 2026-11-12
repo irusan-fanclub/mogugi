@@ -1,16 +1,19 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { SizeChoice } from '@/lib/overlaySections';
+import type { SizeChoice, SizePresets } from '@/lib/overlaySections';
 import DSegmented from '../../ui/DSegmented.vue';
 
 export interface SizeValue { size: SizeChoice; px: number }
-const props = defineProps<{ presets: Record<'s' | 'm' | 'l', number>; min: number; max: number }>();
+const props = defineProps<{ presets: SizePresets; min: number; max: number }>();
 const model = defineModel<SizeValue>({ required: true });
 
-const OPTIONS: { value: SizeChoice; label: string }[] = [
-    { value: 's', label: '小' }, { value: 'm', label: '中' }, { value: 'l', label: '大' }, { value: 'c', label: '自訂' },
+const ALL: { value: SizeChoice; label: string }[] = [
+    { value: 's', label: '小' }, { value: 'm', label: '中' }, { value: 'l', label: '大' },
+    { value: 'xl', label: '特大' }, { value: 'c', label: '自訂' },
 ];
-const current = computed(() => model.value.size === 'c' ? model.value.px : props.presets[model.value.size]);
+// A preset the field has no px for is not offered.
+const OPTIONS = computed(() => ALL.filter(o => o.value === 'c' || props.presets[o.value] !== undefined));
+const current = computed(() => model.value.size === 'c' ? model.value.px : props.presets[model.value.size] ?? model.value.px);
 
 // 自訂 starts from the size shown now.
 const pick = (size: SizeChoice) => { model.value = { size, px: size === 'c' ? current.value : model.value.px }; };

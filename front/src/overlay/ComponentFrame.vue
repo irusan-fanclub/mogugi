@@ -12,6 +12,8 @@ const props = defineProps<{
     /** A ready CSS colour, e.g. rgba(). */
     bg: string;
     fontPx: number;
+    /** Base text size of a section frame, exposed as --ov-text; undefined for dps/alerts. */
+    textPx?: number;
     editing: boolean;
     enabled: boolean;
     sample: boolean;
@@ -23,7 +25,7 @@ const props = defineProps<{
     back?: boolean;
 }>();
 const emit = defineEmits<{
-    down: [e: PointerEvent, mode: 'move' | 'width'];
+    down: [e: PointerEvent];
     move: [e: PointerEvent];
     up: [e: PointerEvent];
     cancel: [e: PointerEvent];
@@ -51,15 +53,14 @@ onBeforeUnmount(() => ro?.disconnect());
 const GLYPH: Record<Anchor, string> = { tl: '↖', tr: '↗', bl: '↙', br: '↘', center: '◎' };
 const NAME: Record<Anchor, string> = { tl: '左上', tr: '右上', bl: '左下', br: '右下', center: '中心' };
 
-function down(e: PointerEvent, mode: 'move' | 'width') {
+function down(e: PointerEvent) {
     if (!props.editing || e.button !== 0) return;
     e.preventDefault?.();
     e.stopPropagation?.();
     try { el.value?.setPointerCapture?.(e.pointerId); } catch { /* the drag still works without capture */ }
-    emit('down', e, mode);
+    emit('down', e);
 }
 
-const handleLeft = () => !props.docked && (props.anchor === 'tr' || props.anchor === 'br');
 const badgePos = () => props.docked
     ? { left: 'calc(var(--ov-badge) / -2)', top: 'calc(var(--ov-badge) / -2)' }
     : props.anchor === 'center'
@@ -79,10 +80,11 @@ const badgePos = () => props.docked
     :style="{
       left: left + 'px', top: top + 'px', width: width + 'px',
       fontSize: fontPx + 'px',
+      ...(textPx === undefined ? {} : { '--ov-text': textPx + 'px' }),
       background: bg,
       pointerEvents: editing ? 'auto' : 'none',
     }"
-    @pointerdown="down($event, 'move')"
+    @pointerdown="down($event)"
     @pointermove="emit('move', $event)"
     @pointerup="emit('up', $event)"
     @pointercancel="emit('cancel', $event)"
@@ -109,11 +111,6 @@ const badgePos = () => props.docked
         v-else type="button" class="ov-badge" data-anchor-badge title="切換錨點" :style="badgePos()"
         @pointerdown.stop @click.stop="emit('anchor')"
       >{{ GLYPH[anchor] }}</button>
-      <div
-        class="ov-handle" data-handle :data-side="handleLeft() ? 'left' : 'right'" title="拉寬"
-        :style="handleLeft() ? { left: 'calc(var(--ov-handle-w) / -2)' } : { right: 'calc(var(--ov-handle-w) / -2)' }"
-        @pointerdown="down($event, 'width')"
-      />
     </template>
   </div>
 </template>
