@@ -3,7 +3,9 @@ import { itemKey, type CcSection, type CooldownSection } from '@/lib/overlaySect
 import type { TileVM } from '@/lib/overlayTiles';
 import type { AlertItem } from './useOverlayData';
 
-const SAMPLE_HOLDER = '範例';
+// Taken from the 隨機名稱 word bank (FUNNY_NAMES) so previews never look like real players.
+export const SAMPLE_NAMES = ['蘑菇雞', '珍珠奶茶', '喵喵拳', '滷肉飯', '跳跳虎', '小籠包', '懶懶熊', '星閃閃'];
+const SAMPLE_HOLDER = SAMPLE_NAMES[0];
 
 type SampleItem = CcSection['items'][number] | CooldownSection['items'][number];
 
@@ -34,12 +36,11 @@ export function sampleMemberTiles(sec: CcSection | CooldownSection, keys: readon
     for (const key of keys) {
         const item = sec.items.find(i => itemKey(i) === key);
         if (!item?.enabled) continue;
-        for (let n = 1; n <= 3; n++) out.push(sampleTile(sec, item, `s${n}`, `${SAMPLE_HOLDER}${n}`));
+        for (let n = 1; n <= 3; n++) out.push(sampleTile(sec, item, `s${n}`, SAMPLE_NAMES[n - 1]));
     }
     return out;
 }
 
-const NAMES = ['莉莉安', '阿福', '月光下的小提琴手', 'xXDragonSlayerXx', '木棉', '夜鶯', '白狐', '星河'];
 const TOTALS = [4.1e6, 3.4e6, 2.9e6, 2.2e6, 1.9e6, 1.4e6, 1.1e6, 0.8e6];
 
 export function sampleDps(): DpsOverlayVM {
@@ -49,7 +50,7 @@ export function sampleDps(): DpsOverlayVM {
         fightSec: 83,
         partyDps: 48200,
         rows: TOTALS.map((t, i) => ({
-            id: `s${i}`, name: NAMES[i], dps: t / 83, total: t, share: t / sum, isSelf: i === 1,
+            id: `s${i}`, name: SAMPLE_NAMES[i], dps: t / 83, total: t, share: t / sum, isSelf: i === 1,
         })),
     };
 }

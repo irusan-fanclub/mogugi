@@ -27,7 +27,7 @@ const barLine = computed(() => (props.insertAt === null ? 0 : Math.min(props.ins
 <template>
   <div class="ov-members" :style="{ gridTemplateColumns: shownCols.length ? `max-content repeat(${shownCols.length}, max-content)` : 'max-content' }">
     <div v-for="r in rows" :key="r.holderId" class="ov-member-row" data-member-row>
-      <span class="ov-member-name">{{ r.name }}</span>
+      <span class="ov-member-name" :style="{ lineHeight: `max(${px}px, 1.2em)` }">{{ r.name }}</span>
       <template v-for="(c, i) in cellsOf(r)" :key="i">
         <Tile
           v-if="c" :tile="c" :px="px" :dim="dim" :editing="editing" :label="labelOf(c, look, true)" data-cell

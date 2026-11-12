@@ -119,7 +119,7 @@ const winTab = ref('overlay');
         </div>
         <div v-else class="stage win" :style="stageStyle">
           <div class="desktop-app">
-            <TitleBar variant="main" :connected="true" owner-name="阿福" license-user="demo" />
+            <TitleBar variant="main" :connected="true" owner-name="珍珠奶茶" license-user="demo" />
             <TabBar v-model="winTab" :tabs="TABS" :pinned="PINNED" />
             <main class="content">
               <OverlayTab v-if="winTab === 'overlay'" />

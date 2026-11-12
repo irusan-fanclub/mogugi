@@ -380,7 +380,7 @@ describe('OverlayApp', () => {
             it('draws the grid with three sample teammates when nobody is live', async () => {
                 await edit();
                 const rows = comp('ccParty').findAll('[data-member-row]');
-                expect(rows.map(r => r.get('.ov-member-name').text())).toEqual(['範例1', '範例2', '範例3']);
+                expect(rows.map(r => r.get('.ov-member-name').text())).toEqual(['蘑菇雞', '珍珠奶茶', '喵喵拳']);
             });
 
             it('lifting a tile takes its whole merged column out and shows the bar', async () => {

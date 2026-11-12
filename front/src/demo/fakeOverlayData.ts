@@ -7,7 +7,7 @@ import { itemKey, type SectionId } from '@/lib/overlaySections';
 import type { TileVM } from '@/lib/overlayTiles';
 import { overlaySettings } from '../desktop/overlay/overlayLink';
 import { useOverlayState } from '../desktop/overlay/useOverlayState';
-import { sampleAlerts, sampleDps } from '../overlay/sampleData';
+import { SAMPLE_NAMES, sampleAlerts, sampleDps } from '../overlay/sampleData';
 
 export interface AlertItem {
     key: number;
@@ -41,8 +41,8 @@ const noTiles = (): Record<SectionId, Map<string, TileVM[]>> => ({
 
 // Four teammates with different arcana, so 隊伍 CC shows its per-teammate rows.
 const MATES = [
-    { id: 'm1', name: '莉莉安', arcana: 1 }, { id: 'm2', name: '阿福', arcana: 3 },
-    { id: 'm3', name: '月光', arcana: 8 }, { id: 'm4', name: '木棉', arcana: 2 },
+    { id: 'm1', name: SAMPLE_NAMES[0], arcana: 1 }, { id: 'm2', name: SAMPLE_NAMES[1], arcana: 3 },
+    { id: 'm3', name: SAMPLE_NAMES[2], arcana: 8 }, { id: 'm4', name: SAMPLE_NAMES[3], arcana: 2 },
 ];
 function partyTiles(s: OverlaySettings): Map<string, TileVM[]> {
     const out = new Map<string, TileVM[]>();
