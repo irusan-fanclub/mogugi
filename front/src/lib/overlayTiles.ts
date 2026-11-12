@@ -70,7 +70,9 @@ export function buildCcTiles(sec: CcSection, i: {
                 tiles.push({ ...tile, icon, sec: secText, state: 'ok', hl: false, faint: true });
                 continue;
             }
-            const safe = item.renew > 0 && !!activeCondition(conds, item.renew, i.now);
+            // The game renews only if the renew CC is still on at the buff's expiry, so it must outlast the buff.
+            const renew = item.renew > 0 ? activeCondition(conds, item.renew, i.now) : undefined;
+            const safe = !!renew && (renew.DisableAt === 0 || renew.DisableAt >= cond.DisableAt);
             tiles.push({ ...tile, icon, sec: secText, state: safe ? 'safe' : 'warn', hl: item.warnHl, faint: false });
         }
         out.set(key, tiles);

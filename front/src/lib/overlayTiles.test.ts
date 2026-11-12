@@ -52,6 +52,16 @@ describe('buildCcTiles', () => {
         const t = build(s, { A: actor(cond(900, NOW + 20), cond(1124, 0)) }).get('900')![0];
         expect(t).toMatchObject({ state: 'safe', hl: true });
     });
+    it('safe when the renew cc outlasts the buff', () => {
+        const s = sec([item({ renew: 1124 })]);
+        const t = build(s, { A: actor(cond(900, NOW + 20), cond(1124, NOW + 20)) }).get('900')![0];
+        expect(t.state).toBe('safe');
+    });
+    it('warn when the renew cc ends before the buff does', () => {
+        const s = sec([item({ renew: 1124 })]);
+        const t = build(s, { A: actor(cond(900, NOW + 20), cond(1124, NOW + 9)) }).get('900')![0];
+        expect(t.state).toBe('warn');
+    });
     it('warn when the renew cc is on someone else', () => {
         const s = sec([item({ renew: 1124 })]);
         const t = build(s, { A: actor(cond(900, NOW + 20)), B: actor(cond(1124, 0)) }).get('900')![0];
