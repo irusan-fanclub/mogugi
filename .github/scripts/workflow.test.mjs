@@ -23,7 +23,22 @@ test('no webhook or zip attachment remains', () => {
 
 test('announce posts to supermogugi with the release key', () => {
   assert.match(wf, /mogugi\/release/);
-  assert.match(wf, /X-Release-Key: \$\{\{ secrets\.MOGUGI_RELEASE_KEY \}\}/);
+  const envKeys = wf.match(/RELEASE_KEY: \$\{\{ secrets\.MOGUGI_RELEASE_KEY \}\}/g) ?? [];
+  assert.equal(envKeys.length, 2);
+  const headers = wf.match(/-H "X-Release-Key: \$RELEASE_KEY"/g) ?? [];
+  assert.equal(headers.length, 2);
+  assert.doesNotMatch(wf, /X-Release-Key: \$\{\{/);
+  assert.equal((wf.match(/--fail-with-body/g) ?? []).length, 2);
+  assert.equal((wf.match(/--data-binary @-/g) ?? []).length, 2);
+});
+
+test('edit jobs for one tag run serially', () => {
+  assert.match(editJob, /group: announce-edit-\$\{\{ github\.event\.release\.tag_name \}\}/);
+  assert.match(editJob, /cancel-in-progress: false/);
+});
+
+test('publish with no downloads fails before posting', () => {
+  assert.match(wf, /::error::沒有可下載的檔案（R2 鏡像與 release 附件都沒有 exe\/zip）/);
 });
 
 test('edit job sends edited without downloads', () => {

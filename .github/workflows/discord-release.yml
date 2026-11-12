@@ -126,7 +126,12 @@ jobs:
           ZIP_URL: ${{ steps.mirror.outputs.zip_url }}
           EXE_FILE: ${{ steps.mirror.outputs.exe_file }}
           ZIP_FILE: ${{ steps.mirror.outputs.zip_file }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_KEY: ${{ secrets.MOGUGI_RELEASE_KEY }}
         run: |
+          # Re-fetch so an edit made during the mirror step is not lost.
+          gh release view "$TAG" --repo "${{ github.repository }}" \
+            --json name,body,url,tagName,assets > _rel.json
           dl='[]'
           if [ "$ACTION" = "published" ]; then
             if [ -n "$EXE_URL$ZIP_URL" ]; then
@@ -140,18 +145,22 @@ jobs:
               dl=$(jq -c '[.assets[]? | select(.name | endswith(".exe") or endswith(".zip"))
                 | {name, url}] | .[:5]' _rel.json)
             fi
+            if [ "$dl" = '[]' ]; then
+              echo "::error::沒有可下載的檔案（R2 鏡像與 release 附件都沒有 exe/zip）"
+              exit 1
+            fi
           fi
 
-          payload=$(jq -n --arg action "$ACTION" --arg tag "$TAG" \
+          jq -n --arg action "$ACTION" --arg tag "$TAG" \
             --argjson dl "$dl" --slurpfile rel _rel.json '
             {action: $action, tag: $tag,
              name: (if ($rel[0].name // "") == "" then $tag else $rel[0].name end),
              body: ($rel[0].body // ""), url: $rel[0].url}
-            | if $action == "published" then . + {downloads: $dl} else . end')
-
-          curl -fsS -m 30 -X POST https://mabinogi.elden-mogu.com/mogugi/release \
-            -H "X-Release-Key: ${{ secrets.MOGUGI_RELEASE_KEY }}" \
-            -H 'Content-Type: application/json' -d "$payload"
+            | if $action == "published" then . + {downloads: $dl} else . end' \
+            | curl -sS --fail-with-body -m 30 -X POST \
+              https://mabinogi.elden-mogu.com/mogugi/release \
+              -H "X-Release-Key: $RELEASE_KEY" \
+              -H 'Content-Type: application/json' --data-binary @-
 
       - name: Alert the ops channel
         if: ${{ failure() }}
@@ -172,21 +181,26 @@ jobs:
     runs-on: ubuntu-latest
     if: >-
       ${{ github.event_name == 'release' && github.event.action == 'edited' && github.event.release.prerelease == false }}
+    concurrency:
+      group: announce-edit-${{ github.event.release.tag_name }}
+      cancel-in-progress: false
     steps:
       - name: Announce the edit via supermogugi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.release.tag_name }}
+          RELEASE_KEY: ${{ secrets.MOGUGI_RELEASE_KEY }}
         run: |
           gh release view "$TAG" --repo "${{ github.repository }}" \
             --json name,body,url > _rel.json
-          payload=$(jq -n --arg tag "$TAG" --slurpfile rel _rel.json '
+          jq -n --arg tag "$TAG" --slurpfile rel _rel.json '
             {action: "edited", tag: $tag,
              name: (if ($rel[0].name // "") == "" then $tag else $rel[0].name end),
-             body: ($rel[0].body // ""), url: $rel[0].url}')
-          curl -fsS -m 30 -X POST https://mabinogi.elden-mogu.com/mogugi/release \
-            -H "X-Release-Key: ${{ secrets.MOGUGI_RELEASE_KEY }}" \
-            -H 'Content-Type: application/json' -d "$payload"
+             body: ($rel[0].body // ""), url: $rel[0].url}' \
+            | curl -sS --fail-with-body -m 30 -X POST \
+              https://mabinogi.elden-mogu.com/mogugi/release \
+              -H "X-Release-Key: $RELEASE_KEY" \
+              -H 'Content-Type: application/json' --data-binary @-
 
       - name: Alert the ops channel
         if: ${{ failure() }}
