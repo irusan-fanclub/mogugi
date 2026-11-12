@@ -47,6 +47,23 @@ func probeMogugi(port int, timeout time.Duration) (instanceInfo, bool) {
 	return info, true
 }
 
+// RunningInstance is another mogugi answering on the auto port range.
+type RunningInstance struct {
+	Version string
+	PID     int
+}
+
+// FindRunningInstance probes the auto port range for a mogugi other than this
+// process. Every version since v0.6.0 answers /api/instance there.
+func FindRunningInstance() (RunningInstance, bool) {
+	for p := autoPortMin; p <= autoPortMax; p++ {
+		if info, ok := probeMogugi(p, 300*time.Millisecond); ok && info.PID != os.Getpid() {
+			return RunningInstance{Version: info.Version, PID: info.PID}, true
+		}
+	}
+	return RunningInstance{}, false
+}
+
 // candidatePorts is the bind order: the auto range, or just the configured port.
 func candidatePorts(cfgPort int, auto bool) []int {
 	if !auto {

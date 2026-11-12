@@ -20,6 +20,8 @@ func main() {
 		os.Exit(code)
 	}
 
+	// Another mogugi exe: wait in a small window until the player quits it.
+	desktop.WaitForOtherInstance(args)
 	// A second instance exits inside NewShell, before any file is written.
 	shell := desktop.NewShell()
 	app.InitRuntime()
