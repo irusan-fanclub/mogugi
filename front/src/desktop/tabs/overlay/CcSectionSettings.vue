@@ -4,22 +4,20 @@ import { condNameMap, region, skillNameMap } from '@/store';
 import { ccIconUrl, ccName } from '@/lib/util';
 import { COMPONENT_NAMES } from '@/lib/overlayComponents';
 import {
-    defaultCcItem, defaultCcSection, ICON_SIZE_PX, itemKey, MUSIC_CC,
-    type CcItem, type CcNames, type CcSection, type CcSectionId, type IconRef,
+    defaultCcItem, defaultCcSection, itemKey, MUSIC_CC,
+    type CcItem, type CcLook, type CcSection, type CcSectionId, type IconRef,
 } from '@/lib/overlaySections';
 import { itemName } from '@/overlay/sectionView';
 import { overlaySettings, updateOverlaySettings } from '../../overlay/overlayLink';
 import DButton from '../../ui/DButton.vue';
 import DCheckbox from '../../ui/DCheckbox.vue';
-import DSegmented from '../../ui/DSegmented.vue';
 import ArcanaChips from './ArcanaChips.vue';
-import IconButton from './IconButton.vue';
+import FrameBlock from './FrameBlock.vue';
+import FrameLookFields from './FrameLookFields.vue';
 import ItemPicker, { type PickerItem, type PickerMark } from './ItemPicker.vue';
 import ItemRow from './ItemRow.vue';
-import PanelBgField from './PanelBgField.vue';
-import SizeField, { type SizeValue } from './SizeField.vue';
 import SoonChecks from './SoonChecks.vue';
-import { useSectionLayout } from './sectionLayout';
+import { useFrameBlocks, useSectionLayout } from './sectionLayout';
 
 const props = defineProps<{ section: CcSectionId }>();
 const LABEL_MAX = 6;
@@ -33,14 +31,14 @@ const setItem = (id: number, mut: (it: CcItem) => void) => setSec(s => {
     if (it) mut(it);
 });
 
-const { isSolo, recall, inOrder, forget } = useSectionLayout(() => props.section);
-const rows = computed(() => inOrder(sec.value.items.map(itemKey)).map(k => sec.value.items.find(i => itemKey(i) === k)!));
+const { forget } = useSectionLayout(() => props.section);
+const { blocks, toggle, onLook, onFollow, onReset } = useFrameBlocks(
+    () => props.section, () => look.value,
+    l => setSec(s => { s.look = l as CcLook; }),
+    () => setSec(s => { s.look = defaultCcSection(props.section).look; }),
+);
+const itemsOf = (keys: string[]) => keys.map(k => sec.value.items.find(i => itemKey(i) === k)).filter((i): i is CcItem => !!i);
 const openId = ref<number | null>(null);
-
-const NAMES = computed((): { value: CcNames; label: string }[] => props.section === 'ccParty'
-    ? [{ value: 'member', label: '隊友名稱' }, { value: 'label', label: 'CC 顯示文字' }, { value: 'none', label: '不顯示' }]
-    : [{ value: 'label', label: 'CC 顯示文字' }, { value: 'none', label: '不顯示' }]);
-const setSize = (v: SizeValue) => setSec(s => { s.look.size = v.size; s.look.px = v.px; });
 
 const ccIcon = (id: number) => ccIconUrl(region.value, id);
 const skillIcon = (id: number) => `/icons/skill/${id}.png`;
@@ -124,104 +122,88 @@ function onPick(id: number) {
 <template>
   <div class="ovs-page" :data-cc-page="section">
     <h2>{{ COMPONENT_NAMES[section] }}</h2>
-    <div class="ovs-box">
-      <h3>外觀<IconButton kind="reset" data-reset-look @fire="setSec(s => { s.look = defaultCcSection(section).look; })" /></h3>
-      <div class="ovs-field">
-        <span class="ovs-lbl">圖示大小</span>
-        <SizeField :model-value="{ size: look.size, px: look.px }" :presets="ICON_SIZE_PX" :min="16" :max="96" @update:model-value="setSize" />
-      </div>
-      <template v-if="!lookOnly">
-        <div class="ovs-field">
-          <span class="ovs-lbl">圖示下方</span>
-          <DSegmented :model-value="look.names" :options="NAMES" data-names @update:model-value="(v: CcNames) => setSec(s => { s.look.names = v; })" />
-        </div>
-        <div class="ovs-field">
-          <span class="ovs-lbl">平常透明度</span>
-          <input
-            type="range" min="10" max="100" step="5" :value="look.dim" data-dim aria-label="平常透明度"
-            @input="e => setSec(s => { s.look.dim = Number((e.target as HTMLInputElement).value); })"
-          >
-          <span class="ovs-dim">{{ look.dim }}%</span>
-        </div>
+    <FrameBlock
+      v-for="f in blocks" :key="f.id"
+      :title="f.title" :summary="f.summary" :open="f.open" :data-frame="f.id"
+      @toggle="toggle(f.id)" @reset="onReset(f.id)"
+    >
+      <template #look>
+        <FrameLookFields
+          :look="f.look" :section="section" :follow="f.follow" :main-title="blocks[0].title"
+          @update:look="l => onLook(f.id, l)" @update:follow="v => onFollow(f.id, v)"
+        />
       </template>
-      <div class="ovs-field">
-        <span class="ovs-lbl">標題</span>
-        <DCheckbox :label="`顯示「${COMPONENT_NAMES[section]}」`" :model-value="look.title" data-title-on @update:model-value="v => setSec(s => { s.look.title = v; })" />
-      </div>
-      <PanelBgField :model-value="look.bg" :fallback="overlaySettings.general.bg" @update:model-value="v => setSec(s => { s.look.bg = v; })" />
-    </div>
-
-    <div v-if="!lookOnly" class="ovs-box">
-      <h3>監測項目</h3>
-      <ItemRow
-        v-for="it in rows" :key="it.id"
-        :item-key="itemKey(it)" :icon="iconUrl(it.icon)" :name="nameOf(it)" :solo="isSolo(itemKey(it))"
-        :enabled="it.enabled" :open="openId === it.id"
-        @toggle="openId = openId === it.id ? null : it.id"
-        @reset="reset(it.id)" @remove="remove(it)" @recall="recall(itemKey(it))"
-        @update:enabled="v => setItem(it.id, x => { x.enabled = v; })"
-      >
-        <div class="ovs-field">
-          <span class="ovs-lbl">圖示</span>
-          <button type="button" class="ovs-iconpick" title="更換圖示" data-icon-pick @click="openPicker({ mode: 'icon', id: it.id })">
-            <img :src="iconUrl(it.icon)" alt="">
-          </button>
-        </div>
-        <div class="ovs-field">
-          <span class="ovs-lbl">顯示文字</span>
-          <input
-            class="ovs-txt" :maxlength="LABEL_MAX" :value="it.label" data-label
-            @input="e => setLabel(it.id, e)" @compositionend="e => setLabel(it.id, e)"
+      <template v-if="!lookOnly" #items>
+          <ItemRow
+            v-for="it in itemsOf(f.keys)" :key="it.id"
+            :item-key="itemKey(it)" :icon="iconUrl(it.icon)" :name="nameOf(it)"
+            :enabled="it.enabled" :open="openId === it.id"
+            @toggle="openId = openId === it.id ? null : it.id"
+            @reset="reset(it.id)" @remove="remove(it)"
+            @update:enabled="v => setItem(it.id, x => { x.enabled = v; })"
           >
-        </div>
-        <div class="ovs-field">
-          <span class="ovs-lbl">監測 CC</span>
-          <span v-for="id in it.ids" :key="id" class="ovs-cchip" :data-watch="id">
-            <img :src="ccIcon(id)" alt="">{{ cc(id) }}
-            <button
-              v-if="it.ids.length > 1 && id !== it.id" type="button" title="移除" data-watch-del
-              @click="setItem(it.id, x => { x.ids = x.ids.filter(o => o !== id); })"
-            >×</button>
-          </span>
-          <button type="button" class="ovs-mini" data-watch-add @click="openPicker({ mode: 'alt', id: it.id })">＋</button>
-        </div>
-        <div v-if="isMusic(it)" class="ovs-field" data-renew-field>
-          <span class="ovs-lbl">自動延續</span>
-          <span v-if="it.renew" class="ovs-cchip">
-            <img :src="ccIcon(it.renew)" alt="">身上有{{ cc(it.renew) }}
-            <button type="button" title="取消" data-renew-del @click="setItem(it.id, x => { x.renew = 0; })">×</button>
-          </span>
-          <button v-else type="button" class="ovs-mini" data-renew-add @click="openPicker({ mode: 'renew', id: it.id })">＋ 指定 CC</button>
-        </div>
-        <div class="ovs-field">
-          <span class="ovs-lbl">到期提醒</span>
-          剩 <input
-            class="ovs-num" type="number" min="1" max="600" :value="it.warnSec" data-warn-sec
-            @change="e => setWarnSec(it.id, (e.target as HTMLInputElement).value)"
-          > 秒內
-        </div>
-        <div class="ovs-field">
-          <span class="ovs-lbl" />
-          <DCheckbox label="高亮" :model-value="it.warnHl" data-warn-hl @update:model-value="v => setItem(it.id, x => { x.warnHl = v; })" />
-          <SoonChecks />
-        </div>
-        <div class="ovs-field">
-          <span class="ovs-lbl">失效提醒</span>
-          <DCheckbox label="高亮" :model-value="it.goneHl" data-gone-hl @update:model-value="v => setItem(it.id, x => { x.goneHl = v; })" />
-          <SoonChecks />
-        </div>
-        <div class="ovs-field top">
-          <span class="ovs-lbl">自身秘法</span>
-          <ArcanaChips :model-value="it.arcana" @update:model-value="v => setItem(it.id, x => { x.arcana = v; })" />
-        </div>
-        <div v-if="section === 'ccParty'" class="ovs-field top" data-mate-arcana>
-          <span class="ovs-lbl">隊友秘法</span>
-          <ArcanaChips :model-value="it.mateArcana" @update:model-value="v => setItem(it.id, x => { x.mateArcana = v; })" />
-        </div>
-      </ItemRow>
-      <DButton size="sm" data-add @click="openPicker({ mode: 'add' })">＋ 新增 CC</DButton>
-      <p class="ovs-pos">位置在「遊戲內排版編輯」調整。</p>
-    </div>
+            <div class="ovs-field">
+              <span class="ovs-lbl">圖示</span>
+              <button type="button" class="ovs-iconpick" title="更換圖示" data-icon-pick @click="openPicker({ mode: 'icon', id: it.id })">
+                <img :src="iconUrl(it.icon)" alt="">
+              </button>
+            </div>
+            <div class="ovs-field">
+              <span class="ovs-lbl">顯示文字</span>
+              <input
+                class="ovs-txt" :maxlength="LABEL_MAX" :value="it.label" data-label
+                @input="e => setLabel(it.id, e)" @compositionend="e => setLabel(it.id, e)"
+              >
+            </div>
+            <div class="ovs-field">
+              <span class="ovs-lbl">監測 CC</span>
+              <span v-for="id in it.ids" :key="id" class="ovs-cchip" :data-watch="id">
+                <img :src="ccIcon(id)" alt="">{{ cc(id) }}
+                <button
+                  v-if="it.ids.length > 1 && id !== it.id" type="button" title="移除" data-watch-del
+                  @click="setItem(it.id, x => { x.ids = x.ids.filter(o => o !== id); })"
+                >×</button>
+              </span>
+              <button type="button" class="ovs-mini" data-watch-add @click="openPicker({ mode: 'alt', id: it.id })">＋</button>
+            </div>
+            <div v-if="isMusic(it)" class="ovs-field" data-renew-field>
+              <span class="ovs-lbl">自動延續</span>
+              <span v-if="it.renew" class="ovs-cchip">
+                <img :src="ccIcon(it.renew)" alt="">身上有{{ cc(it.renew) }}
+                <button type="button" title="取消" data-renew-del @click="setItem(it.id, x => { x.renew = 0; })">×</button>
+              </span>
+              <button v-else type="button" class="ovs-mini" data-renew-add @click="openPicker({ mode: 'renew', id: it.id })">＋ 指定 CC</button>
+            </div>
+            <div class="ovs-field">
+              <span class="ovs-lbl">到期提醒</span>
+              剩 <input
+                class="ovs-num" type="number" min="1" max="600" :value="it.warnSec" data-warn-sec
+                @change="e => setWarnSec(it.id, (e.target as HTMLInputElement).value)"
+              > 秒內
+            </div>
+            <div class="ovs-field">
+              <span class="ovs-lbl" />
+              <DCheckbox label="高亮" :model-value="it.warnHl" data-warn-hl @update:model-value="v => setItem(it.id, x => { x.warnHl = v; })" />
+              <SoonChecks />
+            </div>
+            <div class="ovs-field">
+              <span class="ovs-lbl">失效提醒</span>
+              <DCheckbox label="高亮" :model-value="it.goneHl" data-gone-hl @update:model-value="v => setItem(it.id, x => { x.goneHl = v; })" />
+              <SoonChecks />
+            </div>
+            <div class="ovs-field top">
+              <span class="ovs-lbl">自身秘法</span>
+              <ArcanaChips :model-value="it.arcana" @update:model-value="(v: number[]) => setItem(it.id, x => { x.arcana = v; })" />
+            </div>
+            <div v-if="section === 'ccParty'" class="ovs-field top" data-mate-arcana>
+              <span class="ovs-lbl">隊友秘法</span>
+              <ArcanaChips :model-value="it.mateArcana" @update:model-value="(v: number[]) => setItem(it.id, x => { x.mateArcana = v; })" />
+            </div>
+          </ItemRow>
+        <DButton v-if="f.kind === 'section'" size="sm" data-add @click="openPicker({ mode: 'add' })">＋ 新增 CC</DButton>
+      </template>
+    </FrameBlock>
+    <p class="ovs-pos">位置在「遊戲內排版編輯」調整。把 icon 拉出來就會多一塊。</p>
     <ItemPicker
       v-if="picker" v-bind="picker" :source="iconSrc"
       @pick="onPick" @close="pickCtx = null" @update:source="(v: string) => iconSrc = v === 'skill' ? 'skill' : 'cc'"

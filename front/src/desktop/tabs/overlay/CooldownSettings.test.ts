@@ -5,6 +5,7 @@ import { mount, VueWrapper } from '@vue/test-utils';
 import type { OverlayState } from '@/lib/overlayProtocol';
 import { defaultOverlaySettings, type OverlaySettings } from '@/lib/overlaySettings';
 import { playerSkillIds, skillNameMap } from '@/store';
+import { defaultFrameRec, frameField } from '@/lib/overlayFrames';
 
 const stateRef = () => state;
 const settingsRef = () => settings;
@@ -92,5 +93,21 @@ describe('CooldownSettings', () => {
         mountCd();
         await row(59143).get('[role="switch"]').trigger('click');
         expect(settings.value.cooldown.items[1].enabled).toBe(false);
+    });
+
+    it('a pulled skill is its own block; look fields: 排列 present, 平常透明度 absent', async () => {
+        const L = { enabled: true, anchor: 'tl' as const, x: 0, y: 0, width: 120, maxRows: 1 };
+        state.value = { ...state.value!, layout: { 'cooldown-59143': { ...L, frame: frameField(defaultFrameRec('cooldown', 'unit', 1)) } } };
+        mountCd();
+        const blocks = w!.findAll('[data-frame-block]');
+        expect(blocks).toHaveLength(2);
+        expect(blocks[1].get('[data-frame-title]').text()).toBe('技能冷卻 1');
+        expect(blocks[1].find('[data-item="59143"]').exists()).toBe(true);
+        expect(blocks[0].find('[data-item="59143"]').exists()).toBe(false);
+        expect(w!.find('[data-solo]').exists()).toBe(false);
+        await blocks[0].get('[data-frame-look-toggle]').trigger('click');
+        expect(w!.find('[data-arrange]').exists()).toBe(true);
+        expect(w!.find('[data-dim]').exists()).toBe(false);
+        expect(w!.text()).not.toMatch(/群組|大群/);
     });
 });

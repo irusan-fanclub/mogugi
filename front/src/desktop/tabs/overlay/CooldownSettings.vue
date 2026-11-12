@@ -3,26 +3,23 @@ import { computed, ref } from 'vue';
 import { playerSkillIds, skillNameMap } from '@/store';
 import { ARCANA_BY_SKILL, ARCANA_NAMES } from '@/lib/arcanaTable';
 import {
-    defaultCooldownItem, defaultCooldownSection, ICON_SIZE_PX, itemKey,
-    type CooldownItem, type CooldownSection, type CooldownWho,
+    defaultCooldownItem, defaultCooldownSection, itemKey,
+    type CooldownItem, type CooldownLook, type CooldownSection, type CooldownWho,
 } from '@/lib/overlaySections';
 import { overlaySettings, updateOverlaySettings } from '../../overlay/overlayLink';
 import DButton from '../../ui/DButton.vue';
-import DCheckbox from '../../ui/DCheckbox.vue';
 import DSegmented from '../../ui/DSegmented.vue';
 import ArcanaChips from './ArcanaChips.vue';
-import IconButton from './IconButton.vue';
+import FrameBlock from './FrameBlock.vue';
+import FrameLookFields from './FrameLookFields.vue';
 import ItemPicker, { type PickerItem, type PickerMark } from './ItemPicker.vue';
 import ItemRow from './ItemRow.vue';
-import PanelBgField from './PanelBgField.vue';
-import SizeField, { type SizeValue } from './SizeField.vue';
 import SoonChecks from './SoonChecks.vue';
-import { useSectionLayout } from './sectionLayout';
+import { useFrameBlocks, useSectionLayout } from './sectionLayout';
 
 const WHO: { value: CooldownWho; label: string }[] = [
     { value: 'self', label: '自己' }, { value: 'party', label: '隊伍' }, { value: 'all', label: '全部' },
 ];
-const NAMES = [{ value: 'on', label: '玩家名稱' }, { value: 'off', label: '不顯示' }] as const;
 const ARCANA_SKILLS = { lo: 59000, hi: 59199 };
 
 const sec = computed(() => overlaySettings.value.cooldown);
@@ -32,10 +29,14 @@ const setItem = (id: number, mut: (it: CooldownItem) => void) => setSec(s => {
     const it = s.items.find(i => i.skillId === id);
     if (it) mut(it);
 });
-const setSize = (v: SizeValue) => setSec(s => { s.look.size = v.size; s.look.px = v.px; });
 
-const { isSolo, recall, inOrder, forget } = useSectionLayout(() => 'cooldown');
-const rows = computed(() => inOrder(sec.value.items.map(itemKey)).map(k => sec.value.items.find(i => itemKey(i) === k)!));
+const { forget } = useSectionLayout(() => 'cooldown');
+const { blocks, toggle, onLook, onFollow, onReset } = useFrameBlocks(
+    () => 'cooldown', () => look.value,
+    l => setSec(s => { s.look = l as CooldownLook; }),
+    () => setSec(s => { s.look = defaultCooldownSection().look; }),
+);
+const itemsOf = (keys: string[]) => keys.map(k => sec.value.items.find(i => itemKey(i) === k)).filter((i): i is CooldownItem => !!i);
 const openId = ref<number | null>(null);
 
 const icon = (id: number) => `/icons/skill/${id}.png`;
@@ -81,59 +82,50 @@ const onPick = (id: number) => { picking.value = false; add(id); };
 <template>
   <div class="ovs-page" data-cd-page>
     <h2>技能冷卻</h2>
-    <div class="ovs-box">
-      <h3>外觀<IconButton kind="reset" data-reset-look @fire="setSec(s => { s.look = defaultCooldownSection().look; })" /></h3>
-      <div class="ovs-field">
-        <span class="ovs-lbl">圖示大小</span>
-        <SizeField :model-value="{ size: look.size, px: look.px }" :presets="ICON_SIZE_PX" :min="16" :max="96" @update:model-value="setSize" />
-      </div>
-      <div class="ovs-field">
-        <span class="ovs-lbl">圖示下方</span>
-        <DSegmented
-          :model-value="look.names ? 'on' : 'off'" :options="[...NAMES]" data-names
-          @update:model-value="(v: string) => setSec(s => { s.look.names = v === 'on'; })"
+    <FrameBlock
+      v-for="f in blocks" :key="f.id"
+      :title="f.title" :summary="f.summary" :open="f.open" :data-frame="f.id"
+      @toggle="toggle(f.id)" @reset="onReset(f.id)"
+    >
+      <template #look>
+        <FrameLookFields
+          :look="f.look" section="cooldown" :follow="f.follow" :main-title="blocks[0].title"
+          @update:look="l => onLook(f.id, l)" @update:follow="v => onFollow(f.id, v)"
         />
-      </div>
-      <div class="ovs-field">
-        <span class="ovs-lbl">標題</span>
-        <DCheckbox label="顯示「技能冷卻」" :model-value="look.title" data-title-on @update:model-value="v => setSec(s => { s.look.title = v; })" />
-      </div>
-      <PanelBgField :model-value="look.bg" :fallback="overlaySettings.general.bg" @update:model-value="v => setSec(s => { s.look.bg = v; })" />
-    </div>
-
-    <div class="ovs-box">
-      <h3>監測技能</h3>
-      <ItemRow
-        v-for="it in rows" :key="it.skillId"
-        :item-key="itemKey(it)" :icon="icon(it.skillId)" :name="nameOf(it.skillId)" :solo="isSolo(itemKey(it))"
-        :enabled="it.enabled" :open="openId === it.skillId"
-        @toggle="openId = openId === it.skillId ? null : it.skillId"
-        @reset="reset(it.skillId)" @remove="remove(it)" @recall="recall(itemKey(it))"
-        @update:enabled="v => setItem(it.skillId, x => { x.enabled = v; })"
-      >
-        <div class="ovs-field">
-          <span class="ovs-lbl">冷卻秒數</span>
-          <input
-            class="ovs-num" type="number" min="1" max="3600" :value="it.cooldownSec" data-cd-sec
-            @change="e => setSecs(it.skillId, (e.target as HTMLInputElement).value)"
-          > 秒
-        </div>
-        <div class="ovs-field">
-          <span class="ovs-lbl">顯示對象</span>
-          <DSegmented :model-value="it.who" :options="WHO" data-who @update:model-value="(v: CooldownWho) => setItem(it.skillId, x => { x.who = v; })" />
-        </div>
-        <div class="ovs-field">
-          <span class="ovs-lbl">完成提醒</span>
-          <SoonChecks />
-        </div>
-        <div class="ovs-field top">
-          <span class="ovs-lbl">自身秘法</span>
-          <ArcanaChips :model-value="it.arcana" @update:model-value="v => setItem(it.skillId, x => { x.arcana = v; })" />
-        </div>
-      </ItemRow>
-      <DButton size="sm" data-add @click="filter = 'all'; picking = true">＋ 新增技能</DButton>
-      <p class="ovs-pos">位置在「遊戲內排版編輯」調整。</p>
-    </div>
+      </template>
+      <template #items>
+          <ItemRow
+            v-for="it in itemsOf(f.keys)" :key="it.skillId"
+            :item-key="itemKey(it)" :icon="icon(it.skillId)" :name="nameOf(it.skillId)"
+            :enabled="it.enabled" :open="openId === it.skillId"
+            @toggle="openId = openId === it.skillId ? null : it.skillId"
+            @reset="reset(it.skillId)" @remove="remove(it)"
+            @update:enabled="v => setItem(it.skillId, x => { x.enabled = v; })"
+          >
+            <div class="ovs-field">
+              <span class="ovs-lbl">冷卻秒數</span>
+              <input
+                class="ovs-num" type="number" min="1" max="3600" :value="it.cooldownSec" data-cd-sec
+                @change="e => setSecs(it.skillId, (e.target as HTMLInputElement).value)"
+              > 秒
+            </div>
+            <div class="ovs-field">
+              <span class="ovs-lbl">顯示對象</span>
+              <DSegmented :model-value="it.who" :options="WHO" data-who @update:model-value="(v: CooldownWho) => setItem(it.skillId, x => { x.who = v; })" />
+            </div>
+            <div class="ovs-field">
+              <span class="ovs-lbl">完成提醒</span>
+              <SoonChecks />
+            </div>
+            <div class="ovs-field top">
+              <span class="ovs-lbl">自身秘法</span>
+              <ArcanaChips :model-value="it.arcana" @update:model-value="v => setItem(it.skillId, x => { x.arcana = v; })" />
+            </div>
+          </ItemRow>
+        <DButton v-if="f.kind === 'section'" size="sm" data-add @click="filter = 'all'; picking = true">＋ 新增技能</DButton>
+      </template>
+    </FrameBlock>
+    <p class="ovs-pos">位置在「遊戲內排版編輯」調整。把 icon 拉出來就會多一塊。</p>
     <ItemPicker
       v-if="picking" title="新增技能" :items="skills" :icon-of="icon" :mark-of="markOf"
       :sources="FILTERS" :source="filter"

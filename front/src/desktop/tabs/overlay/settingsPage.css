@@ -31,5 +31,3 @@
 .ovs-unit > .head > .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ovs-unit > .head > .caret { width: 10px; color: var(--c-text-dim); font-size: var(--fs-xs); }
 .ovs-unit > .body { padding: 2px var(--space-3) var(--space-3) var(--space-4); border-top: 1px solid var(--c-line); }
-.ovs-solo { padding: 1px 7px; border: 1px solid var(--c-share); border-radius: 9px; color: var(--c-share); font-size: var(--fs-xs); white-space: nowrap; }
-.ovs-solo button { margin-left: 4px; padding: 0 4px; border: 0; border-radius: 3px; background: var(--c-share); color: var(--c-bg-deep); font: inherit; cursor: pointer; }
