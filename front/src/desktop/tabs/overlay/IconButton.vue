@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue';
 
-// 'remove' needs a second click within ARM_MS; 'reset' fires at once.
-const props = defineProps<{ kind: 'reset' | 'remove' }>();
+// 'move' only forwards the click (its owner opens a menu); 'remove' needs a second click within ARM_MS; 'reset' fires at once.
+const props = defineProps<{ kind: 'reset' | 'remove' | 'move' }>();
 const emit = defineEmits<{ fire: [] }>();
 
 const ARM_MS = 3000;
@@ -11,12 +11,13 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 
 const disarm = () => { armed.value = false; clearTimeout(timer); timer = undefined; };
 function click() {
-    if (props.kind === 'reset') { emit('fire'); return; }
+    if (props.kind !== 'remove') { emit('fire'); return; }
     if (armed.value) { disarm(); emit('fire'); return; }
     armed.value = true;
     timer = setTimeout(disarm, ARM_MS);
 }
-const title = computed(() => props.kind === 'reset' ? '重設' : armed.value ? '再點一次移除' : '移除');
+const title = computed(() => props.kind === 'reset' ? '重設' : props.kind === 'move' ? '移動' : armed.value ? '再點一次移除' : '移除');
+const ICON = { reset: 'mdi-restore', remove: 'mdi-delete', move: 'mdi-arrow-all' } as const;
 onBeforeUnmount(() => clearTimeout(timer));
 </script>
 
@@ -25,7 +26,7 @@ onBeforeUnmount(() => clearTimeout(timer));
     type="button" class="ibtn" :class="{ armed }" :title="title" :aria-label="title"
     :data-armed="armed ? '' : undefined" @click.stop="click"
   >
-    <i class="mdi" :class="kind === 'reset' ? 'mdi-restore' : 'mdi-delete'" />
+    <i class="mdi" :class="ICON[kind]" />
   </button>
 </template>
 

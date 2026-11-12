@@ -9,6 +9,15 @@ const mk = (p: Partial<{ canUp: boolean; canDown: boolean; canNew: boolean }> = 
 });
 
 describe('MoveMenu', () => {
+    it('the trigger is an icon button titled 移動', () => {
+        const w = mk();
+        const b = w.get('[data-move]');
+        expect(b.attributes('title')).toBe('移動');
+        expect(b.text()).toBe('');
+        expect(b.find('i.mdi-arrow-all').exists()).toBe(true);
+        w.unmount();
+    });
+
     it('往前 is disabled when it cannot go up; the current block is disabled and marked', async () => {
         const w = mk({ canUp: false });
         expect(w.find('[data-move-menu]').exists()).toBe(false);
