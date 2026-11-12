@@ -11,7 +11,8 @@ export const GROUP_PAD_PX = 16;
 
 export interface TileDragState {
     section: SectionId;
-    key: string;
+    /** Everything lifted; the first is the grabbed key. */
+    keys: string[];
     /** The frame the item is drawn in now. */
     from: ComponentId;
     /** Ghost top-left, pre-scale units. */
@@ -41,6 +42,8 @@ export interface TileDragCtx {
     frameOfKey(section: SectionId, key: string): ComponentId;
     /** Top-left of the item's first tile, wherever it is drawn. */
     originOf(section: SectionId, key: string): { l: number; t: number } | null;
+    /** The class function when the frame is drawn as a by-member grid, else null. */
+    columnsOf(id: ComponentId): ((key: string) => string) | null;
     viewport: Ref<Size>;
     scale: Ref<number>;
     /** `target.index` is a place in the frame's keys without `keys`; `at` is the free top-left. */
@@ -75,6 +78,22 @@ export function dropSpot(ctx: TileDragCtx, section: SectionId, keys: string[], p
     }
     const full = ctx.keysIn(frame).filter(k => !keys.includes(k));
     const shown = full.filter(k => boxes.has(k));
+    const cls = ctx.columnsOf(frame);
+    if (cls) {
+        // One box per class column; the bar goes before the first column whose centre is right of the pointer.
+        const cols = new Map<string, { l: number; w: number; first: string }>();
+        for (const k of shown) {
+            const b = boxes.get(k)!, c = cols.get(cls(k));
+            if (!c) cols.set(cls(k), { l: b.l, w: b.w, first: k });
+            else { const r = Math.max(c.l + c.w, b.l + b.w); c.l = Math.min(c.l, b.l); c.w = r - c.l; }
+        }
+        const ordered = [...cols.values()].sort((a, b) => a.l - b.l);
+        const at = ordered.findIndex(c => p.x < c.l + c.w / 2);
+        const display = at < 0 ? ordered.length : at;
+        const index = at >= 0 ? full.indexOf(ordered[at].first)
+            : shown.length ? full.indexOf(shown[shown.length - 1]) + 1 : full.length;
+        return { frame, display, index };
+    }
     let display = shown.findIndex(k => {
         const b = boxes.get(k)!;
         return p.y < b.t || (p.y <= b.t + b.h && p.x < b.l + b.w / 2);
@@ -98,8 +117,11 @@ export function useTileDrag(ctx: TileDragCtx) {
     function startTile(section: SectionId, key: string, e: Ptr) {
         const p = at(e);
         const o = ctx.originOf(section, key) ?? { l: p.x, t: p.y };
+        const from = ctx.frameOfKey(section, key);
+        const cls = ctx.columnsOf(from);
+        const keys = cls ? ctx.keysIn(from).filter(k => k === key || cls(k) === cls(key)) : [key];
         tdrag.value = {
-            section, key, from: ctx.frameOfKey(section, key), l: o.l, t: o.t, over: null, insertAt: null,
+            section, keys, from, l: o.l, t: o.t, over: null, insertAt: null,
             moved: false, pointerId: e.pointerId, sx: e.clientX, sy: e.clientY, ox: o.l - p.x, oy: o.t - p.y,
         };
     }
@@ -113,7 +135,7 @@ export function useTileDrag(ctx: TileDragCtx) {
         const vp = ctx.viewport.value;
         d.l = clamp(p.x + d.ox, 0, vp.w);
         d.t = clamp(p.y + d.oy, 0, vp.h);
-        const s = dropSpot(ctx, d.section, [d.key], p, skipOf(d));
+        const s = dropSpot(ctx, d.section, d.keys, p, skipOf(d));
         d.over = s.frame;
         d.insertAt = s.frame ? s.display : null;
     }
@@ -124,8 +146,8 @@ export function useTileDrag(ctx: TileDragCtx) {
         moveTile(e);
         tdrag.value = null;
         if (!d.moved) return;
-        const s = dropSpot(ctx, d.section, [d.key], at(e), skipOf(d));
-        ctx.place(d.section, [d.key], d.from, s.frame ? { frame: s.frame, index: s.index } : { at: { l: d.l, t: d.t } });
+        const s = dropSpot(ctx, d.section, d.keys, at(e), skipOf(d));
+        ctx.place(d.section, d.keys, d.from, s.frame ? { frame: s.frame, index: s.index } : { at: { l: d.l, t: d.t } });
     }
 
     function cancelTile() { tdrag.value = null; }

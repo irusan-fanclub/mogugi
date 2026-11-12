@@ -32,10 +32,91 @@ function setup(scale = 1) {
             const r = TILES[f].find(x => x.key === k)!.r;
             return { l: r.l, t: r.t };
         },
+        columnsOf: () => null,
         viewport: ref({ w: 1280, h: 720 }), scale: ref(scale), place,
     };
     return { d: useTileDrag(ctx), place };
 }
+
+// Grid frame 'ccParty' at (100,100): columns A (680 + 192), B (193), C (63), two rows each; '9' hidden between B and C.
+const GRID: Rect = { l: 100, t: 100, w: 300, h: 100 };
+const CLASS: Record<string, string> = { 680: 'a', 192: 'a', 193: 'b', 63: 'c', 9: 'c' };
+const col = (keys: string[], l: number) => [110, 150].flatMap(t => keys.map((key, i) => ({ key, r: { l: l + i * 20, t, w: 18, h: 30 } })));
+const GRID_TILES = [...col(['680', '192'], 110), ...col(['193'], 190), ...col(['63'], 250)];
+function gridSetup(over: Partial<TileDragCtx> = {}) {
+    const place = vi.fn();
+    const ctx: TileDragCtx = {
+        framesOf: () => ['ccParty', 'flow'],
+        frameRect: id => (id === 'ccParty' ? GRID : id === 'flow' ? { l: 600, t: 100, w: 100, h: 50 } : null),
+        keysIn: id => (id === 'ccParty' ? ['680', '192', '193', '9', '63'] : ['1', '2']),
+        tileRects: id => (id === 'ccParty' ? GRID_TILES : [{ key: '1', r: box(610, 110) }, { key: '2', r: box(650, 110) }]),
+        frameOfKey: (_s, k) => (k === '1' || k === '2' ? 'flow' : 'ccParty'),
+        originOf: () => ({ l: 110, t: 110 }),
+        columnsOf: id => (id === 'ccParty' ? (k: string) => CLASS[k] : null),
+        viewport: ref({ w: 1280, h: 720 }), scale: ref(1), place, ...over,
+    };
+    return { d: useTileDrag(ctx), place };
+}
+
+describe('useTileDrag in a grid frame', () => {
+    it('starting on 192 lifts the whole column', () => {
+        const { d } = gridSetup();
+        d.startTile('ccParty', '192', ptr(130, 120));
+        expect(d.tdrag.value?.keys).toEqual(['680', '192']);
+        d.startTile('ccParty', '193', ptr(200, 120));
+        expect(d.tdrag.value?.keys).toEqual(['193']);
+    });
+
+    it('pointer left of B centre drops at column 0 of [B, C]', () => {
+        const { d, place } = gridSetup();
+        d.startTile('ccParty', '192', ptr(130, 120));
+        d.moveTile(ptr(150, 125));
+        expect(d.tdrag.value).toMatchObject({ over: 'ccParty', insertAt: 0 });
+        d.endTile(ptr(150, 125));
+        expect(place).toHaveBeenCalledWith('ccParty', ['680', '192'], 'ccParty', { frame: 'ccParty', index: 0 });
+    });
+
+    it('pointer right of C centre drops after the last column, past the hidden key order', () => {
+        const { d, place } = gridSetup();
+        d.startTile('ccParty', '192', ptr(130, 120));
+        d.endTile(ptr(390, 125));
+        // Without the lifted column: 193, 9, 63 -> after 63.
+        expect(place).toHaveBeenCalledWith('ccParty', ['680', '192'], 'ccParty', { frame: 'ccParty', index: 3 });
+        expect(d.tdrag.value).toBeNull();
+    });
+
+    it('between B and C keeps the hidden key in place', () => {
+        const { d, place } = gridSetup();
+        d.startTile('ccParty', '192', ptr(130, 120));
+        d.moveTile(ptr(240, 125));
+        expect(d.tdrag.value?.insertAt).toBe(1);
+        d.endTile(ptr(240, 125));
+        // Insert before C's first key '63' (index 2 in [193, 9, 63]).
+        expect(place.mock.calls[0][3]).toEqual({ frame: 'ccParty', index: 2 });
+    });
+
+    it('a flow tile dropped into the grid lands between columns', () => {
+        const { d, place } = gridSetup();
+        d.startTile('ccBoss', '1', ptr(620, 120));
+        d.endTile(ptr(240, 125));
+        expect(place).toHaveBeenCalledWith('ccBoss', ['1'], 'flow', { frame: 'ccParty', index: 4 });
+    });
+
+    it('a flow frame still uses the row rule', () => {
+        const { d, place } = gridSetup();
+        d.startTile('ccParty', '193', ptr(200, 120));
+        d.endTile(ptr(620, 125));
+        expect(place).toHaveBeenCalledWith('ccParty', ['193'], 'ccParty', { frame: 'flow', index: 0 });
+    });
+
+    it('a free drop passes every lifted key', () => {
+        const { d, place } = gridSetup();
+        d.startTile('ccParty', '680', ptr(130, 120));
+        d.endTile(ptr(800, 600));
+        expect(place.mock.calls[0][1]).toEqual(['680', '192']);
+        expect(place.mock.calls[0][3]).toHaveProperty('at');
+    });
+});
 const ptr = (x: number, y: number) => ({ clientX: x, clientY: y, pointerId: 1 });
 
 describe('useTileDrag', () => {
@@ -43,7 +124,7 @@ describe('useTileDrag', () => {
         const { d, place } = setup();
         d.startTile('ccBoss', '3', ptr(200, 120));
         d.moveTile(ptr(160, 125));
-        expect(d.tdrag.value).toMatchObject({ key: '3', from: 'ccBoss', over: 'ccBoss', insertAt: 1 });
+        expect(d.tdrag.value).toMatchObject({ keys: ['3'], from: 'ccBoss', over: 'ccBoss', insertAt: 1 });
         d.endTile(ptr(160, 125));
         // Full order without '3': 1, 9, [here], 2, 4, 5, 6.
         expect(place).toHaveBeenCalledWith('ccBoss', ['3'], 'ccBoss', { frame: 'ccBoss', index: 2 });

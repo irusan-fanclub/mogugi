@@ -168,6 +168,7 @@ const tileCtx: TileDragCtx = {
         const r = stageRect(el);
         return { l: r.l, t: r.t };
     },
+    columnsOf: () => null,
     viewport, scale, place,
 };
 const { tdrag, startTile, moveTile, endTile, cancelTile } = useTileDrag(tileCtx);
@@ -210,7 +211,7 @@ function frameUp(e: PointerEvent) {
 }
 function frameCancel() { cancel(); frameSpot.value = null; }
 
-const liftedIn = (c: ComponentDef) => (tdrag.value?.moved && tdrag.value.section === c.section ? tdrag.value.key : null);
+const liftedIn = (c: ComponentDef) => (tdrag.value?.moved && tdrag.value.section === c.section ? tdrag.value.keys[0] : null);
 const insertIn = (c: ComponentDef): number | null => {
     const t = tdrag.value;
     if (t?.moved) return t.over === c.id ? t.insertAt : null;
@@ -220,7 +221,7 @@ const insertIn = (c: ComponentDef): number | null => {
 const ghost = computed(() => {
     const t = tdrag.value;
     if (!t?.moved) return null;
-    const tiles = (views.value[t.from]?.tiles ?? []).filter(x => x.key === t.key);
+    const tiles = (views.value[t.from]?.tiles ?? []).filter(x => t.keys.includes(x.key));
     const look = sectionOf(settings.value, t.section).look;
     return { l: t.l, t: t.t, tiles, px: iconPx(look), dim: 'dim' in look ? look.dim : 100 };
 });
