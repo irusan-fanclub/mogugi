@@ -90,8 +90,11 @@ export function dropSpot(ctx: TileDragCtx, section: SectionId, keys: string[], p
         const ordered = [...cols.values()].sort((a, b) => a.l - b.l);
         const at = ordered.findIndex(c => p.x < c.l + c.w / 2);
         const display = at < 0 ? ordered.length : at;
-        const index = at >= 0 ? full.findIndex(k => cls(k) === ordered[at].cls)
-            : shown.length ? full.indexOf(shown[shown.length - 1]) + 1 : full.length;
+        // Keys drawn in another frame (units, groups) do not count towards a column's place.
+        const own = (k: string, c: string) => cls(k) === c && ctx.frameOfKey(section, k) === frame;
+        const lastOwn = (c: string) => full.reduce((n, k, i) => (own(k, c) ? i : n), -1);
+        const index = at >= 0 ? full.findIndex(k => own(k, ordered[at].cls))
+            : ordered.length ? lastOwn(ordered[ordered.length - 1].cls) + 1 : full.length;
         return { frame, display, index };
     }
     let display = shown.findIndex(k => {
@@ -119,7 +122,7 @@ export function useTileDrag(ctx: TileDragCtx) {
         const o = ctx.originOf(section, key) ?? { l: p.x, t: p.y };
         const from = ctx.frameOfKey(section, key);
         const cls = ctx.columnsOf(from);
-        const keys = cls ? ctx.keysIn(from).filter(k => k === key || cls(k) === cls(key)) : [key];
+        const keys = cls ? ctx.keysIn(from).filter(k => k === key || (cls(k) === cls(key) && ctx.frameOfKey(section, k) === from)) : [key];
         tdrag.value = {
             section, keys, from, l: o.l, t: o.t, over: null, insertAt: null,
             moved: false, pointerId: e.pointerId, sx: e.clientX, sy: e.clientY, ox: o.l - p.x, oy: o.t - p.y,

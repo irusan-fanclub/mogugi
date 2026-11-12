@@ -73,6 +73,15 @@ describe('planPlace', () => {
             { save: 'ccSelf-2', layout: free },
         ]);
     });
+    it('lifting a grid column out of a group with leftovers leaves the rest as a unit and makes the new frame', () => {
+        const ls = { 'ccSelf-g1': L({ order: ['1', '2', '3'], frame: 'X' }) };
+        const free = L({ x: 300 });
+        expect(planPlace(ctx(ls), ['1', '2'], 'ccSelf-g1', { free })).toEqual([
+            { save: 'ccSelf-3', layout: L({ frame: 'X' }) },
+            { remove: 'ccSelf-g1', heir: 'ccSelf-3' },
+            { save: 'ccSelf-g2', layout: L({ x: 300, width: 120, order: ['1', '2'] }) },
+        ]);
+    });
     it('a unit dropped in free space just moves', () => {
         const ls = { 'ccSelf-2': L() };
         expect(planPlace(ctx(ls), ['2'], 'ccSelf-2', { free: L({ x: 1 }) })).toEqual([{ save: 'ccSelf-2', layout: L({ x: 1 }) }]);

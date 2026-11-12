@@ -129,6 +129,43 @@ describe('useTileDrag in a grid frame', () => {
         expect(place.mock.calls[0][3]).toHaveProperty('at');
     });
 });
+
+describe('useTileDrag in a grid frame with detached keys', () => {
+    // 192 has a unit/group frame of its own but still sits in the section's order.
+    const detached = (order: string[], tiles: { key: string; r: Rect }[], off: Record<string, string>, cls = CLASS) => gridSetup({
+        keysIn: id => (id === 'ccParty' ? order : ['1', '2']),
+        tileRects: id => (id === 'ccParty' ? tiles : [{ key: '1', r: box(610, 110) }, { key: '2', r: box(650, 110) }]),
+        frameOfKey: (_s, k) => (k === '1' || k === '2' ? 'flow' : off[k] ?? 'ccParty'),
+        columnsOf: id => (id === 'ccParty' ? (k: string) => cls[k] : null),
+    });
+
+    it('lifting a column does not take a same-class key that lives in another frame', () => {
+        const { d } = detached(['680', '192', '193'], [...col(['680'], 110), ...col(['193'], 190)], { 192: 'ccParty-g1' });
+        d.startTile('ccParty', '680', ptr(130, 120));
+        expect(d.tdrag.value?.keys).toEqual(['680']);
+    });
+
+    it('the drop index ignores detached keys of the target column class', () => {
+        const order = ['192', '193', '680', '63'];
+        const tiles = [...col(['193'], 110), ...col(['680'], 190), ...col(['63'], 250)];
+        const cls = { ...CLASS, 63: 'c' };
+        const { d, place } = detached(order, tiles, { 192: 'ccParty-4' }, cls);
+        d.startTile('ccParty', '63', ptr(260, 120));
+        d.endTile(ptr(180, 125));
+        // Bar between 193 and 680: without 63 the order is 192, 193, 680 -> index 2, not 0.
+        expect(place.mock.calls[0][3]).toEqual({ frame: 'ccParty', index: 2 });
+    });
+
+    it('after the last column inserts after the last key of its class, hidden ones included', () => {
+        const cls = { ...CLASS, 1121: 'c' };
+        const order = ['193', '63', '1121'];
+        const tiles = [...col(['193'], 110), ...col(['63'], 190)];
+        const { d, place } = detached(order, tiles, {}, cls);
+        d.startTile('ccParty', '193', ptr(130, 120));
+        d.endTile(ptr(390, 125));
+        expect(place.mock.calls[0][3]).toEqual({ frame: 'ccParty', index: 2 });
+    });
+});
 describe('useTileDrag', () => {
     it('dropping inside the section before the second shown key reorders; a hidden key keeps its place', () => {
         const { d, place } = setup();

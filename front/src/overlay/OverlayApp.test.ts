@@ -430,6 +430,19 @@ describe('OverlayApp', () => {
                 expect(comp('ccParty').find('[data-col-bar]').exists()).toBe(true);
             });
 
+            it('dropping a grid column into another frame moves every key of the column', async () => {
+                await mountApp();
+                fire('overlay:state', state(false, { 'ccParty-63': UNIT }));
+                fire('overlay:settings', { ccParty: { items: [{ id: 680 }, { id: 192 }, { id: 63 }], look: { arrange: 'byMember' } } });
+                await nextTick();
+                await grab();
+                await w!.find('.ov-root').trigger('pointermove', ptr(660, 430));
+                await w!.find('.ov-root').trigger('pointerup', ptr(660, 430));
+                const g = sets().find(s => s.layout.order);
+                expect(g?.layout.order).toEqual(expect.arrayContaining(['680', '192', '63']));
+                expect((g?.layout.order as string[]).length).toBe(3);
+            });
+
             it('a flow frame still draws the flow tiles', async () => {
                 await edit();
                 expect(comp('ccBoss').find('.ov-members').exists()).toBe(false);

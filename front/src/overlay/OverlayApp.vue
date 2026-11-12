@@ -272,7 +272,8 @@ const grids = computed(() => {
     for (const c of components.value) {
         if (!isGridFrame(c)) continue;
         const look = lookOf(c)!;
-        out[c.id] = buildMemberGrid(views.value[c.id].tiles, keysOf(c), k => memberClassOf(c.section!, k), look.gap);
+        // Editing keeps every class in its own screen column so the drop bar matches the classes.
+        out[c.id] = buildMemberGrid(views.value[c.id].tiles, keysOf(c), k => memberClassOf(c.section!, k), editing.value ? 'keep' : look.gap);
     }
     return out;
 });
