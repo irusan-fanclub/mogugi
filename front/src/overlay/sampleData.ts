@@ -11,15 +11,17 @@ export function sampleTiles(sec: CcSection | CooldownSection, keys?: readonly st
     for (const item of sec.items) {
         const key = itemKey(item);
         if (!item.enabled || (keys && !keys.includes(key))) continue;
-        const base = { key, holderId: 'sample', hl: false, mask: 0, isSelf: false };
+        const base = {
+            key, holderId: 'sample', hl: false, mask: 0, isSelf: false, holderName: SAMPLE_HOLDER, fixedLabel: false,
+        };
         if ('skillId' in item) {
             const names = (sec as CooldownSection).look.names;
-            out.push({ ...base, label: names ? SAMPLE_HOLDER : '', icon: { kind: 'skill', id: item.skillId }, sec: '12', state: 'cooling', faint: false, mask: 0.4 });
+            out.push({ ...base, label: names ? SAMPLE_HOLDER : '', itemLabel: '', icon: { kind: 'skill', id: item.skillId }, sec: '12', state: 'cooling', faint: false, mask: 0.4 });
             continue;
         }
         const names = (sec as CcSection).look.names;
         const label = names === 'label' ? item.label : names === 'member' ? SAMPLE_HOLDER : '';
-        out.push({ ...base, label, icon: item.icon, sec: '45', state: 'ok', faint: true });
+        out.push({ ...base, label, itemLabel: item.label, icon: item.icon, sec: '45', state: 'ok', faint: true });
     }
     return out;
 }

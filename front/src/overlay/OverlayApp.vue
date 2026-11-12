@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { emitDesktop } from '@/lib/desktopBridge';
-import { COMPONENT_NAMES, componentsOf, layoutOf, type ComponentDef } from '@/lib/overlayComponents';
+import { componentsOf, layoutOf, type ComponentDef } from '@/lib/overlayComponents';
 import type { Rect, Size } from '@/lib/overlayLayout';
 import { offsetsFor, unclampedRect } from '@/lib/overlayLayout';
 import { OV, type Anchor, type ComponentId } from '@/lib/overlayProtocol';
-import { unitId, type SectionId } from '@/lib/overlaySections';
+import { iconPx, unitId, type SectionId } from '@/lib/overlaySections';
 import type { TileVM } from '@/lib/overlayTiles';
 import { useOverlayData } from './useOverlayData';
 import { useLayoutDrag } from './layoutDrag';
@@ -14,12 +14,16 @@ import { dropSpot, useTileDrag, type TileDragCtx } from './tileDrag';
 import { frameOfKey, planPlace, planTakeOut, type LayoutOp, type PlaceTarget } from '@/lib/overlayGroups';
 import { sampleAlerts, sampleDps, sampleTiles } from './sampleData';
 import {
-    bgOf, fontPxOf, gateOpen, inOrder, itemEnabled, itemName, sectionOf, sectionOrder, tileLook, tilesFor,
+    bgOf, fontPxOf, frameLook, frameTitle, gateOpen, inOrder, itemEnabled, itemName, labelOf, sectionOf, sectionOrder,
+    tileLook, tilesFor,
 } from './sectionView';
 import ComponentFrame from './ComponentFrame.vue';
 import LayoutEditor from './LayoutEditor.vue';
 import DpsOverlay from './DpsOverlay.vue';
 import TileGroup from './TileGroup.vue';
+import MemberGrid from './MemberGrid.vue';
+import { buildMemberGrid } from '@/lib/memberGrid';
+import { memberClassOf } from '@/lib/overlayFrames';
 import AlertsOverlay from './AlertsOverlay.vue';
 
 const ANCHOR_CYCLE: Anchor[] = ['tl', 'tr', 'br', 'bl', 'center'];
@@ -139,7 +143,7 @@ function place(sec: SectionId, keys: string[], from: ComponentId, target: PlaceT
     if ('at' in target) {
         const id = unitId(sec, keys[0]);
         const lay = layoutFor(id);
-        const h = heights[id] ?? tileLook(settings.value, sec).px + 18;
+        const h = heights[id] ?? iconPx(sectionOf(settings.value, sec).look) + 18;
         t = { free: free(id, { l: target.at.l, t: target.at.t, w: lay.width, h }) };
     } else t = target;
     const keysOfSec = sectionOrder(settings.value, sec, undefined);
@@ -217,7 +221,8 @@ const ghost = computed(() => {
     const t = tdrag.value;
     if (!t?.moved) return null;
     const tiles = (views.value[t.from]?.tiles ?? []).filter(x => x.key === t.key);
-    return { l: t.l, t: t.t, tiles, ...tileLook(settings.value, t.section) };
+    const look = sectionOf(settings.value, t.section).look;
+    return { l: t.l, t: t.t, tiles, px: iconPx(look), dim: 'dim' in look ? look.dim : 100 };
 });
 
 // ---- Frame chrome ----
@@ -241,9 +246,18 @@ function reset() {
 }
 function lock() { void emitDesktop(OV.setLocked, { locked: true }); }
 
-/** The section name over a section or group frame, when its look asks for it. */
-const titleOf = (c: ComponentDef): string =>
-    (c.kind === 'section' || c.kind === 'group') && sectionOf(settings.value, c.section!).look.title ? COMPONENT_NAMES[c.section!] : '';
+const titleOf = (c: ComponentDef): string => frameTitle(settings.value, c, layouts.value);
+const lookOf = (c: ComponentDef) => frameLook(settings.value, c, layouts.value);
+const gridRows = (c: ComponentDef) => {
+    const look = lookOf(c);
+    if (editing.value || look.arrange !== 'byMember' || (c.section !== 'ccParty' && c.section !== 'cooldown')) return null;
+    return buildMemberGrid(views.value[c.id].tiles, keysOf(c), k => memberClassOf(c.section!, k), look.gap);
+};
+// Flow tiles carry the label their frame's look asks for.
+const flowTiles = (c: ComponentDef) => {
+    const look = lookOf(c);
+    return views.value[c.id].tiles.map(t => ({ ...t, label: labelOf(t, look, false) }));
+};
 const dpsVm = (c: ComponentDef) => (useSample(c) ? samples.dps : data.dps.value);
 const alertItems = (c: ComponentDef) => (useSample(c) ? samples.alerts : data.alerts.value);
 
@@ -278,7 +292,7 @@ const stageStyle = computed(() => ({
           :id="c.id" :name="c.name"
           :left="rects[c.id].l" :top="rects[c.id].t" :width="rects[c.id].w"
           :anchor="layoutFor(c.id).anchor" :enabled="layoutFor(c.id).enabled"
-          :bg="bgOf(settings, c)" :font-px="fontPxOf(settings, c)"
+          :bg="bgOf(settings, c, layouts)" :font-px="fontPxOf(settings, c)"
           :editing="editing" :sample="useSample(c)" :back="isPulled(c)"
           :clamped="rects[c.id].clamped" :dragging="drag?.id === c.id"
           :docked="!!hostOf(c.id)" :dock-target="drag?.dock === c.id"
@@ -292,8 +306,12 @@ const stageStyle = computed(() => ({
             :anchor="layoutFor('alerts').anchor" :max-rows="layoutFor('alerts').maxRows"
           />
           <div v-if="titleOf(c)" class="ov-title" data-title>{{ titleOf(c) }}</div>
+          <MemberGrid
+            v-if="c.section && gridRows(c)" :rows="gridRows(c)!" v-bind="tileLook(settings, c, layouts)"
+            :look="lookOf(c)"
+          />
           <TileGroup
-            v-if="c.section" :tiles="views[c.id].tiles" v-bind="tileLook(settings, c.section!)" :editing="editing"
+            v-else-if="c.section" :tiles="flowTiles(c)" v-bind="tileLook(settings, c, layouts)" :editing="editing"
             :lifted="liftedIn(c)" :insert-at="insertIn(c)"
             @tile-down="(key, e) => tileDown(c.section!, key, e)"
           />

@@ -93,7 +93,7 @@ const badgePos = () => props.docked
       <div class="ov-tag" data-tag>
         <span>{{ name }}</span><i>{{ docked ? '黏合' : NAME[anchor] }}{{ enabled ? '' : '・已關閉' }}</i>
         <button
-          v-if="back" type="button" class="ov-back" data-back title="收回群組"
+          v-if="back" type="button" class="ov-back" data-back title="收回"
           @pointerdown.stop @click.stop="emit('back')"
         >↩ 收回</button>
         <button

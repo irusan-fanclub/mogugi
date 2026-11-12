@@ -331,6 +331,36 @@ describe('OverlayApp', () => {
         });
     });
 
+    describe('by-member party grid', () => {
+        const party = async () => {
+            await mountApp();
+            fire('overlay:state', state(true));
+            session.inDungeon.value = true;
+            appear('p1', 8001, 100, 'Alice');
+            appear('p2', 8001, 100, 'Bob');
+            appear('b1', BOSS_RACE, 100);
+            fire('overlay:settings', { ccParty: { items: [{ id: 680 }], look: { arrange: 'byMember' } } });
+            hit('p1', 'b1', 1000, 100);
+            hit('p2', 'b1', 1001, 100);
+            cc('p1', 680, 1000, Date.now() / 1000 + 100);
+            cc('p2', 680, 1000, Date.now() / 1000 + 100);
+            await tick(250);
+        };
+
+        it('draws one row per member while locked', async () => {
+            await party();
+            expect(comp('ccParty').findAll('[data-member-row]')).toHaveLength(2);
+        });
+
+        it('falls back to the flow tiles while editing', async () => {
+            await party();
+            fire('overlay:state', state(false));
+            await tick(250);
+            expect(comp('ccParty').findAll('[data-member-row]')).toHaveLength(0);
+            expect(comp('ccParty').findAll('[data-tile-key]').length).toBeGreaterThan(0);
+        });
+    });
+
     describe('when sections show while locked', () => {
         const me = () => {
             appear('me', 8001, 100, 'Me');

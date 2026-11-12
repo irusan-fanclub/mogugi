@@ -26,6 +26,10 @@ describe('buildCcTiles', () => {
             expect(t).toMatchObject({ state: 'cooling', sec: '40%', label: '6:00', hl: false, faint: false });
             expect(t.mask).toBeCloseTo(0.6);
         });
+        it('the gauge tile keeps its clock text as a fixed label', () => {
+            const t = build(sec([gaugeItem()]), { A: actor() }, { gauge } as any).get('428')![0];
+            expect(t).toMatchObject({ fixedLabel: true, itemLabel: '信念' });
+        });
         it('an active 428 wins over the gauge', () => {
             const t = build(sec([gaugeItem()]), { A: actor(cond(428, NOW + 15)) }, { gauge } as any).get('428')![0];
             expect(t).toMatchObject({ state: 'warn', sec: '15' });
@@ -37,6 +41,7 @@ describe('buildCcTiles', () => {
     it('ok with 45 s left is faint', () => {
         const t = build(sec([item()]), { A: actor(cond(900, NOW + 45)) }).get('900')![0];
         expect(t).toMatchObject({ state: 'ok', faint: true, sec: '45', hl: false, isSelf: true, holderId: 'A', label: 'X' });
+        expect(t).toMatchObject({ itemLabel: 'X', fixedLabel: false });
     });
     it('warn at 20 s', () => {
         const t = build(sec([item()]), { A: actor(cond(900, NOW + 20)) }).get('900')![0];

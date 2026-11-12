@@ -5,6 +5,8 @@ import { FONT_PX, type OverlaySettings } from '@/lib/overlaySettings';
 import {
     dpsFontPx, iconPx, itemKey, orderedKeys, type CcSection, type CooldownSection, type PanelBg, type SectionId,
 } from '@/lib/overlaySections';
+import type { Layouts } from '@/lib/overlayGroups';
+import { parseFrame, sectionTitle, type SectionLook } from '@/lib/overlayFrames';
 import type { TileVM } from '@/lib/overlayTiles';
 import { ccName } from '@/lib/util';
 import { condNameMap, skillNameMap } from '@/store';
@@ -18,11 +20,36 @@ const panel = (b: PanelBg) => rgba(b.color, b.alpha);
 export const sectionOf = (s: OverlaySettings, sec: SectionId): CcSection | CooldownSection =>
     sec === 'cooldown' ? s.cooldown : s[sec];
 
-/** Frame background: the section's own look, else the general panel colour. */
-export function bgOf(s: OverlaySettings, c: ComponentDef): string {
+/** A pulled frame with its own look uses it; every other frame follows the section look. */
+export function frameLook(s: OverlaySettings, c: ComponentDef, layouts: Layouts): SectionLook {
+    const own = c.kind === 'unit' || c.kind === 'group' ? parseFrame(c.section!, layouts?.[c.id]?.frame)?.look : null;
+    return own ?? sectionOf(s, c.section!).look;
+}
+
+/** The title over a frame; '' when it shows none. */
+export function frameTitle(s: OverlaySettings, c: ComponentDef, layouts: Layouts): string {
+    if (c.kind !== 'section' && c.kind !== 'unit' && c.kind !== 'group') return '';
+    const on = sectionOf(s, c.section!).look.title;
+    if (c.kind === 'section') return on ? sectionTitle(s, c.section!) : '';
+    const rec = parseFrame(c.section!, layouts?.[c.id]?.frame);
+    if (!rec) return c.kind === 'group' && on ? sectionTitle(s, c.section!) : '';
+    return (rec.titleOn ?? on) ? rec.name : '';
+}
+
+/** Frame background: the frame's own look, else the general panel colour. */
+export function bgOf(s: OverlaySettings, c: ComponentDef, layouts: Layouts): string {
     if (c.kind === 'alerts') return rgba(s.alerts.bg, s.alerts.opacity);
     if (c.kind === 'dps') return panel(s.dpsLook.bg ?? s.general.bg);
-    return panel(sectionOf(s, c.section!).look.bg ?? s.general.bg);
+    return panel(frameLook(s, c, layouts).bg ?? s.general.bg);
+}
+
+/** The text under a tile; by-member rows already carry the member name at the left. */
+export function labelOf(t: TileVM, look: SectionLook, byMember: boolean): string {
+    if (t.fixedLabel) return t.label;
+    const names = look.names;
+    if (names === 'label') return t.itemLabel;
+    if (names === 'member' || names === true) return byMember ? '' : t.holderName;
+    return '';
 }
 
 export function fontPxOf(s: OverlaySettings, c: ComponentDef): number {
@@ -31,8 +58,8 @@ export function fontPxOf(s: OverlaySettings, c: ComponentDef): number {
     return 14;
 }
 
-export function tileLook(s: OverlaySettings, sec: SectionId): { px: number; dim: number } {
-    const look = sectionOf(s, sec).look;
+export function tileLook(s: OverlaySettings, c: ComponentDef, layouts: Layouts): { px: number; dim: number } {
+    const look = frameLook(s, c, layouts);
     return { px: iconPx(look), dim: 'dim' in look ? look.dim : 100 };
 }
 

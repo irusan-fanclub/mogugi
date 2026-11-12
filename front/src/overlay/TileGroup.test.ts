@@ -6,7 +6,8 @@ import type { TileVM } from '@/lib/overlayTiles';
 
 const tile = (o: Partial<TileVM> = {}): TileVM => ({
     key: 'c1164', holderId: 'h', label: 'L', icon: { kind: 'cc', id: 1164 }, sec: '12',
-    state: 'ok', hl: false, faint: false, mask: 0, isSelf: false, ...o,
+    state: 'ok', hl: false, faint: false, mask: 0, isSelf: false,
+    itemLabel: '', holderName: '', fixedLabel: false, ...o,
 });
 const props = (tiles: TileVM[], o: Record<string, unknown> = {}) =>
     ({ tiles, px: 36, dim: 40, editing: false, lifted: null, insertAt: null, ...o });

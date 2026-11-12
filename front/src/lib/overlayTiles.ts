@@ -7,6 +7,8 @@ import { clockText, gaugePct, secondsToFull, TUAIRIM_CC, type Gauge } from './tu
 export type TileState = 'ok' | 'warn' | 'safe' | 'gone' | 'cooling' | 'ready';
 export interface TileVM {
     key: string; holderId: string; label: string; icon: IconRef;
+    /** Parts of `label` kept apart; `fixedLabel` marks a label (the 信念值 clock) that never changes. */
+    itemLabel: string; holderName: string; fixedLabel: boolean;
     /** Seconds text ('' none, 'OK' for a ready cooldown). */
     sec: string;
     state: TileState; hl: boolean; faint: boolean;
@@ -43,12 +45,15 @@ export function buildCcTiles(sec: CcSection, i: {
                 if (cond) { matched = id; break; }
             }
             const label = sec.look.names === 'label' ? item.label : sec.look.names === 'member' ? h.name : '';
-            const tile = { key, holderId: h.id, label, mask: 0, isSelf: h.isSelf };
+            const tile = {
+                key, holderId: h.id, label, mask: 0, isSelf: h.isSelf,
+                itemLabel: item.label, holderName: h.name, fixedLabel: false,
+            };
             const g = !cond && item.ids.includes(TUAIRIM_CC) ? i.gauge?.(h.id) ?? null : null;
             if (g) {
                 // Percent on the icon, the estimated time to fire underneath.
                 tiles.push({
-                    ...tile, label: clockText(secondsToFull(g)), icon: item.icon, sec: `${gaugePct(g)}%`,
+                    ...tile, label: clockText(secondsToFull(g)), icon: item.icon, sec: `${gaugePct(g)}%`, fixedLabel: true,
                     state: 'cooling', hl: false, faint: false, mask: 1 - g.value / g.max,
                 });
                 continue;
@@ -96,6 +101,7 @@ export function buildCooldownTiles(sec: CooldownSection, rows: CooldownRowVM[], 
             const s = r.skills.find(x => x.skillId === item.skillId)!;
             const base = {
                 key, holderId: r.id, label: sec.look.names ? r.name : '',
+                itemLabel: '', holderName: r.name, fixedLabel: false,
                 icon: { kind: 'skill', id: item.skillId } as IconRef, isSelf: isSelf(r), faint: false,
             };
             if (s.remaining > 0) {
