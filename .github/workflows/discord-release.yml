@@ -13,6 +13,11 @@ on:
         description: 'Only rebuild mogugi/releases.json, no announcement'
         type: boolean
         default: false
+      action:
+        description: 'Announcement action (published posts anew, edited updates the post)'
+        type: choice
+        options: [published, edited]
+        default: published
 
 permissions:
   contents: read
@@ -27,7 +32,8 @@ env:
 jobs:
   announce:
     runs-on: ubuntu-latest
-    # Edits and json_only runs only refresh releases.json (job below).
+    # Release edits go through announce-edit; json_only runs only refresh
+    # releases.json (job below).
     if: >-
       ${{ (github.event_name == 'workflow_dispatch' && !inputs.json_only) ||
           (github.event_name == 'release' && github.event.action == 'published' && github.event.release.prerelease == false) }}
@@ -38,58 +44,33 @@ jobs:
         id: rel
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_ACTION: ${{ inputs.action }}
+          EVENT_TAG: ${{ github.event.release.tag_name }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            tag="${{ inputs.tag }}"
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            tag="$INPUT_TAG"; action="$INPUT_ACTION"
           else
-            tag="${{ github.event.release.tag_name }}"
+            tag="$EVENT_TAG"; action=published
           fi
-
-          json=$(gh release view "$tag" --repo "${{ github.repository }}" --json name,body,url,tagName,assets)
-          name=$(echo "$json" | jq -r '.name // .tagName')
-          url=$(echo  "$json" | jq -r '.url')
-          body=$(echo "$json" | jq -r '.body')
-          exe_name=$(echo "$json" | jq -r '.assets[]? | select(.name | endswith(".exe")) | .name' | head -n1)
-
-          if [ "${#body}" -gt 4000 ]; then
-            body="${body:0:3990}…（已截斷，完整內容請點 release 連結）"
-          fi
-
+          gh release view "$tag" --repo "${{ github.repository }}" \
+            --json name,body,url,tagName,assets > _rel.json
           {
-            echo "name=$name"
-            echo "url=$url"
             echo "tag=$tag"
-            echo "exe_name=$exe_name"
-            echo "body<<RELEASE_BODY_EOF"
-            echo "$body"
-            echo "RELEASE_BODY_EOF"
+            echo "action=$action"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Bundle exe into zip
-        id: bundle
-        if: ${{ steps.rel.outputs.exe_name != '' }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          mkdir -p _release
-          gh release download "${{ steps.rel.outputs.tag }}" \
-            --repo "${{ github.repository }}" \
-            --pattern "${{ steps.rel.outputs.exe_name }}" \
-            --dir _release
-          exe_name="${{ steps.rel.outputs.exe_name }}"
-          zip_name="${exe_name%.exe}.zip"
-          (cd _release && zip "$zip_name" "$exe_name")
-          echo "zip_name=$zip_name" >> "$GITHUB_OUTPUT"
-
       # Skipped when the R2 secrets are absent, so the announcement still goes
-      # out on an account that has no mirror configured.
+      # out on an account that has no mirror configured. An edit sends no
+      # downloads, so it has nothing to mirror.
       #
       # S3 API, not wrangler: wrangler's r2 commands go through Cloudflare's
       # REST API, which rejects bucket-scoped tokens — those are S3-only. See
       # https://developers.cloudflare.com/r2/api/tokens/
       - name: Mirror assets to R2
         id: mirror
-        if: ${{ env.R2_KEY_ID != '' }}
+        if: ${{ env.R2_KEY_ID != '' && steps.rel.outputs.action == 'published' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -135,70 +116,105 @@ jobs:
             echo "zip_file=$zip_file"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Send Discord embed (with attached zip)
+      # supermogugi posts once per tag; the JSON is built by jq only, so
+      # release text never touches the shell or the JSON syntax.
+      - name: Announce via supermogugi
         env:
-          WEBHOOK:  ${{ secrets.DISCORD_WEBHOOK_URL }}
-          NAME:     ${{ steps.rel.outputs.name }}
-          URL:      ${{ steps.rel.outputs.url }}
-          BODY:     ${{ steps.rel.outputs.body }}
-          ZIP_NAME: ${{ steps.bundle.outputs.zip_name }}
-          EXE_URL:  ${{ steps.mirror.outputs.exe_url }}
-          ZIP_URL:  ${{ steps.mirror.outputs.zip_url }}
+          ACTION: ${{ steps.rel.outputs.action }}
+          TAG: ${{ steps.rel.outputs.tag }}
+          EXE_URL: ${{ steps.mirror.outputs.exe_url }}
+          ZIP_URL: ${{ steps.mirror.outputs.zip_url }}
           EXE_FILE: ${{ steps.mirror.outputs.exe_file }}
           ZIP_FILE: ${{ steps.mirror.outputs.zip_file }}
         run: |
-          if [ -n "$EXE_URL" ]; then
-            dl=$(printf '[下載 %s](%s)\n[下載 %s](%s)\n備用：[GitHub Release](%s)' \
-              "$EXE_FILE" "$EXE_URL" "$ZIP_FILE" "$ZIP_URL" "$URL")
-          else
-            dl="[前往 GitHub Release 下載]($URL)"
+          dl='[]'
+          if [ "$ACTION" = "published" ]; then
+            if [ -n "$EXE_URL$ZIP_URL" ]; then
+              for pair in "$EXE_FILE|$EXE_URL" "$ZIP_FILE|$ZIP_URL"; do
+                [ -n "${pair#*|}" ] || continue
+                dl=$(jq -c --arg n "${pair%%|*}" --arg u "${pair#*|}" \
+                  '. + [{name: $n, url: $u}]' <<<"$dl")
+              done
+            else
+              # No mirror: fall back to the GitHub asset links.
+              dl=$(jq -c '[.assets[]? | select(.name | endswith(".exe") or endswith(".zip"))
+                | {name, url}] | .[:5]' _rel.json)
+            fi
           fi
 
-          payload=$(jq -n \
-            --arg title "$NAME" \
-            --arg desc  "$BODY" \
-            --arg url   "$URL"  \
-            --arg dl    "$dl"   \
-            '{
-              embeds: [{
-                title: $title,
-                description: $desc,
-                url: $url,
-                color: 9024762,
-                fields: [{ name: "📥 下載", value: $dl }],
-                footer: { text: "irusan-fanclub/mogugi" }
-              }],
-              allowed_mentions: { parse: [] }
-            }')
+          payload=$(jq -n --arg action "$ACTION" --arg tag "$TAG" \
+            --argjson dl "$dl" --slurpfile rel _rel.json '
+            {action: $action, tag: $tag,
+             name: (if ($rel[0].name // "") == "" then $tag else $rel[0].name end),
+             body: ($rel[0].body // ""), url: $rel[0].url}
+            | if $action == "published" then . + {downloads: $dl} else . end')
 
-          # Discord webhook attachments cap at ~8 MB (non-boosted). Attach the
-          # zip only when it fits; otherwise post a text-only embed (the release
-          # URL already links the downloads) so a large binary doesn't 413.
-          max=8000000
-          if [ -n "$ZIP_NAME" ] && [ -f "_release/$ZIP_NAME" ] && \
-             [ "$(stat -c%s "_release/$ZIP_NAME")" -le "$max" ]; then
-            curl -fsS -X POST \
-              -F "payload_json=$payload;type=application/json" \
-              -F "files[0]=@_release/$ZIP_NAME" \
-              "$WEBHOOK"
-          else
-            curl -fsS -X POST -H "Content-Type: application/json" \
-              -d "$payload" "$WEBHOOK"
-          fi
+          curl -fsS -m 30 -X POST https://mabinogi.elden-mogu.com/mogugi/release \
+            -H "X-Release-Key: ${{ secrets.MOGUGI_RELEASE_KEY }}" \
+            -H 'Content-Type: application/json' -d "$payload"
+
+      - name: Alert the ops channel
+        if: ${{ failure() }}
+        env:
+          ALERT_KEY: ${{ secrets.MOGUGI_ALERT_KEY }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          [ -n "$ALERT_KEY" ] || { echo "MOGUGI_ALERT_KEY not set; skipping alert"; exit 0; }
+          body=$(jq -n --arg tag "$TAG" --arg url "$RUN_URL" \
+            '{title: "mogugi 公告發送失敗", description: ("Discord 公告沒有發出。版本：" + $tag), url: $url}')
+          curl -fsS -m 15 -X POST https://mabinogi.elden-mogu.com/mogugi/ops/alert \
+            -H "X-Alert-Key: $ALERT_KEY" -H 'Content-Type: application/json' -d "$body" \
+            || echo "::warning::alert endpoint unreachable"
+
+  # A release edit updates the existing Discord post; no mirror, no new ping.
+  announce-edit:
+    runs-on: ubuntu-latest
+    if: >-
+      ${{ github.event_name == 'release' && github.event.action == 'edited' && github.event.release.prerelease == false }}
+    steps:
+      - name: Announce the edit via supermogugi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          gh release view "$TAG" --repo "${{ github.repository }}" \
+            --json name,body,url > _rel.json
+          payload=$(jq -n --arg tag "$TAG" --slurpfile rel _rel.json '
+            {action: "edited", tag: $tag,
+             name: (if ($rel[0].name // "") == "" then $tag else $rel[0].name end),
+             body: ($rel[0].body // ""), url: $rel[0].url}')
+          curl -fsS -m 30 -X POST https://mabinogi.elden-mogu.com/mogugi/release \
+            -H "X-Release-Key: ${{ secrets.MOGUGI_RELEASE_KEY }}" \
+            -H 'Content-Type: application/json' -d "$payload"
+
+      - name: Alert the ops channel
+        if: ${{ failure() }}
+        env:
+          ALERT_KEY: ${{ secrets.MOGUGI_ALERT_KEY }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          [ -n "$ALERT_KEY" ] || { echo "MOGUGI_ALERT_KEY not set; skipping alert"; exit 0; }
+          body=$(jq -n --arg tag "$TAG" --arg url "$RUN_URL" \
+            '{title: "mogugi 公告發送失敗", description: ("Discord 公告沒有更新。版本：" + $tag), url: $url}')
+          curl -fsS -m 15 -X POST https://mabinogi.elden-mogu.com/mogugi/ops/alert \
+            -H "X-Alert-Key: $ALERT_KEY" -H 'Content-Type: application/json' -d "$body" \
+            || echo "::warning::alert endpoint unreachable"
 
   # mogugi/releases.json feeds the 魔古工坊 release page. It is written after the
   # mirror step, so every download link in it already exists on R2. It never
   # blocks the announcement; a failure fails the run and alerts the private
   # ops channel through supermogugi.
   releases-json:
-    needs: announce
+    needs: [announce, announce-edit]
     runs-on: ubuntu-latest
     # A publish and a quick edit must not race on the same object.
     concurrency:
       group: releases-json
       cancel-in-progress: false
     if: >-
-      ${{ always() && needs.announce.result != 'cancelled' &&
+      ${{ always() && needs.announce.result != 'cancelled' && needs.announce-edit.result != 'cancelled' &&
           (github.event_name == 'workflow_dispatch' || github.event.release.prerelease == false) }}
     env:
       R2_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
