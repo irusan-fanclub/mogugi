@@ -20,6 +20,7 @@ vi.mock('@/lib/gameData', () => ({ loadNameMaps }));
 vi.mock('@/lib/iconFallback', () => ({ installIconFallback: vi.fn(() => () => {}) }));
 vi.mock('@/lib/runtimeEnv', () => ({ wsUrl: () => 'ws://127.0.0.1:1/ws', isDesktop: () => false }));
 vi.mock('./overlay/overlayLink', () => ({ startOverlayLink: vi.fn(async () => () => {}) }));
+vi.mock('./overlay/frameRecords', () => ({ startFrameRecords: vi.fn(() => () => {}) }));
 
 import { ref } from 'vue';
 import DesktopApp from './DesktopApp.vue';

@@ -18,6 +18,7 @@ import { LICENSE_GUARD_KEY, SESSION_KEY, TAB_SWITCH_KEY } from './session';
 import { PINNED_TABS, TABS } from './tabs/registry';
 import { startChartHub } from './windows/chartHub';
 import { startOverlayLink } from './overlay/overlayLink';
+import { startFrameRecords } from './overlay/frameRecords';
 import { useOverlayState } from './overlay/useOverlayState';
 import { useToast } from './ui/useToast';
 
@@ -91,7 +92,10 @@ function stopHub() {
 }
 // The overlay link follows the same lifecycle as the hub.
 let link: Promise<() => void> | undefined;
+let stopFrames: (() => void) | undefined;
 function stopLink() {
+    stopFrames?.();
+    stopFrames = undefined;
     const l = link;
     link = undefined;
     l?.then(stop => stop()).catch(e => console.error('overlay link stop failed', e));
@@ -130,6 +134,7 @@ watch(phase, (p, prev) => {
         if (isDesktop()) {
             const linked = startOverlayLink();
             link = linked;
+            stopFrames = startFrameRecords();
             linked.catch(e => console.error('overlay link start failed', e));
             // After the hello listener exists, refresh the overlay state and the license flag.
             void linked.then(() => refreshOverlayState()).catch(() => {});

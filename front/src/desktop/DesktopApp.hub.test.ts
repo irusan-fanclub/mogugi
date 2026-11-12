@@ -19,6 +19,7 @@ vi.mock('@/lib/iconFallback', () => ({ installIconFallback: () => () => {} }));
 vi.mock('@/lib/runtimeEnv', () => ({ wsUrl: () => 'ws://x/ws', isDesktop: () => false }));
 vi.mock('./windows/chartHub', () => ({ startChartHub: vi.fn(() => Promise.reject(new Error('boom'))) }));
 vi.mock('./overlay/overlayLink', () => ({ startOverlayLink: vi.fn(async () => () => {}) }));
+vi.mock('./overlay/frameRecords', () => ({ startFrameRecords: vi.fn(() => () => {}) }));
 
 import DesktopApp from './DesktopApp.vue';
 

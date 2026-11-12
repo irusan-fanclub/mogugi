@@ -18,6 +18,7 @@ vi.mock('@/lib/gameData', () => ({ loadNameMaps: async () => {} }));
 vi.mock('@/lib/iconFallback', () => ({ installIconFallback: () => () => {} }));
 vi.mock('@/lib/runtimeEnv', () => ({ wsUrl: () => 'ws://x/ws', isDesktop: () => false }));
 vi.mock('./overlay/overlayLink', () => ({ startOverlayLink: vi.fn(async () => () => {}) }));
+vi.mock('./overlay/frameRecords', () => ({ startFrameRecords: vi.fn(() => () => {}) }));
 
 // A tab that calls the shared helper, standing in for later real tabs.
 vi.mock('./tabs/registry', async () => {

@@ -19,6 +19,7 @@ vi.mock('@/lib/iconFallback', () => ({ installIconFallback: () => () => {} }));
 vi.mock('@/lib/runtimeEnv', () => ({ wsUrl: () => 'ws://x/ws', isDesktop: () => true }));
 vi.mock('./windows/chartHub', () => ({ startChartHub: vi.fn(async () => () => {}) }));
 vi.mock('./overlay/overlayLink', () => ({ startOverlayLink: vi.fn(async () => () => {}) }));
+vi.mock('./overlay/frameRecords', () => ({ startFrameRecords: vi.fn(() => () => {}) }));
 const overlayState = vi.hoisted(() => ({
     state: null as unknown as { value: unknown },
     attempts: null as unknown as { value: number },
