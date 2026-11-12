@@ -109,4 +109,3 @@ describe('frame records follow the layout', () => {
         ]);
     });
 });
-

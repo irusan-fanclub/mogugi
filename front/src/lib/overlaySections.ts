@@ -163,7 +163,7 @@ function bg(v: unknown, fb: PanelBg | null): PanelBg | null {
 
 /** Free text for a title or frame name: control characters dropped, at most TITLE_MAX characters. */
 export const cleanTitleText = (v: unknown): string =>
-    typeof v === 'string' ? Array.from(v.replace(/[ -]/g, '')).slice(0, TITLE_MAX).join('') : '';
+    typeof v === 'string' ? Array.from(v.replace(/[\u0000-\u001f\u007f]/g, '')).slice(0, TITLE_MAX).join('') : '';
 const arrange = (v: unknown): Arrange => v === 'byMember' ? 'byMember' : 'flow';
 const gapMode = (v: unknown): GapMode => v === 'pack' ? 'pack' : 'keep';
 

@@ -70,7 +70,7 @@ describe('missingFrameRecords', () => {
         expect(parseFrame('ccParty', out['ccParty-g2'].frame)?.n).toBe(2);
     });
     it('ignores ids that are not a unit or group of the section', () => {
-        expect(missingFrameRecords(s, { ccParty: L(), 'ccParty-999999': L(), dps: L(), 'ccSelf-g1': L() }))
-            .toHaveProperty('ccSelf-g1');
+        const out = missingFrameRecords(s, { ccParty: L(), 'ccParty-999999': L(), dps: L(), 'ccSelf-g1': L() });
+        expect(Object.keys(out)).toEqual(['ccSelf-g1']);
     });
 });
