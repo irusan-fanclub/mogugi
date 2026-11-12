@@ -4,7 +4,7 @@ import type { ComponentId } from '@/lib/overlayProtocol';
 import type { MoveTo } from './sectionLayout';
 
 // The 「移動 ▾」 button of an item row and its menu.
-defineProps<{ blocks: { id: ComponentId; name: string }[]; current: ComponentId; canUp: boolean; canDown: boolean }>();
+defineProps<{ blocks: { id: ComponentId; name: string }[]; current: ComponentId; canUp: boolean; canDown: boolean; canNew: boolean }>();
 const emit = defineEmits<{ move: [to: MoveTo] }>();
 
 const open = ref(false);
@@ -30,7 +30,7 @@ function pick(to: MoveTo) { open.value = false; emit('move', to); }
         @click="pick({ frame: b.id })"
       >{{ b.id === current ? `${b.name}（目前）` : b.name }}</button>
       <hr>
-      <button type="button" data-move-new @click="pick('new')">＋ 新的框</button>
+      <button type="button" data-move-new :disabled="!canNew" @click="pick('new')">＋ 新的框</button>
     </div>
   </span>
 </template>

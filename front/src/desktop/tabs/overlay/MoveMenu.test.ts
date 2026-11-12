@@ -4,8 +4,8 @@ import { mount } from '@vue/test-utils';
 import MoveMenu from './MoveMenu.vue';
 
 const blocks = [{ id: 'ccParty', name: '隊伍 CC' }, { id: 'ccParty-g1', name: '隊伍 CC 1' }];
-const mk = (p: Partial<{ canUp: boolean; canDown: boolean }> = {}) => mount(MoveMenu, {
-    props: { blocks, current: 'ccParty', canUp: true, canDown: true, ...p }, attachTo: document.body,
+const mk = (p: Partial<{ canUp: boolean; canDown: boolean; canNew: boolean }> = {}) => mount(MoveMenu, {
+    props: { blocks, current: 'ccParty', canUp: true, canDown: true, canNew: true, ...p }, attachTo: document.body,
 });
 
 describe('MoveMenu', () => {
@@ -31,6 +31,15 @@ describe('MoveMenu', () => {
         await w.get('[data-move]').trigger('click');
         await w.get('[data-move-down]').trigger('click');
         expect(w.emitted('move')!.slice(1)).toEqual([['new'], [{ step: 1 }]]);
+        w.unmount();
+    });
+
+    it('新的框 is disabled when it cannot start a frame', async () => {
+        const w = mk({ canNew: false });
+        await w.get('[data-move]').trigger('click');
+        expect(w.get('[data-move-new]').attributes('disabled')).toBeDefined();
+        await w.get('[data-move-new]').trigger('click');
+        expect(w.emitted('move')).toBeUndefined();
         w.unmount();
     });
 

@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue';
 import { componentsOf, defaultLayoutOf, layoutOf, sectionItems } from '@/lib/overlayComponents';
 import {
-    defaultFrameRec, frameField, parseFrame, resetFrameRec, sectionTitle, type FrameRec, type SectionLook,
+    defaultFrameRec, frameField, missingFrameRecords, parseFrame, resetFrameRec, sectionTitle, type FrameRec, type SectionLook,
 } from '@/lib/overlayFrames';
 import { frameOfKey, planPlace, planTakeOut, type LayoutOp } from '@/lib/overlayGroups';
 import type { ComponentId } from '@/lib/overlayProtocol';
@@ -47,14 +47,15 @@ export function useSectionLayout(section: () => SectionId) {
 
     type FrameKind = 'section' | 'unit' | 'group';
     interface FrameInfo { id: ComponentId; kind: FrameKind; keys: string[]; rec: FrameRec | null }
-    /** The section frame first, then pulled frames by record number (unrecorded last, by id). */
+    /** The section frame first, then pulled frames by record number; unrecorded ones get the number the desktop will assign. */
     const frames = computed((): FrameInfo[] => {
         const sec = section();
+        const missing = missingFrameRecords(overlaySettings.value, layouts.value ?? {});
         const pulled = componentsOf(overlaySettings.value, layouts.value)
             .filter(c => c.section === sec && (c.kind === 'unit' || c.kind === 'group'))
             .map((c): FrameInfo => ({
                 id: c.id, kind: c.kind as FrameKind, keys: c.kind === 'unit' ? [c.key!] : (c.keys ?? []),
-                rec: parseFrame(sec, layouts.value?.[c.id]?.frame),
+                rec: parseFrame(sec, layouts.value?.[c.id]?.frame) ?? parseFrame(sec, missing[c.id]?.frame),
             }))
             .sort((a, b) => (a.rec ? a.rec.n : Infinity) - (b.rec ? b.rec.n : Infinity) || (a.id < b.id ? -1 : 1));
         const taken = new Set(pulled.flatMap(f => f.keys));
@@ -73,6 +74,7 @@ export function useSectionLayout(section: () => SectionId) {
         const ctx = { sec, layouts: layouts.value, layoutOf: (id: ComponentId) => layoutOf(id, layouts.value), keys, sectionOrder };
         const from = frameOfKey(sec, key, layouts.value);
         if (to === 'new') {
+            if (from === unitId(sec, key)) return;
             const free = { ...defaultLayoutOf(unitId(sec, key)), anchor: 'center' as const, x: 0, y: 0, dock: '' as const };
             apply(planPlace(ctx, [key], from, { free }));
             return;

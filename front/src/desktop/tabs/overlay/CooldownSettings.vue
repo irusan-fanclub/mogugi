@@ -108,6 +108,7 @@ const onPick = (id: number) => { picking.value = false; add(id); };
                 :blocks="blocks.map(b => ({ id: b.id, name: b.title }))" :current="f.id"
                 :can-up="f.kind !== 'unit' && f.keys.indexOf(itemKey(it)) > 0"
                 :can-down="f.kind !== 'unit' && f.keys.indexOf(itemKey(it)) < f.keys.length - 1"
+                :can-new="f.kind !== 'unit'"
                 @move="to => move(itemKey(it), to)"
               />
             </template>

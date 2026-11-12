@@ -161,6 +161,16 @@ describe('CcSectionSettings', () => {
             expect(h.setLayout).toHaveBeenCalledWith('ccSelf-193', expect.objectContaining({ anchor: 'center', x: 0, y: 0, dock: '' }));
         });
 
+        it('新的框 is greyed on a unit and move() does nothing for it', async () => {
+            state.value = baseState({ 'ccSelf-193': { ...L, frame: frameField(defaultFrameRec('ccSelf', 'unit', 1)) } });
+            mountSec('ccSelf');
+            await row(193).get('[data-move]').trigger('click');
+            expect(row(193).get('[data-move-new]').attributes('disabled')).toBeDefined();
+            await row(193).get('[data-move-new]').trigger('click');
+            expect(h.setLayout).not.toHaveBeenCalled();
+            expect(h.removeLayout).not.toHaveBeenCalled();
+        });
+
         it('moving the last member of a unit back removes its layout', async () => {
             state.value = baseState({ 'ccSelf-193': { ...L } });
             mountSec('ccSelf');
@@ -255,6 +265,16 @@ describe('CcSectionSettings', () => {
             mountSec('burst');
             expect(blockEls()).toHaveLength(2);
             expect(w!.find('[data-item]').exists()).toBe(false);
+        });
+
+        it('unrecorded frames are numbered like the desktop does: groups first, then units', () => {
+            state.value = baseState({ 'ccParty-680': { ...L }, 'ccParty-g1': { ...L, order: ['476', '1225'] } });
+            mountSec('ccParty');
+            const [, first, second] = blockEls();
+            expect(first.find('[data-item="476"]').exists()).toBe(true);
+            expect(first.get('[data-frame-title]').text()).toBe('隊伍 CC 1');
+            expect(second.find('[data-item="680"]').exists()).toBe(true);
+            expect(second.get('[data-frame-title]').text()).toBe('隊伍 CC 2');
         });
 
         it('a frame without a record yet shows the default name', () => {
