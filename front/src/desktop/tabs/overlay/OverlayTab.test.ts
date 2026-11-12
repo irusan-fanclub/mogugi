@@ -77,13 +77,12 @@ describe('LockBar', () => {
 
     it('shows the visibility row and emits setHidden both ways', async () => {
         w = mount(LockBar, { props: { locked: true, hotkey: 'Ctrl+Alt+L', hotkeyError: '', visibleHotkey: 'Ctrl+Alt+O' } });
-        const row = w.get('[data-visibility]');
-        expect(row.text()).toContain('顯示中');
-        expect(row.text()).toContain('Ctrl+Alt+O');
-        await row.findAll('button').find(b => b.text() === '隱藏')!.trigger('click');
+        expect(w.get('[data-visibility]').text()).toContain('顯示中');
+        expect(w.text()).toContain('Ctrl+Alt+O');
+        await w.get('[data-visibility-btn]').findAll('button').find(b => b.text() === '隱藏')!.trigger('click');
         await w.setProps({ hidden: true });
         expect(w.get('[data-visibility]').text()).toContain('已隱藏全部 overlay');
-        await w.get('[data-visibility]').findAll('button').find(b => b.text() === '顯示')!.trigger('click');
+        await w.get('[data-visibility-btn]').findAll('button').find(b => b.text() === '顯示')!.trigger('click');
         expect(w.emitted('setHidden')).toEqual([[true], [false]]);
     });
 
@@ -145,7 +144,7 @@ describe('OverlayTab nav', () => {
         state.value = { ...state.value!, hidden: true };
         await nextTick();
         expect(w!.get('[data-visibility]').text()).toContain('已隱藏全部 overlay');
-        await w!.get('[data-visibility]').findAll('button').find(b => b.text() === '顯示')!.trigger('click');
+        await w!.get('[data-visibility-btn]').findAll('button').find(b => b.text() === '顯示')!.trigger('click');
         expect(h.setHidden).toHaveBeenCalledWith(false);
     });
 
@@ -235,10 +234,8 @@ describe('narrow mode', () => {
 });
 
 describe('overlay tab page chrome', () => {
-    it('scale slider writes overlaySettings.scale', async () => {
+    it('shows the window-mode hint', () => {
         mountTab();
-        await w!.get('[data-overlay-scale]').setValue('120');
-        expect(settings.value.scale).toBe(120);
         expect(w!.text()).toContain('overlay 只在視窗模式或無邊框視窗模式下看得到');
     });
 

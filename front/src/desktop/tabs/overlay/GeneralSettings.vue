@@ -16,6 +16,18 @@ const resetColors = () => set(g => { const d = defaultGeneral(); g.warn = d.warn
   <div class="ovs-page" data-general>
     <h2>通用</h2>
     <div class="ovs-box">
+      <h3>整體</h3>
+      <div class="ovs-field">
+        <span class="ovs-lbl">縮放</span>
+        <input
+          data-overlay-scale type="range" min="80" max="150" step="10" aria-label="整體縮放"
+          :value="overlaySettings.scale"
+          @input="e => updateOverlaySettings(s => { s.scale = Number(val(e)); })"
+        >
+        <span class="ovs-dim">{{ overlaySettings.scale }}%</span>
+      </div>
+    </div>
+    <div class="ovs-box">
       <h3>面板<IconButton kind="reset" data-reset-bg @fire="set(g => { g.bg = defaultGeneral().bg; })" /></h3>
       <div class="ovs-field">
         <span class="ovs-lbl">面板底色</span>

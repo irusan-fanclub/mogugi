@@ -16,25 +16,29 @@ defineEmits<{
 
 <template>
   <div class="lockbar">
-    <div class="row">
-      <i class="mdi" :class="locked ? 'mdi-lock' : 'mdi-lock-open-variant'" />
-      <span class="status">{{ locked ? '已鎖定（滑鼠穿透）' : '已解鎖（編輯版面）' }}</span>
-      <span class="grow" />
-      <span class="dim">快捷鍵</span>
-      <HotkeyField :hotkey="hotkey" @set-hotkey="$emit('setHotkey', $event)" />
-      <DButton v-if="locked" @click="$emit('setLocked', false)">解鎖以編輯版面</DButton>
-      <DButton v-else variant="primary" @click="$emit('setLocked', true)">鎖定</DButton>
+    <div class="grid">
+      <span class="status">
+        <i class="mdi" :class="locked ? 'mdi-lock' : 'mdi-lock-open-variant'" />
+        {{ locked ? '已鎖定（滑鼠穿透）' : '已解鎖（編輯版面）' }}
+      </span>
+      <HotkeyField :hotkey="hotkey" title="鎖定快捷鍵" @set-hotkey="$emit('setHotkey', $event)" />
+      <span class="btn">
+        <DButton v-if="locked" @click="$emit('setLocked', false)">解鎖以編輯版面</DButton>
+        <DButton v-else variant="primary" @click="$emit('setLocked', true)">鎖定</DButton>
+      </span>
+      <div v-if="$slots.top" class="side"><slot name="top" /></div>
+      <span class="status" data-visibility>
+        <i class="mdi" :class="hidden ? 'mdi-eye-off-outline' : 'mdi-eye-outline'" />
+        {{ hidden ? '已隱藏全部 overlay' : '顯示中' }}
+      </span>
+      <HotkeyField :hotkey="visibleHotkey" title="顯示／隱藏快捷鍵" @set-hotkey="$emit('setVisibleHotkey', $event)" />
+      <span class="btn" data-visibility-btn>
+        <DButton v-if="hidden" variant="primary" @click="$emit('setHidden', false)">顯示</DButton>
+        <DButton v-else @click="$emit('setHidden', true)">隱藏</DButton>
+      </span>
+      <div v-if="$slots.bottom" class="side"><slot name="bottom" /></div>
     </div>
     <div v-if="hotkeyError" class="err" data-hotkey-error>{{ hotkeyError }}</div>
-    <div class="row second" data-visibility>
-      <i class="mdi" :class="hidden ? 'mdi-eye-off-outline' : 'mdi-eye-outline'" />
-      <span class="status">{{ hidden ? '已隱藏全部 overlay' : '顯示中' }}</span>
-      <span class="grow" />
-      <span class="dim">快捷鍵</span>
-      <HotkeyField :hotkey="visibleHotkey" @set-hotkey="$emit('setVisibleHotkey', $event)" />
-      <DButton v-if="hidden" variant="primary" @click="$emit('setHidden', false)">顯示</DButton>
-      <DButton v-else @click="$emit('setHidden', true)">隱藏</DButton>
-    </div>
     <div v-if="visibleHotkeyError" class="err" data-visible-hotkey-error>{{ visibleHotkeyError }}</div>
     <div v-if="elevated === false" class="warn" data-not-elevated>
       <i class="mdi mdi-shield-alert-outline" />
@@ -46,10 +50,12 @@ defineEmits<{
 </template>
 
 <style scoped>
-.lockbar { padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--c-line); }
-.row { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
-.second { margin-top: var(--space-2); }
-.status { font-size: var(--fs-md); }
+.lockbar { padding: var(--space-2) var(--space-4); border-bottom: 1px solid var(--c-line); }
+/* Two rows sharing columns so both hotkeys line up; slots fill the right end of each row. */
+.grid { display: grid; grid-template-columns: auto auto auto 1fr; align-items: center; gap: var(--space-2) var(--space-3); }
+.btn { grid-column: 3; }
+.side { grid-column: 4; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--space-3); }
+.status { display: flex; align-items: center; gap: var(--space-2); font-size: var(--fs-md); }
 .grow { flex: 1; }
 .dim { color: var(--c-text-dim); font-size: var(--fs-sm); }
 .err { margin-top: var(--space-2); color: var(--c-err); font-size: var(--fs-sm); }

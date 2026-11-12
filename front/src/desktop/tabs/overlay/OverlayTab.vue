@@ -11,7 +11,6 @@ import CooldownSettings from './CooldownSettings.vue';
 import AlertsSettings from './AlertsSettings.vue';
 import ShareExportDialog from './ShareExportDialog.vue';
 import ShareImportDialog from './ShareImportDialog.vue';
-import { overlaySettings, updateOverlaySettings } from '../../overlay/overlayLink';
 import './settingsPage.css';
 
 type Page = 'general' | 'dps' | CcSectionId | 'cooldown' | 'alerts';
@@ -63,22 +62,17 @@ onBeforeUnmount(() => ro?.disconnect());
       @restart-elevated="restartElevated"
       @set-hidden="setHidden"
       @set-visible-hotkey="setVisibleHotkey"
-    />
+    >
+      <template #top>
+        <span class="hint">overlay 只在視窗模式或無邊框視窗模式下看得到</span>
+      </template>
+      <template #bottom>
+        <DButton size="sm" data-share-export @click="exportOpen = true"><i class="mdi mdi-export-variant" />匯出設定</DButton>
+        <DButton size="sm" data-share-import @click="importOpen = true"><i class="mdi mdi-import" />匯入設定</DButton>
+      </template>
+    </LockBar>
     <div v-if="state && !state.licensed" class="unlicensed" data-unlicensed>未授權，overlay 不會開啟</div>
     <div v-if="state && !state.gameFound" class="notice" data-no-game>找不到遊戲視窗，遊戲啟動後 overlay 會自動出現</div>
-    <div class="scale">
-      <span>整體縮放</span>
-      <input
-        data-overlay-scale type="range" min="80" max="150" step="10" aria-label="整體縮放"
-        :value="overlaySettings.scale"
-        @input="e => updateOverlaySettings(s => { s.scale = Number((e.target as HTMLInputElement).value); })"
-      >
-      <span class="val">{{ overlaySettings.scale }}%</span>
-      <span class="grow" />
-      <span class="hint">overlay 只在視窗模式或無邊框視窗模式下看得到</span>
-      <DButton size="sm" data-share-export @click="exportOpen = true"><i class="mdi mdi-export-variant" />匯出設定</DButton>
-      <DButton size="sm" data-share-import @click="importOpen = true"><i class="mdi mdi-import" />匯入設定</DButton>
-    </div>
     <div class="body">
       <nav v-if="!narrow || !detail" class="list" :class="{ full: narrow }" data-overlay-list>
         <div
@@ -115,11 +109,7 @@ onBeforeUnmount(() => ro?.disconnect());
 .overlay-tab { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .unlicensed { padding: var(--space-2) var(--space-4); color: var(--c-err); font-size: var(--fs-sm); border-bottom: 1px solid var(--c-line); }
 .notice { padding: var(--space-2) var(--space-4); color: var(--c-warn); font-size: var(--fs-sm); border-bottom: 1px solid var(--c-line); }
-.scale { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; padding: var(--space-2) var(--space-4); border-bottom: 1px solid var(--c-line); font-size: var(--fs-sm); }
-.scale input { width: 160px; accent-color: var(--c-accent); }
-.scale .val { width: 3em; color: var(--c-text-dim); }
-.scale .grow { flex: 1; }
-.scale .hint { color: var(--c-text-dim); font-size: var(--fs-xs); }
+.hint { color: var(--c-text-dim); font-size: var(--fs-xs); }
 /* The item picker covers the nav and the page. */
 .body { position: relative; flex: 1; min-height: 0; display: flex; }
 .list { width: 150px; flex: none; border-right: 1px solid var(--c-line); overflow-y: auto; }

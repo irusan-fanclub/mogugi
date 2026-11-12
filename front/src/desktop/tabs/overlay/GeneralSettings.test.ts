@@ -25,6 +25,13 @@ beforeEach(() => { settings.value = defaultOverlaySettings(); });
 afterEach(() => { w?.unmount(); w = null; });
 
 describe('GeneralSettings', () => {
+    it('scale slider writes overlaySettings.scale', async () => {
+        w = mount(GeneralSettings);
+        await w.get('[data-overlay-scale]').setValue('120');
+        expect(settings.value.scale).toBe(120);
+        expect(w.text()).toContain('120%');
+    });
+
     it('colour inputs write general; 提醒顏色 ↺ restores the colours but not the panel', async () => {
         w = mount(GeneralSettings);
         await w.get('[data-color="warn"]').setValue('#112233');
