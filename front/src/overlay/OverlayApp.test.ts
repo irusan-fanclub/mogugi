@@ -350,6 +350,16 @@ describe('OverlayApp', () => {
         it('draws one row per member while locked', async () => {
             await party();
             expect(comp('ccParty').findAll('[data-member-row]')).toHaveLength(2);
+            expect(comp('ccParty').findAll('.ov-lbl')).toHaveLength(0);
+        });
+
+        it('one grid: name column plus a cell per class in every row', async () => {
+            await party();
+            fire('overlay:settings', { ccParty: { items: [{ id: 680 }, { id: 63 }], look: { arrange: 'byMember', gap: 'keep' } } });
+            await tick(250);
+            const grid = comp('ccParty').get('.ov-members');
+            expect(grid.attributes('style')).toContain('max-content repeat(2, max-content)');
+            for (const r of comp('ccParty').findAll('[data-member-row]')) expect(r.findAll('[data-cell]')).toHaveLength(2);
         });
 
         it('falls back to the flow tiles while editing', async () => {

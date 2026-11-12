@@ -3,7 +3,7 @@ import { defaultOverlaySettings } from '@/lib/overlaySettings';
 import type { ComponentDef } from '@/lib/overlayComponents';
 import { frameField, type FrameRec } from '@/lib/overlayFrames';
 import type { TileVM } from '@/lib/overlayTiles';
-import { frameLook, frameTitle, labelOf, tileLook } from './sectionView';
+import { bgOf, frameLook, frameTitle, labelOf, tileLook } from './sectionView';
 
 const lay = { enabled: true, anchor: 'tl', x: 0, y: 0, width: 100, maxRows: 1 } as const;
 const withRec = (id: string, r: Partial<FrameRec>) => ({
@@ -27,6 +27,16 @@ describe('frameLook', () => {
         const before = tileLook(s, grp(), l).px;
         s.ccParty.look = { ...s.ccParty.look, size: 'l' };
         expect(tileLook(s, grp(), l).px).not.toBe(before);
+    });
+});
+
+describe('bgOf', () => {
+    it('a frame look with its own bg wins over the section bg', () => {
+        const s = defaultOverlaySettings();
+        s.ccParty.look = { ...s.ccParty.look, bg: { color: '#112233', alpha: 50 } };
+        const own = { ...s.ccParty.look, bg: { color: '#445566', alpha: 80 } };
+        expect(bgOf(s, grp(), withRec('ccParty-g1', { look: own }))).toBe('rgba(68,85,102,0.8)');
+        expect(bgOf(s, grp(), withRec('ccParty-g1', { look: null }))).toBe('rgba(17,34,51,0.5)');
     });
 });
 

@@ -22,7 +22,7 @@ import LayoutEditor from './LayoutEditor.vue';
 import DpsOverlay from './DpsOverlay.vue';
 import TileGroup from './TileGroup.vue';
 import MemberGrid from './MemberGrid.vue';
-import { buildMemberGrid } from '@/lib/memberGrid';
+import { buildMemberGrid, type GridRow } from '@/lib/memberGrid';
 import { memberClassOf } from '@/lib/overlayFrames';
 import AlertsOverlay from './AlertsOverlay.vue';
 
@@ -248,11 +248,17 @@ function lock() { void emitDesktop(OV.setLocked, { locked: true }); }
 
 const titleOf = (c: ComponentDef): string => frameTitle(settings.value, c, layouts.value);
 const lookOf = (c: ComponentDef) => frameLook(settings.value, c, layouts.value);
-const gridRows = (c: ComponentDef) => {
-    const look = lookOf(c);
-    if (editing.value || look.arrange !== 'byMember' || (c.section !== 'ccParty' && c.section !== 'cooldown')) return null;
-    return buildMemberGrid(views.value[c.id].tiles, keysOf(c), k => memberClassOf(c.section!, k), look.gap);
-};
+// Built once per render for every frame that draws a member grid.
+const grids = computed(() => {
+    const out: Record<ComponentId, GridRow[]> = {};
+    if (editing.value) return out;
+    for (const c of components.value) {
+        const look = c.section && lookOf(c);
+        if (!look || look.arrange !== 'byMember' || (c.section !== 'ccParty' && c.section !== 'cooldown')) continue;
+        out[c.id] = buildMemberGrid(views.value[c.id].tiles, keysOf(c), k => memberClassOf(c.section!, k), look.gap);
+    }
+    return out;
+});
 // Flow tiles carry the label their frame's look asks for.
 const flowTiles = (c: ComponentDef) => {
     const look = lookOf(c);
@@ -307,7 +313,7 @@ const stageStyle = computed(() => ({
           />
           <div v-if="titleOf(c)" class="ov-title" data-title>{{ titleOf(c) }}</div>
           <MemberGrid
-            v-if="c.section && gridRows(c)" :rows="gridRows(c)!" v-bind="tileLook(settings, c, layouts)"
+            v-if="grids[c.id]" :rows="grids[c.id]" v-bind="tileLook(settings, c, layouts)"
             :look="lookOf(c)"
           />
           <TileGroup
