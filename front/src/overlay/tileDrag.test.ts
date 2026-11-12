@@ -38,6 +38,8 @@ function setup(scale = 1) {
     return { d: useTileDrag(ctx), place };
 }
 
+const ptr = (x: number, y: number) => ({ clientX: x, clientY: y, pointerId: 1 });
+
 // Grid frame 'ccParty' at (100,100): columns A (680 + 192), B (193), C (63), two rows each; '9' hidden between B and C.
 const GRID: Rect = { l: 100, t: 100, w: 300, h: 100 };
 const CLASS: Record<string, string> = { 680: 'a', 192: 'a', 193: 'b', 63: 'c', 9: 'c' };
@@ -85,21 +87,31 @@ describe('useTileDrag in a grid frame', () => {
         expect(d.tdrag.value).toBeNull();
     });
 
-    it('between B and C keeps the hidden key in place', () => {
+    it('between B and C inserts at the first key of C, hidden ones included', () => {
         const { d, place } = gridSetup();
         d.startTile('ccParty', '192', ptr(130, 120));
         d.moveTile(ptr(240, 125));
         expect(d.tdrag.value?.insertAt).toBe(1);
         d.endTile(ptr(240, 125));
-        // Insert before C's first key '63' (index 2 in [193, 9, 63]).
-        expect(place.mock.calls[0][3]).toEqual({ frame: 'ccParty', index: 2 });
+        expect(place.mock.calls[0][3]).toEqual({ frame: 'ccParty', index: 1 });
+    });
+
+    it('dropping a mid-grid column back at its old spot keeps its position', () => {
+        const order = ['193', '680', '192', '63'];
+        const tiles = [...col(['193'], 110), ...col(['680', '192'], 190), ...col(['63'], 250)];
+        const { d, place } = gridSetup({ keysIn: id => (id === 'ccParty' ? order : ['1', '2']), tileRects: () => tiles });
+        d.startTile('ccParty', '680', ptr(200, 120));
+        d.endTile(ptr(200, 125));
+        const without = order.filter(k => k !== '680' && k !== '192');
+        expect(place.mock.calls[0][3]).toEqual({ frame: 'ccParty', index: order.indexOf('680') });
+        expect(without[order.indexOf('680')]).toBe('63');
     });
 
     it('a flow tile dropped into the grid lands between columns', () => {
         const { d, place } = gridSetup();
         d.startTile('ccBoss', '1', ptr(620, 120));
         d.endTile(ptr(240, 125));
-        expect(place).toHaveBeenCalledWith('ccBoss', ['1'], 'flow', { frame: 'ccParty', index: 4 });
+        expect(place).toHaveBeenCalledWith('ccBoss', ['1'], 'flow', { frame: 'ccParty', index: 3 });
     });
 
     it('a flow frame still uses the row rule', () => {
@@ -117,8 +129,6 @@ describe('useTileDrag in a grid frame', () => {
         expect(place.mock.calls[0][3]).toHaveProperty('at');
     });
 });
-const ptr = (x: number, y: number) => ({ clientX: x, clientY: y, pointerId: 1 });
-
 describe('useTileDrag', () => {
     it('dropping inside the section before the second shown key reorders; a hidden key keeps its place', () => {
         const { d, place } = setup();

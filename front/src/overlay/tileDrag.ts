@@ -81,16 +81,16 @@ export function dropSpot(ctx: TileDragCtx, section: SectionId, keys: string[], p
     const cls = ctx.columnsOf(frame);
     if (cls) {
         // One box per class column; the bar goes before the first column whose centre is right of the pointer.
-        const cols = new Map<string, { l: number; w: number; first: string }>();
+        const cols = new Map<string, { l: number; w: number; cls: string }>();
         for (const k of shown) {
             const b = boxes.get(k)!, c = cols.get(cls(k));
-            if (!c) cols.set(cls(k), { l: b.l, w: b.w, first: k });
+            if (!c) cols.set(cls(k), { l: b.l, w: b.w, cls: cls(k) });
             else { const r = Math.max(c.l + c.w, b.l + b.w); c.l = Math.min(c.l, b.l); c.w = r - c.l; }
         }
         const ordered = [...cols.values()].sort((a, b) => a.l - b.l);
         const at = ordered.findIndex(c => p.x < c.l + c.w / 2);
         const display = at < 0 ? ordered.length : at;
-        const index = at >= 0 ? full.indexOf(ordered[at].first)
+        const index = at >= 0 ? full.findIndex(k => cls(k) === ordered[at].cls)
             : shown.length ? full.indexOf(shown[shown.length - 1]) + 1 : full.length;
         return { frame, display, index };
     }
