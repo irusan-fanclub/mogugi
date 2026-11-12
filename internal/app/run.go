@@ -30,7 +30,7 @@ var staticFiles embed.FS
 // Version is the build version. Override at link time via:
 //
 //	go build -ldflags "-X github.com/irusan-fanclub/mogugi/internal/app.Version=x.y.z"
-var Version = "0.6.1"
+var Version = "0.6.2"
 
 var logger = util.NewLogger("mogugi")
 var (
