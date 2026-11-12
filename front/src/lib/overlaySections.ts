@@ -102,7 +102,7 @@ export function defaultCcSection(id: CcSectionId): CcSection {
                 cc(1225, '倉鼠'),
             ] };
         case 'ccParty':
-            return { look: { ...look, names: 'member' }, items: [
+            return { look: { ...look, names: 'member', arrange: 'byMember' }, items: [
                 cc(680, '戰場', { renew: TUAN_CC, mateArcana: [1, 4, 5, 6, 9, 10] }),
                 cc(192, '活潑', { renew: TUAN_CC, mateArcana: [2, 3, 8] }),
                 cc(193, '進行'),
@@ -164,7 +164,7 @@ function bg(v: unknown, fb: PanelBg | null): PanelBg | null {
 /** Free text for a title or frame name: control characters dropped, at most TITLE_MAX characters. */
 export const cleanTitleText = (v: unknown): string =>
     typeof v === 'string' ? Array.from(v.replace(/[\u0000-\u001f\u007f]/g, '')).slice(0, TITLE_MAX).join('') : '';
-const arrange = (v: unknown): Arrange => v === 'byMember' ? 'byMember' : 'flow';
+const arrange = (v: unknown, fb: Arrange): Arrange => v === 'byMember' || v === 'flow' ? v : fb;
 const gapMode = (v: unknown): GapMode => v === 'pack' ? 'pack' : 'keep';
 
 function idArray(v: unknown, max = Infinity): number[] {
@@ -224,7 +224,7 @@ export function normalizeCcLook(l: unknown, d: CcLook): CcLook {
         bg: bg(r.bg, null),
         title: bool(r.title, d.title),
         titleText: cleanTitleText(r.titleText),
-        arrange: arrange(r.arrange),
+        arrange: arrange(r.arrange, d.arrange),
         gap: gapMode(r.gap),
     };
 }
@@ -266,7 +266,7 @@ export function normalizeCooldownLook(l: unknown, d: CooldownLook): CooldownLook
         bg: bg(r.bg, null),
         title: bool(r.title, false),
         titleText: cleanTitleText(r.titleText),
-        arrange: arrange(r.arrange),
+        arrange: arrange(r.arrange, d.arrange),
         gap: gapMode(r.gap),
     };
 }

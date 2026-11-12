@@ -128,10 +128,11 @@ describe('normalize', () => {
 describe('section look fields', () => {
     it('cc defaults and normalization', () => {
         const l = normalizeCcSection({ look: {} }, 'ccParty').look;
-        expect([l.titleText, l.arrange, l.gap]).toEqual(['', 'flow', 'keep']);
+        expect([l.titleText, l.arrange, l.gap]).toEqual(['', 'byMember', 'keep']);
+        expect(normalizeCcSection({ look: {} }, 'ccSelf').look.arrange).toBe('flow');
         const m = normalizeCcSection({ look: { titleText: 'x'.repeat(20), arrange: 'grid', gap: 'pack' } }, 'ccParty').look;
-        expect([m.titleText, m.arrange, m.gap]).toEqual(['x'.repeat(16), 'flow', 'pack']);
-        expect(normalizeCcSection({ look: { arrange: 'byMember' } }, 'ccParty').look.arrange).toBe('byMember');
+        expect([m.titleText, m.arrange, m.gap]).toEqual(['x'.repeat(16), 'byMember', 'pack']);
+        expect(normalizeCcSection({ look: { arrange: 'flow' } }, 'ccParty').look.arrange).toBe('flow');
     });
     it('cooldown defaults and normalization', () => {
         const l = normalizeCooldownSection({ look: {} }).look;

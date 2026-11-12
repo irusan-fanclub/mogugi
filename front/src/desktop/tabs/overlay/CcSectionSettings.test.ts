@@ -247,10 +247,10 @@ describe('CcSectionSettings', () => {
         it('用不到的格子 shows only for 依隊友排列', async () => {
             mountSec('ccParty');
             await openLook(0);
-            expect(w!.find('[data-gap]').exists()).toBe(false);
-            await w!.get('[data-arrange]').findAll('[role="radio"]')[1].trigger('click');
-            expect(settings.value.ccParty.look.arrange).toBe('byMember');
             expect(w!.find('[data-gap]').exists()).toBe(true);
+            await w!.get('[data-arrange]').findAll('[role="radio"]')[0].trigger('click');
+            expect(settings.value.ccParty.look.arrange).toBe('flow');
+            expect(w!.find('[data-gap]').exists()).toBe(false);
         });
 
         it('no 群組 / 大群 anywhere in the page text', async () => {

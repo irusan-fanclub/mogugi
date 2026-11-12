@@ -4,7 +4,7 @@ import { frameSummary } from './frameSummary';
 
 describe('frameSummary', () => {
     it('cc party: size, names, arrange, dim', () => {
-        const look = { ...defaultCcSection('ccParty').look, names: 'member' as const };
+        const look = { ...defaultCcSection('ccParty').look, names: 'member' as const, arrange: 'flow' as const };
         expect(frameSummary(look, 'ccParty', null)).toBe('中・隊友名・平鋪・40%');
         expect(frameSummary({ ...look, arrange: 'byMember', gap: 'pack' }, 'ccParty', null))
             .toBe('中・隊友名・依隊友排列（往左補齊）・40%');
