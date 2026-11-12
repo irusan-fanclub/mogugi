@@ -11,7 +11,7 @@ const emit = defineEmits<{ toggle: []; reset: [] }>();
     <h3 class="fname" data-frame-title>{{ title }}</h3>
     <div class="fsub">
       <div class="fhead" data-frame-look-toggle @click="emit('toggle')">
-        <span class="caret">{{ open ? '▾' : '▸' }}</span><span class="flabel">外觀</span>
+        <span class="flabel">外觀</span><span class="caret">{{ open ? '▾' : '▸' }}</span>
         <span class="ovs-dim fsum" data-frame-summary>{{ summary }}</span>
         <IconButton kind="reset" data-frame-reset @fire="emit('reset')" />
       </div>
