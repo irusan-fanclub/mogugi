@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
     toLocalRFC3339, filterBattles, humanReadableBytes, distinctOptions,
-    formatStartedAt, dungeonDisplayName, sortBattles, personalStats,
+    formatStartedAt, shortStartedAt, dungeonDisplayName, sortBattles, personalStats,
     flattenBattles, filterByBossName, filterByCleared, orderPartyArcana, splitOwnerArcana,
     mergeBattleCols, moveBattleCol, DEFAULT_BATTLE_COLS, clientOptions, totalSizeBytes,
     type BattleRecord, type BattleRow, type BattlePlayer, type BattleColState,
@@ -442,5 +442,15 @@ describe('client version helpers', () => {
         expect(out.slice(0, 2)).toEqual([{ key: 'player', visible: false }, { key: 'startedAt', visible: true }]);
         expect(out.find(c => c.key === 'client')).toEqual({ key: 'client', visible: true });
         expect(out[out.length - 1].key).toBe('client');
+    });
+});
+
+describe('shortStartedAt', () => {
+    it('drops the year in the current year and always the seconds', () => {
+        expect(shortStartedAt('2026-11-12 03:12:40', 2026)).toBe('11-12 03:12');
+        expect(shortStartedAt('2025-12-31 23:59:59', 2026)).toBe('2025-12-31 23:59');
+    });
+    it('leaves short or empty text alone', () => {
+        expect(shortStartedAt('', 2026)).toBe('');
     });
 });

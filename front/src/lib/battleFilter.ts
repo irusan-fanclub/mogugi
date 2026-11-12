@@ -250,6 +250,12 @@ export function formatStartedAt(v: string): string {
     return v.slice(0, 19).replace('T', ' ');
 }
 
+/** 'YYYY-MM-DD HH:MM:SS' shortened for the table: no seconds, and no year when it is `thisYear`. */
+export function shortStartedAt(full: string, thisYear: number): string {
+    if (full.length < 16) return full;
+    return full.startsWith(`${thisYear}-`) ? full.slice(5, 16) : full.slice(0, 16);
+}
+
 /**
  * datetime-local input value -> RFC3339 string with the local UTC offset,
  * for comparing against BattleRecord.startedAtLocal. Lives here because a

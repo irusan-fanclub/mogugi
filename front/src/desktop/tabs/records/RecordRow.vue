@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { formatStartedAt, splitOwnerArcana, type BattleRow, type PersonalStat } from '@/lib/battleFilter';
+import { formatStartedAt, shortStartedAt, splitOwnerArcana, type BattleRow, type PersonalStat } from '@/lib/battleFilter';
 import { arcanaIconUrl, arcanaTitle } from '@/lib/arcana';
 import { formatDuration, formatUnixLocal, humanReadableNumber } from '@/lib/util';
 import { musicIconUrl, musicTitle } from '@/lib/battleRecordsView';
@@ -18,18 +18,19 @@ const dpsTitle = computed(() => {
 const time = computed(() => props.row.fightStartAt
     ? formatUnixLocal(props.row.fightStartAt)
     : formatStartedAt(props.row.startedAtLocal));
+const shortTime = computed(() => shortStartedAt(time.value, new Date().getFullYear()));
 </script>
 
 <template>
-  <span v-if="col === 'startedAt'">{{ time }}</span>
-  <span v-else-if="col === 'bossName'">{{ row.bossName || '-' }}</span>
-  <span v-else-if="col === 'duration'">{{ row.durationSec ? formatDuration(row.durationSec) : '-' }}</span>
+  <span v-if="col === 'startedAt'" class="nowrap" :title="time" data-time>{{ shortTime }}</span>
+  <span v-else-if="col === 'bossName'" class="clip boss" :title="row.bossName">{{ row.bossName || '-' }}</span>
+  <span v-else-if="col === 'duration'" class="nowrap">{{ row.durationSec ? formatDuration(row.durationSec) : '-' }}</span>
   <span v-else-if="col === 'cleared'">
     <i v-if="row.cleared === true" class="mdi mdi-check ok" data-cleared="yes" />
     <i v-else-if="row.cleared === false" class="mdi mdi-close err" data-cleared="no" />
     <template v-else>-</template>
   </span>
-  <span v-else-if="col === 'player'">{{ row.player }}</span>
+  <span v-else-if="col === 'player'" class="clip player" :title="row.player">{{ row.player }}</span>
   <span v-else-if="col === 'dps'" class="num nowrap" :title="dpsTitle">
     <i v-if="isBest" class="mdi mdi-star best" title="這場是同 BOSS 的個人最佳" data-best />
     {{ row.ownerDps ? humanReadableNumber(row.ownerDps) : '-' }}
@@ -64,12 +65,14 @@ const time = computed(() => props.row.fightStartAt
 
 <style scoped>
 .nowrap { white-space: nowrap; }
+/* One line per row: long names end in … and show in full on hover. */
+.clip { display: inline-block; vertical-align: middle; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.boss { max-width: 9em; }
+.player { max-width: 8em; }
 .num { font-family: var(--font-num); color: var(--c-dps); }
 .ok { color: var(--c-ok); }
 .err { color: var(--c-err); }
 .best { color: var(--c-number); }
 img { vertical-align: middle; margin-right: 2px; }
 .sep { margin: 0 var(--space-2); color: var(--c-text-dim); }
-/* Room for 8 icons + separator so the column does not jump between pages. */
-.arcana { display: inline-block; min-width: 176px; }
 </style>
