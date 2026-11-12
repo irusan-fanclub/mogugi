@@ -105,7 +105,7 @@ const winTab = ref('overlay');
         <label><input v-model="scenario.elevated" type="checkbox">系統管理員</label>
       </div>
       <p class="note">
-        <template v-if="view === 'edit'">解鎖狀態：可拖曳元件、拉右側把手改寬度、點角落圓鈕換錨點。按「鎖定」會切到 overlay 畫面。</template>
+        <template v-if="view === 'edit'">解鎖狀態：可拖曳元件、點角落圓鈕換錨點。按「鎖定」會切到 overlay 畫面。</template>
         <template v-else-if="view === 'overlay'">鎖定狀態：實際遊戲中滑鼠會穿透。背景為示意。</template>
         <template v-else>主視窗的 Overlay 分頁；在這裡改的設定會同步到另外兩個畫面。</template>
       </p>
