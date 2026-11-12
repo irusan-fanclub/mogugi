@@ -12,6 +12,11 @@ export const READY_KEEP_SEC = 300;
 // A use of a skill not in the list is kept this long, in case it gets enabled.
 export const UNTRACKED_KEEP_SEC = 1800;
 
+// Skills timed by the CC they put on a non-PC; some (魔力封鎖) send no skill-use event at all.
+export const SKILL_TRIGGER_CC: Readonly<Record<number, number>> = { 59005: 803, 59045: 931 };
+const withTrigger = (s: CooldownSkill): CooldownSkill =>
+    s.ccId > 0 || !SKILL_TRIGGER_CC[s.skillId] ? s : { ...s, ccId: SKILL_TRIGGER_CC[s.skillId] };
+
 export interface CooldownIconVM { skillId: number; remaining: number; total: number }
 export interface CooldownRowVM { id: string; name: string; isSelf?: boolean; skills: CooldownIconVM[] }
 
@@ -46,7 +51,8 @@ export function createCooldownTracker() {
         if (prev === undefined || at - prev >= dedupeOf(cd)) byPc.set(pc, at);
     }
 
-    function observe(actors: Record<string, EntityActor>, skills: CooldownSkill[], nameOf: (id: string) => string) {
+    function observe(actors: Record<string, EntityActor>, list: CooldownSkill[], nameOf: (id: string) => string) {
+        const skills = list.map(withTrigger);
         const castCd = new Map(skills.filter(s => s.ccId === 0).map(s => [s.skillId, s.cooldownSec]));
         const ccCd = new Map(skills.filter(s => s.ccId > 0).map(s => [s.ccId, s.cooldownSec]));
         // Re-reading a list (after eviction) is harmless: an equal time never moves a use.
@@ -75,7 +81,8 @@ export function createCooldownTracker() {
         }
     }
 
-    function rows(now: number, skills: CooldownSkill[], ownerId: string): CooldownRowVM[] {
+    function rows(now: number, list: CooldownSkill[], ownerId: string): CooldownRowVM[] {
+        const skills = list.map(withTrigger);
         prune(uses, new Map(skills.filter(s => s.ccId === 0).map(s => [s.skillId, s.cooldownSec])), now);
         prune(ccUses, new Map(skills.filter(s => s.ccId > 0).map(s => [s.ccId, s.cooldownSec])), now);
         const byPc = new Map<string, CooldownIconVM[]>();

@@ -71,6 +71,22 @@ describe('cooldown tracker (CC trigger)', () => {
     });
 });
 
+describe('cooldown tracker (built-in skill → CC table)', () => {
+    const MANA_BLOCK: CooldownSkill = { skillId: 59045, cooldownSec: 60, ccId: 0 };
+    it('starts 魔力封鎖 (no skill-use event) from CC 931 on a non-PC', () => {
+        const w = world([MANA_BLOCK]);
+        w.mgr.onEvent({ EventId: 4, At: 100, Id: 'b1', CCId: 931, DisableAt: 110, AttackerId: 'p', Params: {} } as unknown as eventBase);
+        expect(w.rows(130)).toEqual([one('p', 59045, 30, 60)]);
+    });
+    it('keeps an explicit ccId over the table', () => {
+        const w = world([{ ...MANA_BLOCK, ccId: 803 }]);
+        w.mgr.onEvent({ EventId: 4, At: 100, Id: 'b1', CCId: 931, DisableAt: 110, AttackerId: 'p', Params: {} } as unknown as eventBase);
+        expect(w.rows(130)).toEqual([]);
+        w.cast('b1', 120, 180, 'p');
+        expect(w.rows(130)).toEqual([one('p', 59045, 50, 60)]);
+    });
+});
+
 describe('cooldown tracker (cast trigger)', () => {
     it('starts on a cast of the skill and groups skills per player', () => {
         const w = world([BY_CC, BY_CAST]);
