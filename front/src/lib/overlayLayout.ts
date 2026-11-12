@@ -122,20 +122,3 @@ export function snapMove(r: Rect, others: Rect[], vp: Size, threshold: number): 
     if (bestY) guides.push(bestY.guide);
     return { l, t, guides };
 }
-
-export function snapWidth(r: Rect, edge: 'left' | 'right', others: Rect[], threshold: number): { w: number; guides: Guide[] } {
-    const v = edge === 'left' ? r.l : r.l + r.w;
-    let best: Hit | null = null;
-    for (const o of others) {
-        for (const ov of [o.l, o.l + o.w / 2, o.l + o.w]) {
-            const diff = Math.abs(v - ov);
-            if (diff < threshold) {
-                const y1 = Math.min(r.t, o.t) - GUIDE_PAD;
-                const y2 = Math.max(r.t + r.h, o.t + o.h) + GUIDE_PAD;
-                best = pick(best, { diff, shift: ov - v, guide: { x1: ov, y1, x2: ov, y2, centre: false } });
-            }
-        }
-    }
-    if (!best) return { w: r.w, guides: [] };
-    return { w: edge === 'left' ? r.w - best.shift : r.w + best.shift, guides: [best.guide] };
-}

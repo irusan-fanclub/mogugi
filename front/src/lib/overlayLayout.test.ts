@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Anchor, OverlayLayout } from './overlayProtocol';
-import { autoAnchor, offsetsFor, rectOf, sameLayout, snapMove, snapWidth } from './overlayLayout';
+import { autoAnchor, offsetsFor, rectOf, sameLayout, snapMove } from './overlayLayout';
 
 const vp = { w: 1280, h: 720 };
 const lay = (anchor: Anchor, x: number, y: number, width: number): OverlayLayout =>
@@ -71,22 +71,6 @@ describe('snapMove', () => {
         expect(g.x1).toBe(300);
         expect(g.y1).toBeLessThanOrEqual(50);
         expect(g.y2).toBeGreaterThanOrEqual(500);
-    });
-});
-
-describe('snapWidth', () => {
-    const o = { l: 100, t: 300, w: 200, h: 100 };
-    it('snaps the right edge to another component and reports the width', () => {
-        const out = snapWidth({ l: 100, t: 50, w: 197, h: 80 }, 'right', [o], 6);
-        expect(out.w).toBe(200);
-        expect(out.guides.length).toBe(1);
-    });
-    it('keeps the right edge fixed when dragging the left edge', () => {
-        const out = snapWidth({ l: 103, t: 50, w: 197, h: 80 }, 'left', [o], 6);
-        expect(out.w).toBe(200);
-    });
-    it('leaves the width alone when nothing is near', () => {
-        expect(snapWidth({ l: 100, t: 50, w: 250, h: 80 }, 'right', [o], 6)).toEqual({ w: 250, guides: [] });
     });
 });
 

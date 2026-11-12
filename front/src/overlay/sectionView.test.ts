@@ -3,7 +3,7 @@ import { defaultOverlaySettings } from '@/lib/overlaySettings';
 import type { ComponentDef } from '@/lib/overlayComponents';
 import { frameField, type FrameRec } from '@/lib/overlayFrames';
 import type { TileVM } from '@/lib/overlayTiles';
-import { bgOf, frameLook, frameTitle, labelOf, textPxOf, tileLook } from './sectionView';
+import { bgOf, frameLook, frameName, frameTitle, labelOf, textPxOf, tileLook } from './sectionView';
 
 const lay = { enabled: true, anchor: 'tl', x: 0, y: 0, width: 100, maxRows: 1 } as const;
 const withRec = (id: string, r: Partial<FrameRec>) => ({
@@ -106,5 +106,19 @@ describe('labelOf', () => {
 
     it('a fixed label always stays', () => {
         expect(labelOf(tile({ fixedLabel: true, label: '1:30' }), look('none'), true)).toBe('1:30');
+    });
+});
+
+describe('frameName', () => {
+    it('a pulled frame shows its record name', () => {
+        const s = defaultOverlaySettings();
+        expect(frameName(s, unit(), withRec('ccParty-680', { name: '我的框' }))).toBe('我的框');
+    });
+    it('a pulled frame without a record shows the name it is about to get', () => {
+        const s = defaultOverlaySettings();
+        expect(frameName(s, unit(), { 'ccParty-680': lay })).toBe('隊伍 CC 1');
+    });
+    it('other frames keep their fixed name', () => {
+        expect(frameName(defaultOverlaySettings(), sec(), undefined)).toBe('隊伍 CC');
     });
 });

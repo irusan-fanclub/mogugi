@@ -180,7 +180,7 @@ describe('OverlayApp', () => {
             await nextTick();
             const u = comp('ccBoss-1164');
             expect(u.exists()).toBe(true);
-            expect(u.find('[data-tag]').text()).toContain('BOSS CC・減少防禦/保護');
+            expect(u.find('[data-tag]').text()).toContain('BOSS CC 1');
             expect(tileKeys('ccBoss-1164')).toEqual(['1164']);
             expect(tileKeys('ccBoss')).toEqual(['1165', '1166', '323']);
         });
@@ -269,7 +269,7 @@ describe('OverlayApp', () => {
             await nextTick();
             expect(tileKeys('ccBoss-g1')).toEqual(['1166', '1164']);
             expect(tileKeys('ccBoss')).toEqual(['1165', '323']);
-            expect(comp('ccBoss-g1').find('[data-tag]').text()).toContain('BOSS CC・增傷、減物保');
+            expect(comp('ccBoss-g1').find('[data-tag]').text()).toContain('BOSS CC 1');
         });
 
         it('a tile dropped on a unit frame starts a group there', async () => {

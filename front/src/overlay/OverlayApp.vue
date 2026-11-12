@@ -14,7 +14,7 @@ import { dropSpot, useTileDrag, type TileDragCtx } from './tileDrag';
 import { frameOfKey, planPlace, planTakeOut, type LayoutOp, type PlaceTarget } from '@/lib/overlayGroups';
 import { sampleAlerts, sampleDps, sampleMemberTiles, sampleTiles } from './sampleData';
 import {
-    bgOf, fontPxOf, frameLook, frameTitle, gateOpen, inOrder, itemEnabled, itemName, labelOf, sectionOf, sectionOrder,
+    bgOf, fontPxOf, frameLook, frameName, frameTitle, gateOpen, inOrder, itemEnabled, itemName, labelOf, sectionOf, sectionOrder,
     textPxOf, tileLook, tilesFor,
 } from './sectionView';
 import ComponentFrame from './ComponentFrame.vue';
@@ -313,7 +313,7 @@ const stageStyle = computed(() => ({
       >
         <ComponentFrame
           v-for="c in visible" :key="c.id"
-          :id="c.id" :name="c.name"
+          :id="c.id" :name="frameName(settings, c, layouts)"
           :left="rects[c.id].l" :top="rects[c.id].t" :width="rects[c.id].w"
           :anchor="layoutFor(c.id).anchor" :enabled="layoutFor(c.id).enabled"
           :bg="bgOf(settings, c, layouts)" :font-px="fontPxOf(settings, c)" :text-px="textPxOf(settings, c, layouts)"

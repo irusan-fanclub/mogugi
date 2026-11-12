@@ -6,7 +6,7 @@ import {
     dpsFontPx, iconPx, itemKey, orderedKeys, textPx, type CcSection, type CooldownSection, type PanelBg, type SectionId,
 } from '@/lib/overlaySections';
 import type { Layouts } from '@/lib/overlayGroups';
-import { parseFrame, sectionTitle, type SectionLook } from '@/lib/overlayFrames';
+import { missingFrameRecords, parseFrame, sectionTitle, type SectionLook } from '@/lib/overlayFrames';
 import type { TileVM } from '@/lib/overlayTiles';
 import { ccName } from '@/lib/util';
 import { condNameMap, skillNameMap } from '@/store';
@@ -34,6 +34,14 @@ export function frameTitle(s: OverlaySettings, c: ComponentDef, layouts: Layouts
     const rec = parseFrame(c.section!, layouts?.[c.id]?.frame);
     if (!rec) return c.kind === 'group' && on ? sectionTitle(s, c.section!) : '';
     return (rec.titleOn ?? on) ? rec.name : '';
+}
+
+/** The editor name of a frame: a pulled frame's record name (or the one it is about to get), else its fixed name. */
+export function frameName(s: OverlaySettings, c: ComponentDef, layouts: Layouts): string {
+    if (c.kind !== 'unit' && c.kind !== 'group') return c.name;
+    const rec = parseFrame(c.section!, layouts?.[c.id]?.frame)
+        ?? parseFrame(c.section!, missingFrameRecords(s, layouts ?? {})[c.id]?.frame);
+    return rec?.name ?? c.name;
 }
 
 /** Frame background: the frame's own look, else the general panel colour. */
