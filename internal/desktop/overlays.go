@@ -180,7 +180,15 @@ func parseLayout(m map[string]any) (app.OverlayLayout, bool) {
 			order = append(order, s)
 		}
 	}
-	return app.OverlayLayout{Enabled: en, Anchor: anchor, X: int(x), Y: int(y), Width: int(w), MaxRows: int(rows), Dock: dock, Order: order}, true
+	var frame string
+	if raw, present := m["frame"]; present {
+		s, isStr := raw.(string)
+		if !isStr {
+			return app.OverlayLayout{}, false
+		}
+		frame = s
+	}
+	return app.OverlayLayout{Enabled: en, Anchor: anchor, X: int(x), Y: int(y), Width: int(w), MaxRows: int(rows), Dock: dock, Order: order, Frame: frame}, true
 }
 
 const overlayExStyle = w32.WS_EX_CONTROLPARENT | w32.WS_EX_NOREDIRECTIONBITMAP | w32.WS_EX_TOPMOST |

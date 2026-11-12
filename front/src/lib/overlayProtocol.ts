@@ -30,6 +30,8 @@ export interface OverlayLayout {
     dock?: ComponentId | '';
     /** Item ids of a section frame in display order (absent: default order). */
     order?: string[];
+    /** Opaque JSON record (name, title, look) of this frame; absent: defaults. */
+    frame?: string;
 }
 
 export interface OverlayState {

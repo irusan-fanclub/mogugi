@@ -28,6 +28,8 @@ const ID_RE = /^[A-Za-z0-9_-]+$/;
 const ANCHORS: readonly string[] = ['tl', 'tr', 'bl', 'br', 'center'];
 const FIXED_IDS = ['dps', 'alerts', ...SECTION_ORDER];
 const MAX_ORDER = 64;
+/** Go's maxOverlayFrame; the limit is in UTF-8 bytes. */
+export const MAX_FRAME_LEN = 2048;
 const BLOCKED_IDS = ['__proto__', 'constructor', 'prototype'];
 
 const isPlain = (v: unknown): v is Record<string, unknown> =>
@@ -56,6 +58,7 @@ export function sanitizeLayouts(raw: Record<string, unknown>): Layouts {
         const l: OverlayLayout = { enabled: v.enabled, anchor: v.anchor as Anchor, x: v.x, y: v.y, width: v.width, maxRows: v.maxRows };
         if ('dock' in v) l.dock = validId(v.dock) ? v.dock : '';
         if (Array.isArray(v.order)) l.order = v.order.filter(validId).slice(0, MAX_ORDER);
+        if (typeof v.frame === 'string' && new TextEncoder().encode(v.frame).length <= MAX_FRAME_LEN) l.frame = v.frame;
         out[id] = l;
     }
     return out;
@@ -72,8 +75,8 @@ export function regionSummary(p: SharePayload, r: RegionId): string {
     }
 }
 
-/** Compares layouts treating a missing dock/order as empty. */
-const canon = (l: OverlayLayout) => JSON.stringify([l.enabled, l.anchor, l.x, l.y, l.width, l.maxRows, l.dock ?? '', l.order ?? []]);
+/** Compares layouts treating a missing dock/order/frame as empty. */
+const canon = (l: OverlayLayout) => JSON.stringify([l.enabled, l.anchor, l.x, l.y, l.width, l.maxRows, l.dock ?? '', l.order ?? [], l.frame ?? '']);
 const sameLayout = (a: OverlayLayout | undefined, b: OverlayLayout | undefined) =>
     !!a && !!b && canon(a) === canon(b);
 

@@ -246,9 +246,9 @@ func TestOverlayConfigRoundTrip(t *testing.T) {
 	want.OverlayHotkey = "Ctrl+Shift+F9"
 	want.OverlayVisibleHotkey = "Alt+F2"
 	want.Overlays = map[string]OverlayLayout{
-		"dps":     {true, "tr", -24, 24, 260, 8, "", nil},
-		"alerts":  {false, "center", 0, -170, 320, 4, "", nil},
-		"ccParty": {true, "tl", 0, 0, 300, 8, "ccSelf", nil},
+		"dps":     {true, "tr", -24, 24, 260, 8, "", nil, ""},
+		"alerts":  {false, "center", 0, -170, 320, 4, "", nil, ""},
+		"ccParty": {true, "tl", 0, 0, 300, 8, "ccSelf", nil, ""},
 	}
 	text := renderAppConfig(want)
 	if !strings.Contains(text, "[overlay]") || !strings.Contains(text, "[overlays.dps]") {
@@ -326,7 +326,7 @@ func TestOverlayLayoutBadValues(t *testing.T) {
 	if msg != "" {
 		t.Fatal(msg)
 	}
-	want := map[string]OverlayLayout{"cooldown": {true, "bl", 3, -4, 200, 5, "", nil}}
+	want := map[string]OverlayLayout{"cooldown": {true, "bl", 3, -4, 200, 5, "", nil, ""}}
 	if !reflect.DeepEqual(got.Overlays, want) {
 		t.Fatalf("got %+v", got.Overlays)
 	}
@@ -366,7 +366,7 @@ func TestOverlayConfigDefaults(t *testing.T) {
 
 func TestOverlayConfigRejectsBadKey(t *testing.T) {
 	c := defaultAppConfig()
-	c.Overlays = map[string]OverlayLayout{"bad key]": {true, "tl", 0, 0, 260, 8, "", nil}, "dps": {true, "tl", 0, 0, 260, 8, "", nil}}
+	c.Overlays = map[string]OverlayLayout{"bad key]": {true, "tl", 0, 0, 260, 8, "", nil, ""}, "dps": {true, "tl", 0, 0, 260, 8, "", nil, ""}}
 	text := renderAppConfig(c)
 	if strings.Contains(text, "bad key") || !strings.Contains(text, "[overlays.dps]") {
 		t.Fatalf("unexpected render:\n%s", text)
@@ -416,5 +416,49 @@ func TestSavePacketLogRoundTrip(t *testing.T) {
 	old, _ := parseAppConfig("port = 8031\r\n")
 	if old.SavePacketLog {
 		t.Fatal("missing key must load false")
+	}
+}
+
+func TestValidOverlayLayoutFrame(t *testing.T) {
+	l := OverlayLayout{Enabled: true, Anchor: "tl", Width: 260, MaxRows: 8}
+	l.Frame = strings.Repeat("a", 2048)
+	if !ValidOverlayLayout(l) {
+		t.Fatal("2048-byte frame rejected")
+	}
+	l.Frame = strings.Repeat("a", 2049)
+	if ValidOverlayLayout(l) {
+		t.Fatal("2049-byte frame accepted")
+	}
+}
+
+func TestOverlayFrameRoundTrip(t *testing.T) {
+	c := defaultAppConfig()
+	frame := `{"n":"隊伍 \"CC\" 1","t":{"on":true}}`
+	c.Overlays = map[string]OverlayLayout{
+		"ccBoss": {Enabled: true, Anchor: "tl", Width: 260, MaxRows: 8, Frame: frame},
+		"dps":    {Enabled: true, Anchor: "tl", Width: 260, MaxRows: 8},
+	}
+	text := renderAppConfig(c)
+	if strings.Count(text, "frame =") != 1 {
+		t.Fatalf("want exactly one frame key:\n%s", text)
+	}
+	got, msg := parseAppConfig(text)
+	if msg != "" {
+		t.Fatal(msg)
+	}
+	if got.Overlays["ccBoss"].Frame != frame || got.Overlays["dps"].Frame != "" {
+		t.Fatalf("got %+v", got.Overlays)
+	}
+}
+
+func TestOverlayFrameOversizedDropped(t *testing.T) {
+	text := "overlayLayoutVersion = 2\n[overlays.dps]\nenabled = true\nanchor = \"tl\"\nx = 0\ny = 0\nwidth = 260\nmaxRows = 8\n" +
+		"frame = \"" + strings.Repeat("a", 2049) + "\"\n"
+	got, msg := parseAppConfig(text)
+	if msg != "" {
+		t.Fatal(msg)
+	}
+	if _, ok := got.Overlays["dps"]; ok {
+		t.Fatal("oversized frame layout kept")
 	}
 }

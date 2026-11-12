@@ -78,9 +78,14 @@ type OverlayLayout struct {
 	Dock string `toml:"dock" json:"dock"`
 	// Order lists the item ids of a section frame in display order.
 	Order []string `toml:"order,omitempty" json:"order,omitempty"`
+	// Frame is an opaque JSON record (name, title, look) written by the front end; Go never parses it.
+	Frame string `toml:"frame,omitempty" json:"frame,omitempty"`
 }
 
 const maxOverlayOrder = 64
+
+// maxOverlayFrame caps Frame in bytes.
+const maxOverlayFrame = 2048
 
 // overlayLayoutVersion is written next to [overlays]; layouts saved under an
 // older version are dropped on load so everyone starts from the new defaults.
@@ -96,7 +101,7 @@ func ValidOverlayLayout(l OverlayLayout) bool {
 	if l.Dock != "" && !ValidOverlayID(l.Dock) {
 		return false
 	}
-	if len(l.Order) > maxOverlayOrder {
+	if len(l.Order) > maxOverlayOrder || len(l.Frame) > maxOverlayFrame {
 		return false
 	}
 	for _, id := range l.Order {
@@ -336,6 +341,9 @@ func renderAppConfig(c appConfig) string {
 		}
 		if len(o.Order) > 0 {
 			s += fmt.Sprintf("order = [%s]\n", quoteJoin(o.Order))
+		}
+		if o.Frame != "" {
+			s += fmt.Sprintf("frame = %q\n", o.Frame)
 		}
 	}
 	s += renderUiSettings(c.UI)

@@ -47,3 +47,17 @@ func TestParseLayoutOrder(t *testing.T) {
 		t.Fatal("non-array order accepted")
 	}
 }
+
+func TestParseLayoutFrame(t *testing.T) {
+	l, ok := parseLayout(layoutPayload(map[string]any{"frame": `{"n":1}`}))
+	if !ok || l.Frame != `{"n":1}` {
+		t.Fatalf("ok=%v frame=%q", ok, l.Frame)
+	}
+	l, ok = parseLayout(layoutPayload(nil))
+	if !ok || l.Frame != "" {
+		t.Fatalf("missing frame: ok=%v frame=%q", ok, l.Frame)
+	}
+	if _, ok = parseLayout(layoutPayload(map[string]any{"frame": 3.0})); ok {
+		t.Fatal("non-string frame accepted")
+	}
+}

@@ -64,6 +64,24 @@ describe('sanitizeLayouts', () => {
         expect(out.ok2!.order).toBeUndefined();
     });
 
+    it('keeps a string frame within 2048 bytes and omits the rest', () => {
+        const out = sanitizeLayouts({
+            ok: lay({ frame: '{"n":1}' }),
+            max: lay({ frame: 'a'.repeat(2048) }),
+            long: lay({ frame: 'a'.repeat(2049) }),
+            wide: lay({ frame: '隊'.repeat(683) }),
+            num: lay({ frame: 5 as never }),
+            plain: lay(),
+        });
+        expect(sortedKeys(out)).toEqual(['long', 'max', 'num', 'ok', 'plain', 'wide']);
+        expect(out.ok!.frame).toBe('{"n":1}');
+        expect(out.max!.frame).toHaveLength(2048);
+        expect('frame' in out.long!).toBe(false);
+        expect('frame' in out.wide!).toBe(false);
+        expect('frame' in out.num!).toBe(false);
+        expect('frame' in out.plain!).toBe(false);
+    });
+
     it('skips prototype-polluting ids', () => {
         const raw = JSON.parse(`{"__proto__":${JSON.stringify(lay())},"constructor":${JSON.stringify(lay())},"prototype":${JSON.stringify(lay())},"ok":${JSON.stringify(lay())}}`);
         expect(sortedKeys(sanitizeLayouts(raw))).toEqual(['ok']);
@@ -71,6 +89,14 @@ describe('sanitizeLayouts', () => {
 });
 
 describe('mergeImport', () => {
+    it('treats a layout differing only in frame as changed', () => {
+        const own = defaultOverlaySettings();
+        const r = mergeImport(own, { ccBoss: lay() }, payload({ ccBoss: lay({ frame: '{"n":1}' }) }), only('ccBoss', true));
+        expect(r.saves.ccBoss?.frame).toBe('{"n":1}');
+        const same = mergeImport(own, { ccBoss: lay({ frame: '{"n":1}' }) }, payload({ ccBoss: lay({ frame: '{"n":1}' }) }), only('ccBoss', true));
+        expect(same.saves.ccBoss).toBeUndefined();
+    });
+
     it('leaves untouched regions alone', () => {
         const own = defaultOverlaySettings();
         const ownL: Layouts = { ccSelf: lay(), 'ccSelf-5': lay(), dps: lay() };
