@@ -10,7 +10,7 @@ describe('defaults', () => {
         const s = defaultCcSection('ccBoss');
         expect(s.items.map(i => [i.id, i.label])).toEqual([[1164, '減物保'], [1165, '減魔保'], [1166, '增傷'], [323, '憤衝']]);
         expect(s.items[3].icon).toEqual({ kind: 'skill', id: 20018 });
-        expect(s.look).toEqual({ size: 'm', px: 36, names: 'label', dim: 40, bg: null, title: false });
+        expect(s.look).toEqual({ size: 'm', px: 36, names: 'label', dim: 40, bg: null, title: false, titleText: '', arrange: 'flow', gap: 'keep' });
     });
     it('ccSelf and ccParty', () => {
         const s = defaultCcSection('ccSelf');
@@ -25,14 +25,14 @@ describe('defaults', () => {
     });
     it('burst', () => {
         const s = defaultCcSection('burst');
-        expect(s.look).toEqual({ size: 'c', px: 52, names: 'label', dim: 100, bg: null, title: false });
+        expect(s.look).toEqual({ size: 'c', px: 52, names: 'label', dim: 100, bg: null, title: false, titleText: '', arrange: 'flow', gap: 'keep' });
         expect(s.items.map(i => [i.id, i.label, i.warnHl, i.goneHl])).toEqual([[516, '覺醒', false, false], [900206, '戰吼', false, false]]);
     });
     it('cooldown, dps, general', () => {
         const c = defaultCooldownSection();
         expect(c.items.map(i => [i.skillId, i.cooldownSec, i.ccId, i.who])).toEqual([
             [59005, 180, 803, 'party'], [59143, 60, 0, 'party'], [59123, 30, 0, 'party']]);
-        expect(c.look).toEqual({ size: 'm', px: 36, names: true, bg: null, title: false });
+        expect(c.look).toEqual({ size: 'm', px: 36, names: true, bg: null, title: false, titleText: '', arrange: 'flow', gap: 'keep' });
         expect(defaultDpsLook().top).toEqual({ boss: true, hpPct: true, hpLeft: false, time: true, partyDps: true });
         expect(defaultDpsLook().bg).toEqual({ color: '#0e1013', alpha: 25 });
         expect(defaultGeneral()).toEqual({ bg: { color: '#0e1013', alpha: 0 }, warn: '#e8a33d', gone: '#e5534b', ok: '#5cc26a' });
@@ -122,5 +122,22 @@ describe('normalize', () => {
         expect(m.top.boss).toBe(false);
         expect(normalizeDpsLook(undefined, { fontSize: 'l' }).bg).toEqual(defaultDpsLook().bg);
         expect(normalizeDpsLook({ bg: null }).bg).toBeNull();
+    });
+});
+
+describe('section look fields', () => {
+    it('cc defaults and normalization', () => {
+        const l = normalizeCcSection({ look: {} }, 'ccParty').look;
+        expect([l.titleText, l.arrange, l.gap]).toEqual(['', 'flow', 'keep']);
+        const m = normalizeCcSection({ look: { titleText: 'x'.repeat(20), arrange: 'grid', gap: 'pack' } }, 'ccParty').look;
+        expect([m.titleText, m.arrange, m.gap]).toEqual(['x'.repeat(16), 'flow', 'pack']);
+        expect(normalizeCcSection({ look: { arrange: 'byMember' } }, 'ccParty').look.arrange).toBe('byMember');
+    });
+    it('cooldown defaults and normalization', () => {
+        const l = normalizeCooldownSection({ look: {} }).look;
+        expect([l.titleText, l.arrange, l.gap]).toEqual(['', 'flow', 'keep']);
+        const m = normalizeCooldownSection({ look: { titleText: '😀'.repeat(20), arrange: 'grid', gap: 'zz' } }).look;
+        expect(Array.from(m.titleText).length).toBe(16);
+        expect([m.arrange, m.gap]).toEqual(['flow', 'keep']);
     });
 });

@@ -12,7 +12,14 @@ export const CC_SECTION_IDS: readonly CcSectionId[] = ['ccBoss', 'ccSelf', 'ccPa
 export type CcNames = 'label' | 'member' | 'none';
 export interface IconRef { kind: 'cc' | 'skill'; id: number }
 /** `title`: show the section name above the icons (section and group frames). */
-export interface CcLook { size: SizeChoice; px: number; names: CcNames; dim: number; bg: PanelBg | null; title: boolean }
+export type Arrange = 'flow' | 'byMember';
+export type GapMode = 'keep' | 'pack';
+export const TITLE_MAX = 16;
+/** `titleText`: '' means the section's own name. `arrange`/`gap`: how tiles lay out in the frame. */
+export interface CcLook {
+    size: SizeChoice; px: number; names: CcNames; dim: number; bg: PanelBg | null; title: boolean;
+    titleText: string; arrange: Arrange; gap: GapMode;
+}
 export interface CcItem {
     id: number; ids: number[]; enabled: boolean; label: string; icon: IconRef;
     warnSec: number; warnHl: boolean; goneHl: boolean; renew: number;
@@ -25,7 +32,10 @@ export interface CcSection { look: CcLook; items: CcItem[] }
 
 export type CooldownWho = 'self' | 'party' | 'all';
 export interface CooldownItem { skillId: number; cooldownSec: number; ccId: number; enabled: boolean; who: CooldownWho; arcana: number[] }
-export interface CooldownLook { size: SizeChoice; px: number; names: boolean; bg: PanelBg | null; title: boolean }
+export interface CooldownLook {
+    size: SizeChoice; px: number; names: boolean; bg: PanelBg | null; title: boolean;
+    titleText: string; arrange: Arrange; gap: GapMode;
+}
 export interface CooldownSection { look: CooldownLook; items: CooldownItem[] }
 
 export interface DpsLook {
@@ -75,7 +85,7 @@ const cc = (id: number, label: string, o: Partial<CcItem> = {}): CcItem => ({
 });
 
 export function defaultCcSection(id: CcSectionId): CcSection {
-    const look: CcLook = { size: 'm', px: 36, names: 'label', dim: 40, bg: null, title: false };
+    const look: CcLook = { size: 'm', px: 36, names: 'label', dim: 40, bg: null, title: false, titleText: '', arrange: 'flow', gap: 'keep' };
     switch (id) {
         case 'ccBoss':
             return { look, items: [
@@ -105,7 +115,7 @@ export function defaultCcSection(id: CcSectionId): CcSection {
         case 'misc':
             return { look: { ...look, size: 'l' }, items: [cc(428, '信念', { icon: { kind: 'cc', id: 21 }, warnHl: false, goneHl: false })] };
         case 'burst':
-            return { look: { size: 'c', px: 52, names: 'label', dim: 100, bg: null, title: false }, items: [
+            return { look: { ...look, size: 'c', px: 52, dim: 100 }, items: [
                 cc(516, '覺醒', { warnHl: false, goneHl: false }), cc(900206, '戰吼', { warnHl: false, goneHl: false }),
             ] };
     }
@@ -115,7 +125,7 @@ export function defaultCooldownSection(): CooldownSection {
     const it = (skillId: number, cooldownSec: number, ccId: number): CooldownItem =>
         ({ ...defaultCooldownItem(skillId), cooldownSec, ccId });
     return {
-        look: { size: 'm', px: 36, names: true, bg: null, title: false },
+        look: { size: 'm', px: 36, names: true, bg: null, title: false, titleText: '', arrange: 'flow', gap: 'keep' },
         items: [it(59005, 180, 803), it(59143, 60, 0), it(59123, 30, 0)],
     };
 }
@@ -150,6 +160,12 @@ function bg(v: unknown, fb: PanelBg | null): PanelBg | null {
     const r = rec(v);
     return { color: color(r.color, DEFAULT_PANEL), alpha: int(r.alpha, 35, 0, 100) };
 }
+
+/** Free text for a title or frame name: control characters dropped, at most TITLE_MAX characters. */
+export const cleanTitleText = (v: unknown): string =>
+    typeof v === 'string' ? Array.from(v.replace(/[ -]/g, '')).slice(0, TITLE_MAX).join('') : '';
+const arrange = (v: unknown): Arrange => v === 'byMember' ? 'byMember' : 'flow';
+const gapMode = (v: unknown): GapMode => v === 'pack' ? 'pack' : 'keep';
 
 function idArray(v: unknown, max = Infinity): number[] {
     const out: number[] = [];
@@ -194,16 +210,22 @@ export function normalizeCcSection(v: unknown, id: CcSectionId): CcSection {
             if (it && !items.some(o => o.id === it.id)) items.push(it);
         }
     }
+    return { look: normalizeCcLook(l, d.look), items: Array.isArray(r.items) ? items : d.items };
+}
+
+/** `l`: a raw look object; `d`: the defaults for missing or invalid fields. */
+export function normalizeCcLook(l: unknown, d: CcLook): CcLook {
+    const r = rec(l);
     return {
-        look: {
-            size: size(l.size, d.look.size),
-            px: int(l.px, d.look.px, 16, 96),
-            names: l.names === 'label' || l.names === 'member' || l.names === 'none' ? l.names : d.look.names,
-            dim: int(l.dim, d.look.dim, 10, 100),
-            bg: bg(l.bg, null),
-            title: bool(l.title, d.look.title),
-        },
-        items: Array.isArray(r.items) ? items : d.items,
+        size: size(r.size, d.size),
+        px: int(r.px, d.px, 16, 96),
+        names: r.names === 'label' || r.names === 'member' || r.names === 'none' ? r.names : d.names,
+        dim: int(r.dim, d.dim, 10, 100),
+        bg: bg(r.bg, null),
+        title: bool(r.title, d.title),
+        titleText: cleanTitleText(r.titleText),
+        arrange: arrange(r.arrange),
+        gap: gapMode(r.gap),
     };
 }
 
@@ -232,15 +254,20 @@ export function normalizeCooldownSection(v: unknown): CooldownSection {
             if (it && !items.some(o => o.skillId === it.skillId)) items.push(it);
         }
     }
+    return { look: normalizeCooldownLook(l, d.look), items: Array.isArray(r.items) ? items : d.items };
+}
+
+export function normalizeCooldownLook(l: unknown, d: CooldownLook): CooldownLook {
+    const r = rec(l);
     return {
-        look: {
-            size: size(l.size, d.look.size),
-            px: int(l.px, d.look.px, 16, 96),
-            names: bool(l.names, d.look.names),
-            bg: bg(l.bg, null),
-            title: bool(l.title, false),
-        },
-        items: Array.isArray(r.items) ? items : d.items,
+        size: size(r.size, d.size),
+        px: int(r.px, d.px, 16, 96),
+        names: bool(r.names, d.names),
+        bg: bg(r.bg, null),
+        title: bool(r.title, false),
+        titleText: cleanTitleText(r.titleText),
+        arrange: arrange(r.arrange),
+        gap: gapMode(r.gap),
     };
 }
 

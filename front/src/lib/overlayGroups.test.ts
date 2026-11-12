@@ -92,3 +92,21 @@ describe('planTakeOut', () => {
         expect(planTakeOut(ctx({ 'ccSelf-1': L() }), ['1'], 'ccSelf-1')).toEqual([{ remove: 'ccSelf-1' }]);
     });
 });
+
+describe('frame records follow the layout', () => {
+    it('take-out of a two-member group keeps the frame on the surviving unit', () => {
+        const ls = { 'ccSelf-g1': L({ order: ['1', '2'], frame: 'X' }) };
+        const ops = planTakeOut(ctx(ls), ['1'], 'ccSelf-g1');
+        expect(ops[0]).toEqual({ save: 'ccSelf-2', layout: L({ frame: 'X' }) });
+    });
+    it('a unit dropped on a unit makes a group with the host frame; the dropped one is gone', () => {
+        const ls = { 'ccSelf-2': L({ frame: 'B' }), 'ccSelf-3': L({ x: 99, frame: 'A' }) };
+        const ops = planPlace(ctx(ls), ['3'], 'ccSelf-3', { frame: 'ccSelf-2', index: 0 });
+        expect(ops).toEqual([
+            { remove: 'ccSelf-3' },
+            { save: 'ccSelf-g1', layout: L({ order: ['3', '2'], frame: 'B' }) },
+            { remove: 'ccSelf-2', heir: 'ccSelf-g1' },
+        ]);
+    });
+});
+
