@@ -64,10 +64,18 @@ export function planTakeOut(c: Ctx, keys: readonly string[], from: ComponentId):
 
 /**
  * Moves `keys` from the frame `from` to a place in a frame (reorder, merge back, join or start a group)
- * or to a unit frame of their own (`free`, one key only).
+ * or to free space (`free`): one key becomes a unit frame, several a new group.
  */
 export function planPlace(c: Ctx & { sectionOrder: readonly string[] }, keys: readonly string[], from: ComponentId, target: PlaceTarget): LayoutOp[] {
     if ('free' in target) {
+        if (keys.length > 1) {
+            if (isGroupOf(c.sec, from) && same([...groupMembers(c.sec, from, c.layouts, c.keys)].sort(), [...keys].sort())) {
+                return [{ save: from, layout: { ...c.layoutOf(from), ...target.free, order: c.layoutOf(from).order } }];
+            }
+            // The id is picked from the original layouts, so an id freed by the take-out is not reused.
+            const gid = nextGroupId(c.sec, c.layouts);
+            return [...planTakeOut(c, keys, from), { save: gid, layout: { ...target.free, width: Math.max(target.free.width, GROUP_MIN_W), order: [...keys] } }];
+        }
         const solo = unitId(c.sec, keys[0]);
         if (from === solo) return [{ save: solo, layout: target.free }];
         return [...planTakeOut(c, keys, from), { save: solo, layout: target.free }];

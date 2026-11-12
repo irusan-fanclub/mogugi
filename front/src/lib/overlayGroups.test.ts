@@ -77,6 +77,18 @@ describe('planPlace', () => {
         const ls = { 'ccSelf-2': L() };
         expect(planPlace(ctx(ls), ['2'], 'ccSelf-2', { free: L({ x: 1 }) })).toEqual([{ save: 'ccSelf-2', layout: L({ x: 1 }) }]);
     });
+    it('several items dragged to free space make a new group', () => {
+        const free = L({ x: 300, width: 80 });
+        expect(planPlace(ctx({}), ['2', '1'], 'ccSelf', { free })).toEqual([
+            { save: 'ccSelf-g1', layout: L({ x: 300, width: 120, order: ['2', '1'] }) },
+        ]);
+    });
+    it('a whole group dragged to free space just moves, keeping its record', () => {
+        const ls = { 'ccSelf-g2': L({ order: ['1', '2'], frame: 'F' }) };
+        expect(planPlace(ctx(ls), ['1', '2'], 'ccSelf-g2', { free: L({ x: 300, y: 5 }) })).toEqual([
+            { save: 'ccSelf-g2', layout: L({ x: 300, y: 5, order: ['1', '2'], frame: 'F' }) },
+        ]);
+    });
     it('a whole group merges into another group', () => {
         const ls = { 'ccSelf-g1': L({ order: ['1', '2'] }), 'ccSelf-g2': L({ order: ['3', '4'] }) };
         expect(planPlace(ctx(ls), ['1', '2'], 'ccSelf-g1', { frame: 'ccSelf-g2', index: 2 })).toEqual([
