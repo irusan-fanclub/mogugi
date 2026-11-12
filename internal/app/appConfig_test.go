@@ -451,6 +451,19 @@ func TestOverlayFrameRoundTrip(t *testing.T) {
 	}
 }
 
+func TestOverlayFrameControlCharsRoundTrip(t *testing.T) {
+	c := defaultAppConfig()
+	frame := "a\x7fb\x01c\x07d\x0be\tf\\g\"h"
+	c.Overlays = map[string]OverlayLayout{"dps": {Enabled: true, Anchor: "tl", Width: 260, MaxRows: 8, Frame: frame}}
+	got, msg := parseAppConfig(renderAppConfig(c))
+	if msg != "" {
+		t.Fatal(msg)
+	}
+	if got.Overlays["dps"].Frame != frame {
+		t.Fatalf("got %q", got.Overlays["dps"].Frame)
+	}
+}
+
 func TestOverlayFrameOversizedDropped(t *testing.T) {
 	text := "overlayLayoutVersion = 2\n[overlays.dps]\nenabled = true\nanchor = \"tl\"\nx = 0\ny = 0\nwidth = 260\nmaxRows = 8\n" +
 		"frame = \"" + strings.Repeat("a", 2049) + "\"\n"

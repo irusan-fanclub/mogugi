@@ -343,11 +343,36 @@ func renderAppConfig(c appConfig) string {
 			s += fmt.Sprintf("order = [%s]\n", quoteJoin(o.Order))
 		}
 		if o.Frame != "" {
-			s += fmt.Sprintf("frame = %q\n", o.Frame)
+			s += "frame = " + tomlString(o.Frame) + "\n"
 		}
 	}
 	s += renderUiSettings(c.UI)
 	return strings.ReplaceAll(s, "\n", "\r\n")
+}
+
+// tomlString renders s as a TOML basic string; %q would emit \x, \a and \v, which TOML rejects.
+func tomlString(s string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range s {
+		switch {
+		case r == '"' || r == '\\':
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\t':
+			b.WriteString(`\t`)
+		case r == '\r':
+			b.WriteString(`\r`)
+		case r < 0x20 || r == 0x7f:
+			fmt.Fprintf(&b, `\u%04x`, r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
 }
 
 // quoteJoin renders strings as a comma-separated list of TOML basic strings.

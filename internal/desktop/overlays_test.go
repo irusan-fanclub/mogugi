@@ -2,8 +2,18 @@ package desktop
 
 import (
 	"reflect"
+	"strings"
 	"testing"
+
+	"github.com/irusan-fanclub/mogugi/internal/app"
 )
+
+func TestParseLayoutOversizedFrameInvalid(t *testing.T) {
+	l, ok := parseLayout(layoutPayload(map[string]any{"frame": strings.Repeat("a", 2049)}))
+	if !ok || app.ValidOverlayLayout(l) {
+		t.Fatalf("ok=%v valid=%v", ok, app.ValidOverlayLayout(l))
+	}
+}
 
 func layoutPayload(extra map[string]any) map[string]any {
 	m := map[string]any{"enabled": true, "anchor": "tl", "x": 1.0, "y": 2.0, "width": 260.0, "maxRows": 8.0}
