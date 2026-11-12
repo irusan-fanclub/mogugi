@@ -1,14 +1,16 @@
 import { computed, ref } from 'vue';
-import { componentsOf, layoutOf, sectionItems } from '@/lib/overlayComponents';
+import { componentsOf, defaultLayoutOf, layoutOf, sectionItems } from '@/lib/overlayComponents';
 import {
     defaultFrameRec, frameField, parseFrame, resetFrameRec, sectionTitle, type FrameRec, type SectionLook,
 } from '@/lib/overlayFrames';
-import { frameOfKey, planTakeOut, type LayoutOp } from '@/lib/overlayGroups';
+import { frameOfKey, planPlace, planTakeOut, type LayoutOp } from '@/lib/overlayGroups';
 import type { ComponentId } from '@/lib/overlayProtocol';
-import { cleanTitleText, itemKey, orderedKeys, type SectionId } from '@/lib/overlaySections';
+import { cleanTitleText, itemKey, orderedKeys, unitId, type SectionId } from '@/lib/overlaySections';
 import { frameSummary } from './frameSummary';
 import { overlaySettings } from '../../overlay/overlayLink';
 import { useOverlayState } from '../../overlay/useOverlayState';
+
+export type MoveTo = { frame: ComponentId } | { step: -1 | 1 } | 'new';
 
 /** The layout side of a section's item list: its frames (main, then pulled-out ones) and the section order. */
 export function useSectionLayout(section: () => SectionId) {
@@ -62,7 +64,31 @@ export function useSectionLayout(section: () => SectionId) {
     function setFrame(id: ComponentId, rec: FrameRec) {
         setLayout(id, { ...layoutOf(id, layouts.value), frame: frameField(rec) });
     }
-    return { isSolo, recall, inOrder, forget, frames, setFrame };
+
+    // Reorder swaps with the adjacent visible key; detached keys keep their place in the section order.
+    function move(key: string, to: MoveTo) {
+        const sec = section();
+        const keys = sectionItems(overlaySettings.value, sec).map(itemKey);
+        const sectionOrder = inOrder(keys);
+        const ctx = { sec, layouts: layouts.value, layoutOf: (id: ComponentId) => layoutOf(id, layouts.value), keys, sectionOrder };
+        const from = frameOfKey(sec, key, layouts.value);
+        if (to === 'new') {
+            const free = { ...defaultLayoutOf(unitId(sec, key)), anchor: 'center' as const, x: 0, y: 0, dock: '' as const };
+            apply(planPlace(ctx, [key], from, { free }));
+            return;
+        }
+        if ('frame' in to) {
+            const f = frames.value.find(x => x.id === to.frame);
+            if (f) apply(planPlace(ctx, [key], from, { frame: f.id, index: f.kind === 'section' ? sectionOrder.length : f.keys.length }));
+            return;
+        }
+        const f = frames.value.find(x => x.id === from);
+        const neighbour = f?.keys[f.keys.indexOf(key) + to.step];
+        if (!f || f.kind === 'unit' || neighbour === undefined) return;
+        const rest = (f.kind === 'section' ? sectionOrder : f.keys).filter(k => k !== key);
+        apply(planPlace(ctx, [key], from, { frame: from, index: rest.indexOf(neighbour) + (to.step > 0 ? 1 : 0) }));
+    }
+    return { isSolo, recall, inOrder, forget, frames, setFrame, move };
 }
 
 export interface FrameBlockView {
@@ -81,7 +107,7 @@ export function useFrameBlocks(
     setSectionLook: (look: SectionLook) => void,
     resetSectionLook: () => void,
 ) {
-    const { frames, setFrame } = useSectionLayout(section);
+    const { frames, setFrame, move } = useSectionLayout(section);
     const openIds = ref(new Set<ComponentId>());
     const clone = (l: SectionLook): SectionLook => JSON.parse(JSON.stringify(l));
 
@@ -149,5 +175,5 @@ export function useFrameBlocks(
         if (b.kind === 'section') resetSectionLook();
         else setFrame(id, resetFrameRec(section(), b.kind, recs.value.get(id)!));
     }
-    return { blocks, toggle, onLook, onFollow, onReset };
+    return { blocks, toggle, onLook, onFollow, onReset, move };
 }

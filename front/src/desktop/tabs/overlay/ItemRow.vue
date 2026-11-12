@@ -13,6 +13,7 @@ const emit = defineEmits<{ toggle: []; reset: []; remove: []; 'update:enabled': 
       <span class="caret">{{ open ? '▾' : '▸' }}</span>
       <img :src="icon" alt="">
       <span class="nm">{{ name }}</span>
+      <slot name="move" />
       <IconButton kind="reset" data-reset @fire="emit('reset')" />
       <IconButton kind="remove" data-remove @fire="emit('remove')" />
       <span @click.stop><DSwitch :model-value="enabled" @update:model-value="v => emit('update:enabled', v)" /></span>

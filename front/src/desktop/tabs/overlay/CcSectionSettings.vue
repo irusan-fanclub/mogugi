@@ -16,6 +16,7 @@ import FrameBlock from './FrameBlock.vue';
 import FrameLookFields from './FrameLookFields.vue';
 import ItemPicker, { type PickerItem, type PickerMark } from './ItemPicker.vue';
 import ItemRow from './ItemRow.vue';
+import MoveMenu from './MoveMenu.vue';
 import SoonChecks from './SoonChecks.vue';
 import { useFrameBlocks, useSectionLayout } from './sectionLayout';
 
@@ -32,7 +33,7 @@ const setItem = (id: number, mut: (it: CcItem) => void) => setSec(s => {
 });
 
 const { forget } = useSectionLayout(() => props.section);
-const { blocks, toggle, onLook, onFollow, onReset } = useFrameBlocks(
+const { blocks, toggle, onLook, onFollow, onReset, move } = useFrameBlocks(
     () => props.section, () => look.value,
     l => setSec(s => { s.look = l as CcLook; }),
     () => setSec(s => { s.look = defaultCcSection(props.section).look; }),
@@ -142,6 +143,14 @@ function onPick(id: number) {
             @reset="reset(it.id)" @remove="remove(it)"
             @update:enabled="v => setItem(it.id, x => { x.enabled = v; })"
           >
+            <template #move>
+              <MoveMenu
+                :blocks="blocks.map(b => ({ id: b.id, name: b.title }))" :current="f.id"
+                :can-up="f.kind !== 'unit' && f.keys.indexOf(itemKey(it)) > 0"
+                :can-down="f.kind !== 'unit' && f.keys.indexOf(itemKey(it)) < f.keys.length - 1"
+                @move="to => move(itemKey(it), to)"
+              />
+            </template>
             <div class="ovs-field">
               <span class="ovs-lbl">圖示</span>
               <button type="button" class="ovs-iconpick" title="更換圖示" data-icon-pick @click="openPicker({ mode: 'icon', id: it.id })">

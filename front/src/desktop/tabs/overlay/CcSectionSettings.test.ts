@@ -122,6 +122,53 @@ describe('CcSectionSettings', () => {
         expect(h.removeLayout).not.toHaveBeenCalled();
     });
 
+    describe('移動 menu', () => {
+        const L = { enabled: true, anchor: 'tl' as const, x: 5, y: 0, width: 120, maxRows: 1 };
+        const rec1 = defaultFrameRec('ccParty', 'group', 1);
+        const go = async (key: number, sel: string) => {
+            await row(key).get('[data-move]').trigger('click');
+            await row(key).get(sel).trigger('click');
+        };
+
+        it('往後 in the main frame writes the section order, detached keys stay put', async () => {
+            state.value = baseState({ 'ccSelf-193': { ...L } });
+            mountSec('ccSelf');
+            await go(192, '[data-move-down]');
+            const [id, lay] = h.setLayout.mock.calls.at(-1)!;
+            expect(id).toBe('ccSelf');
+            expect((lay.order as string[]).slice(0, 4)).toEqual(['680', '193', '476', '192']);
+        });
+
+        it('往前 is greyed on the first item', async () => {
+            mountSec('ccSelf');
+            await row(680).get('[data-move]').trigger('click');
+            expect(row(680).get('[data-move-up]').attributes('disabled')).toBeDefined();
+        });
+
+        it('moving a member out of a two-member group leaves a unit that carries the frame', async () => {
+            const frame = frameField(rec1);
+            state.value = baseState({ 'ccParty-g1': { ...L, order: ['476', '1225'], frame } });
+            mountSec('ccParty');
+            await go(476, '[data-move-to="ccParty"]');
+            expect(h.setLayout).toHaveBeenCalledWith('ccParty-1225', expect.objectContaining({ frame }));
+            expect(h.removeLayout).toHaveBeenCalledWith('ccParty-g1');
+            expect(h.setLayout.mock.calls.some(c => c[0] === 'ccParty')).toBe(true);
+        });
+
+        it('新的框 saves a unit at the centre', async () => {
+            mountSec('ccSelf');
+            await go(193, '[data-move-new]');
+            expect(h.setLayout).toHaveBeenCalledWith('ccSelf-193', expect.objectContaining({ anchor: 'center', x: 0, y: 0, dock: '' }));
+        });
+
+        it('moving the last member of a unit back removes its layout', async () => {
+            state.value = baseState({ 'ccSelf-193': { ...L } });
+            mountSec('ccSelf');
+            await go(193, '[data-move-to="ccSelf"]');
+            expect(h.removeLayout).toHaveBeenCalledWith('ccSelf-193');
+        });
+    });
+
     describe('frame blocks', () => {
         const L = { enabled: true, anchor: 'tl' as const, x: 5, y: 0, width: 120, maxRows: 1 };
         const rec1 = defaultFrameRec('ccParty', 'group', 1);

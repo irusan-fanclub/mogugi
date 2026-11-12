@@ -14,6 +14,7 @@ import FrameBlock from './FrameBlock.vue';
 import FrameLookFields from './FrameLookFields.vue';
 import ItemPicker, { type PickerItem, type PickerMark } from './ItemPicker.vue';
 import ItemRow from './ItemRow.vue';
+import MoveMenu from './MoveMenu.vue';
 import SoonChecks from './SoonChecks.vue';
 import { useFrameBlocks, useSectionLayout } from './sectionLayout';
 
@@ -31,7 +32,7 @@ const setItem = (id: number, mut: (it: CooldownItem) => void) => setSec(s => {
 });
 
 const { forget } = useSectionLayout(() => 'cooldown');
-const { blocks, toggle, onLook, onFollow, onReset } = useFrameBlocks(
+const { blocks, toggle, onLook, onFollow, onReset, move } = useFrameBlocks(
     () => 'cooldown', () => look.value,
     l => setSec(s => { s.look = l as CooldownLook; }),
     () => setSec(s => { s.look = defaultCooldownSection().look; }),
@@ -102,6 +103,14 @@ const onPick = (id: number) => { picking.value = false; add(id); };
             @reset="reset(it.skillId)" @remove="remove(it)"
             @update:enabled="v => setItem(it.skillId, x => { x.enabled = v; })"
           >
+            <template #move>
+              <MoveMenu
+                :blocks="blocks.map(b => ({ id: b.id, name: b.title }))" :current="f.id"
+                :can-up="f.kind !== 'unit' && f.keys.indexOf(itemKey(it)) > 0"
+                :can-down="f.kind !== 'unit' && f.keys.indexOf(itemKey(it)) < f.keys.length - 1"
+                @move="to => move(itemKey(it), to)"
+              />
+            </template>
             <div class="ovs-field">
               <span class="ovs-lbl">冷卻秒數</span>
               <input
