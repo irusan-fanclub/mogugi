@@ -5,19 +5,20 @@ import Tile from './Tile.vue';
 
 const props = defineProps<{
     tiles: TileVM[]; px: number; dim: number; editing: boolean;
-    lifted: string | null; insertAt: number | null;
+    lifted: string | string[] | null; insertAt: number | null;
 }>();
 const emit = defineEmits<{ 'tile-down': [key: string, e: PointerEvent] }>();
 
 type Entry = { bar: true } | { bar: false; tile: TileVM };
 
 // The bar goes before the first tile of the key at insertAt (keys counted in order), or at the end.
+const liftedKeys = computed(() => (Array.isArray(props.lifted) ? props.lifted : props.lifted === null ? [] : [props.lifted]));
 const entries = computed<Entry[]>(() => {
     const out: Entry[] = [];
     const seen = new Set<string>();
     let placed = props.insertAt === null;
     for (const t of props.tiles) {
-        if (t.key === props.lifted) continue;
+        if (liftedKeys.value.includes(t.key)) continue;
         if (!seen.has(t.key)) {
             if (!placed && seen.size === props.insertAt) { out.push({ bar: true }); placed = true; }
             seen.add(t.key);

@@ -12,7 +12,7 @@ import { useLayoutDrag } from './layoutDrag';
 import { usePendingLayouts } from './pendingLayouts';
 import { dropSpot, useTileDrag, type TileDragCtx } from './tileDrag';
 import { frameOfKey, planPlace, planTakeOut, type LayoutOp, type PlaceTarget } from '@/lib/overlayGroups';
-import { sampleAlerts, sampleDps, sampleTiles } from './sampleData';
+import { sampleAlerts, sampleDps, sampleMemberTiles, sampleTiles } from './sampleData';
 import {
     bgOf, fontPxOf, frameLook, frameTitle, gateOpen, inOrder, itemEnabled, itemName, labelOf, sectionOf, sectionOrder,
     tileLook, tilesFor,
@@ -22,6 +22,7 @@ import LayoutEditor from './LayoutEditor.vue';
 import DpsOverlay from './DpsOverlay.vue';
 import TileGroup from './TileGroup.vue';
 import MemberGrid from './MemberGrid.vue';
+import Tile from './Tile.vue';
 import { buildMemberGrid, type GridRow } from '@/lib/memberGrid';
 import { memberClassOf } from '@/lib/overlayFrames';
 import AlertsOverlay from './AlertsOverlay.vue';
@@ -85,6 +86,11 @@ const keysOf = (c: ComponentDef): string[] => (isPulled(c) ? membersOf(c)
 
 const samples = { dps: sampleDps(), alerts: sampleAlerts() };
 interface FrameView { tiles: TileVM[]; live: boolean }
+// By-member party and cooldown frames are drawn as a grid, in the layout editor too.
+const isGridFrame = (c: ComponentDef) => {
+    const look = c.section && frameLook(settings.value, c, layouts.value);
+    return !!look && look.arrange === 'byMember' && (c.section === 'ccParty' || c.section === 'cooldown');
+};
 const views = computed(() => {
     const out: Record<ComponentId, FrameView> = {};
     for (const c of components.value) {
@@ -95,11 +101,15 @@ const views = computed(() => {
             const live = tilesFor(data.tiles.value[c.section!], keys);
             out[c.id] = live.length || !editing.value
                 ? { tiles: live, live: live.length > 0 }
-                : { tiles: inOrder(sampleTiles(sectionOf(settings.value, c.section!), keys), keys), live: false };
+                : { tiles: sampleFor(c, keys), live: false };
         }
     }
     return out;
 });
+const sampleFor = (c: ComponentDef, keys: string[]): TileVM[] => {
+    const sec = sectionOf(settings.value, c.section!);
+    return isGridFrame(c) ? sampleMemberTiles(sec, keys) : inOrder(sampleTiles(sec, keys), keys);
+};
 const useSample = (c: ComponentDef) => editing.value && !views.value[c.id].live;
 
 const shownLocked = (c: ComponentDef): boolean => {
@@ -141,7 +151,10 @@ function apply(ops: LayoutOp[]) {
 function place(sec: SectionId, keys: string[], from: ComponentId, target: PlaceTarget | { at: { l: number; t: number } }) {
     let t: PlaceTarget;
     if ('at' in target) {
-        const id = unitId(sec, keys[0]);
+        // Lifting every member of a group moves that group, so it keeps its own width.
+        const members = compOf(from)?.kind === 'group' ? membersOf(compOf(from)!) : [];
+        const whole = keys.length > 1 && members.length === keys.length && keys.every(k => members.includes(k));
+        const id = whole ? from : unitId(sec, keys[0]);
         const lay = layoutFor(id);
         const h = heights[id] ?? iconPx(sectionOf(settings.value, sec).look) + 18;
         t = { free: free(id, { l: target.at.l, t: target.at.t, w: lay.width, h }) };
@@ -168,7 +181,7 @@ const tileCtx: TileDragCtx = {
         const r = stageRect(el);
         return { l: r.l, t: r.t };
     },
-    columnsOf: () => null,
+    columnsOf: id => { const c = compOf(id); return c && grids.value[id] ? (k => memberClassOf(c.section!, k)) : null; },
     viewport, scale, place,
 };
 const { tdrag, startTile, moveTile, endTile, cancelTile } = useTileDrag(tileCtx);
@@ -211,7 +224,7 @@ function frameUp(e: PointerEvent) {
 }
 function frameCancel() { cancel(); frameSpot.value = null; }
 
-const liftedIn = (c: ComponentDef) => (tdrag.value?.moved && tdrag.value.section === c.section ? tdrag.value.keys[0] : null);
+const liftedIn = (c: ComponentDef) => (tdrag.value?.moved && tdrag.value.section === c.section ? tdrag.value.keys : []);
 const insertIn = (c: ComponentDef): number | null => {
     const t = tdrag.value;
     if (t?.moved) return t.over === c.id ? t.insertAt : null;
@@ -223,7 +236,11 @@ const ghost = computed(() => {
     if (!t?.moved) return null;
     const tiles = (views.value[t.from]?.tiles ?? []).filter(x => t.keys.includes(x.key));
     const look = sectionOf(settings.value, t.section).look;
-    return { l: t.l, t: t.t, tiles, px: iconPx(look), dim: 'dim' in look ? look.dim : 100 };
+    // A column lifted from a grid is ghosted as a strip: one tile per row of that grid.
+    const rows = grids.value[t.from];
+    const col = rows ? rows.map(r => r.cells.find(x => x && t.keys.includes(x.key))).filter((x): x is TileVM => !!x) : null;
+    const fl = compOf(t.from) && lookOf(compOf(t.from)!);
+    return { l: t.l, t: t.t, tiles, col, flook: fl, px: iconPx(look), dim: 'dim' in look ? look.dim : 100 };
 });
 
 // ---- Frame chrome ----
@@ -252,10 +269,9 @@ const lookOf = (c: ComponentDef) => frameLook(settings.value, c, layouts.value);
 // Built once per render for every frame that draws a member grid.
 const grids = computed(() => {
     const out: Record<ComponentId, GridRow[]> = {};
-    if (editing.value) return out;
     for (const c of components.value) {
-        const look = c.section && lookOf(c);
-        if (!look || look.arrange !== 'byMember' || (c.section !== 'ccParty' && c.section !== 'cooldown')) continue;
+        if (!isGridFrame(c)) continue;
+        const look = lookOf(c)!;
         out[c.id] = buildMemberGrid(views.value[c.id].tiles, keysOf(c), k => memberClassOf(c.section!, k), look.gap);
     }
     return out;
@@ -315,7 +331,8 @@ const stageStyle = computed(() => ({
           <div v-if="titleOf(c)" class="ov-title" data-title>{{ titleOf(c) }}</div>
           <MemberGrid
             v-if="grids[c.id]" :rows="grids[c.id]" v-bind="tileLook(settings, c, layouts)"
-            :look="lookOf(c)"
+            :look="lookOf(c)" :editing="editing" :lifted="liftedIn(c)" :insert-at="insertIn(c)"
+            @tile-down="(key, e) => tileDown(c.section!, key, e)"
           />
           <TileGroup
             v-else-if="c.section" :tiles="flowTiles(c)" v-bind="tileLook(settings, c, layouts)" :editing="editing"
@@ -325,7 +342,13 @@ const stageStyle = computed(() => ({
         </ComponentFrame>
       </LayoutEditor>
       <div v-if="ghost" class="ov-ghost" data-ghost :style="{ left: ghost.l + 'px', top: ghost.t + 'px' }">
-        <TileGroup :tiles="ghost.tiles" :px="ghost.px" :dim="100" :editing="false" :lifted="null" :insert-at="null" />
+        <div v-if="ghost.col && ghost.flook" class="ov-ghost-col">
+          <Tile
+            v-for="x in ghost.col" :key="x.holderId" :tile="x" :px="ghost.px" :dim="100" :editing="false"
+            :label="labelOf(x, ghost.flook, true)"
+          />
+        </div>
+        <TileGroup v-else :tiles="ghost.tiles" :px="ghost.px" :dim="100" :editing="false" :lifted="null" :insert-at="null" />
       </div>
     </div>
   </div>

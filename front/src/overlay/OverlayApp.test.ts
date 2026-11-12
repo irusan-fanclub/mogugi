@@ -362,12 +362,79 @@ describe('OverlayApp', () => {
             for (const r of comp('ccParty').findAll('[data-member-row]')) expect(r.findAll('[data-cell]')).toHaveLength(2);
         });
 
-        it('falls back to the flow tiles while editing', async () => {
-            await party();
-            fire('overlay:state', state(false));
-            await tick(250);
-            expect(comp('ccParty').findAll('[data-member-row]')).toHaveLength(0);
-            expect(comp('ccParty').findAll('[data-tile-key]').length).toBeGreaterThan(0);
+        describe('while editing', () => {
+            const edit = async (items = [{ id: 680 }, { id: 192 }]) => {
+                await mountApp();
+                fire('overlay:state', state(false));
+                fire('overlay:settings', { ccParty: { items, look: { arrange: 'byMember' } } });
+                await nextTick();
+            };
+            const inFrame = () => { const [l, t] = pos('ccParty'); return [l + 20, t + 10]; };
+            const grab = async () => {
+                const [x, y] = inFrame();
+                await comp('ccParty').get('[data-tile-key="680"]').trigger('pointerdown', ptr(x, y));
+                await w!.find('.ov-root').trigger('pointermove', ptr(x + 8, y + 8));
+            };
+
+            it('draws the grid with three sample teammates when nobody is live', async () => {
+                await edit();
+                const rows = comp('ccParty').findAll('[data-member-row]');
+                expect(rows.map(r => r.get('.ov-member-name').text())).toEqual(['範例1', '範例2', '範例3']);
+            });
+
+            it('lifting a tile takes its whole merged column out and shows the bar', async () => {
+                await edit();
+                expect(comp('ccParty').findAll('[data-tile-key="192"]')).toHaveLength(0);
+                await grab();
+                expect(comp('ccParty').findAll('[data-tile-key]')).toHaveLength(0);
+                expect(w!.find('[data-ghost]').exists()).toBe(true);
+                expect(comp('ccParty').find('[data-col-bar]').exists()).toBe(true);
+            });
+
+            it('the ghost is the column as a vertical strip, one tile per row', async () => {
+                await edit();
+                await grab();
+                expect(w!.find('[data-ghost] .ov-ghost-col').findAll('.ov-tile')).toHaveLength(3);
+            });
+
+            it('releasing over empty space makes a new frame holding the whole column', async () => {
+                await edit();
+                await grab();
+                await w!.find('.ov-root').trigger('pointermove', ptr(900, 600));
+                await w!.find('.ov-root').trigger('pointerup', ptr(900, 600));
+                const g = sets().find(s => s.id === 'ccParty-g1');
+                expect(g?.layout.order).toEqual(['680', '192']);
+            });
+
+            it('lifting the only column of a group moves that group and keeps its width', async () => {
+                await mountApp();
+                fire('overlay:state', state(false, { 'ccParty-g1': { ...UNIT, width: 260, order: ['680', '192'] } }));
+                fire('overlay:settings', { ccParty: { items: [{ id: 680 }, { id: 192 }], look: { arrange: 'byMember' } } });
+                await nextTick();
+                await comp('ccParty-g1').get('[data-tile-key="680"]').trigger('pointerdown', ptr(610, 410));
+                await w!.find('.ov-root').trigger('pointermove', ptr(1000, 650));
+                await w!.find('.ov-root').trigger('pointerup', ptr(1000, 650));
+                expect(sets().map(s => s.id)).toEqual(['ccParty-g1']);
+                expect(sets()[0].layout).toMatchObject({ width: 260, order: ['680', '192'] });
+            });
+
+            it('dragging a unit frame over the grid shows the column bar there', async () => {
+                await mountApp();
+                fire('overlay:state', state(false, { 'ccParty-63': UNIT }));
+                fire('overlay:settings', { ccParty: { items: [{ id: 680 }, { id: 63 }], look: { arrange: 'byMember' } } });
+                await nextTick();
+                const [x, y] = [pos('ccParty')[0] + 20, pos('ccParty')[1] + 10];
+                const u = comp('ccParty-63');
+                await u.trigger('pointerdown', ptr(610, 410));
+                await u.trigger('pointermove', ptr(x, y));
+                expect(comp('ccParty').find('[data-col-bar]').exists()).toBe(true);
+            });
+
+            it('a flow frame still draws the flow tiles', async () => {
+                await edit();
+                expect(comp('ccBoss').find('.ov-members').exists()).toBe(false);
+                expect(comp('ccBoss').findAll('.ov-tiles [data-tile-key]').length).toBeGreaterThan(0);
+            });
         });
     });
 

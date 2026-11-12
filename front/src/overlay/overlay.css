@@ -334,7 +334,12 @@ html, html body, html #app {
 .ov-sec-num { color: var(--c-number); }
 .ov-title { font-size: 12px; font-weight: 700; color: #fff; opacity: 0.85; line-height: 1.4; margin-bottom: 2px; white-space: nowrap; }
 .ov-tiles { display: flex; flex-wrap: wrap; gap: 4px 6px; }
-.ov-members { display: grid; gap: 4px 6px; align-items: start; }
+.ov-members { position: relative; display: grid; gap: 4px 6px; align-items: start; }
+.ov-col-bar {
+    position: absolute; top: 0; bottom: 0; width: 3px; margin-left: -4px; border-radius: 2px;
+    background: var(--ov-guide, var(--c-accent)); pointer-events: none;
+}
+.ov-ghost-col { display: flex; flex-direction: column; gap: 4px; }
 .ov-member-row { display: contents; }
 .ov-member-name { max-width: 6em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #fff; opacity: 0.85; }
 .ov-tile { display: flex; flex-direction: column; align-items: center; gap: 1px; }

@@ -5,23 +5,36 @@ import type { AlertItem } from './useOverlayData';
 
 const SAMPLE_HOLDER = '範例';
 
+type SampleItem = CcSection['items'][number] | CooldownSection['items'][number];
+
+function sampleTile(sec: CcSection | CooldownSection, item: SampleItem, holderId: string, holderName: string): TileVM {
+    const base = { key: itemKey(item), holderId, hl: false, mask: 0, isSelf: false, holderName, fixedLabel: false };
+    if ('skillId' in item) {
+        const names = (sec as CooldownSection).look.names;
+        return { ...base, label: names ? holderName : '', itemLabel: '', icon: { kind: 'skill', id: item.skillId }, sec: '12', state: 'cooling', faint: false, mask: 0.4 };
+    }
+    const names = (sec as CcSection).look.names;
+    const label = names === 'label' ? item.label : names === 'member' ? holderName : '';
+    return { ...base, label, itemLabel: item.label, icon: item.icon, sec: '45', state: 'ok', faint: true };
+}
+
 /** One made-up tile per enabled item of a section (or just `keys`), for the layout editor. */
 export function sampleTiles(sec: CcSection | CooldownSection, keys?: readonly string[]): TileVM[] {
     const out: TileVM[] = [];
     for (const item of sec.items) {
-        const key = itemKey(item);
-        if (!item.enabled || (keys && !keys.includes(key))) continue;
-        const base = {
-            key, holderId: 'sample', hl: false, mask: 0, isSelf: false, holderName: SAMPLE_HOLDER, fixedLabel: false,
-        };
-        if ('skillId' in item) {
-            const names = (sec as CooldownSection).look.names;
-            out.push({ ...base, label: names ? SAMPLE_HOLDER : '', itemLabel: '', icon: { kind: 'skill', id: item.skillId }, sec: '12', state: 'cooling', faint: false, mask: 0.4 });
-            continue;
-        }
-        const names = (sec as CcSection).look.names;
-        const label = names === 'label' ? item.label : names === 'member' ? SAMPLE_HOLDER : '';
-        out.push({ ...base, label, itemLabel: item.label, icon: item.icon, sec: '45', state: 'ok', faint: true });
+        if (!item.enabled || (keys && !keys.includes(itemKey(item)))) continue;
+        out.push(sampleTile(sec, item, 'sample', SAMPLE_HOLDER));
+    }
+    return out;
+}
+
+/** Three sample teammates, each holding every enabled item of `keys`; key-major like live tiles. */
+export function sampleMemberTiles(sec: CcSection | CooldownSection, keys: readonly string[]): TileVM[] {
+    const out: TileVM[] = [];
+    for (const key of keys) {
+        const item = sec.items.find(i => itemKey(i) === key);
+        if (!item?.enabled) continue;
+        for (let n = 1; n <= 3; n++) out.push(sampleTile(sec, item, `s${n}`, `${SAMPLE_HOLDER}${n}`));
     }
     return out;
 }
